@@ -27,62 +27,77 @@ type
     of skInt: intVal: int
     of skFloat: floatVal: float
 
-proc parseSexp(s: string): Sexp = 
-  var i = 0
+type
+  Parser = object
+    s: string
+    i: int
 
-  proc parseSexpRecursive(): Sexp = 
-    while i < s.len and s[i] in {' ', '\n', '\t', '\r'}:
-      i += 1
-    if i >= s.len: return nil
+proc initParser(s: string): Parser =
+  Parser(s: s, i: 0)
 
-    if s[i] == '(': 
-      i += 1
-      var list: seq[Sexp] = @[]
-      while i < s.len and s[i] != ')':
-        let child = parseSexpRecursive()
-        if child != nil:
-          list.add(child)
-        while i < s.len and s[i] in {' ', '\n', '\t', '\r'}:
-          i += 1
-      if i < s.len and s[i] == ')':
-        i += 1
-        return Sexp(kind: skList, list: list)
-      else:
-        raise newException(ValueError, "unbalanced parentheses")
-    elif s[i] == '"':
-      i += 1
-      var str = ""
-      while i < s.len and s[i] != '"':
-        if s[i] == '\\':
-          i += 1
-          case s[i]
-          of 'n': str.add('\n')
-          of 't': str.add('\t')
-          of '"': str.add('"')
-          of '\\': str.add('\\')
-          else: str.add(s[i])
-        else:
-          str.add(s[i])
-        i += 1
-      i += 1
-      return Sexp(kind: skString, str: str)
+proc skipWhitespace(p: var Parser) =
+  while p.i < p.s.len and p.s[p.i] in {' ', '\n', '\t', '\r'}:
+    p.i += 1
+
+proc parseSexp(p: var Parser): Sexp =
+  p.skipWhitespace()
+  if p.i >= p.s.len: return nil
+
+  if p.s[p.i] == '(':
+    p.i += 1
+    var list: seq[Sexp] = @[]
+    while p.i < p.s.len and p.s[p.i] != ')':
+      let child = p.parseSexp()
+      if child != nil:
+        list.add(child)
+      p.skipWhitespace()
+    if p.i < p.s.len and p.s[p.i] == ')':
+      p.i += 1
+      return Sexp(kind: skList, list: list)
     else:
-      var token = ""
-      while i < s.len and s[i] notin {' ', '\n', '\t', '\r', '(', ')'}:
-        token.add(s[i])
-        i += 1
-      if token.len > 0:
-        try:
-          return Sexp(kind: skInt, intVal: parseInt(token))
-        except ValueError:
-          try:
-            return Sexp(kind: skFloat, floatVal: parseFloat(token))
-          except ValueError:
-            return Sexp(kind: skSymbol, symbol: token)
+      raise newException(ValueError, "unbalanced parentheses")
+  elif p.s[p.i] == '"':
+    p.i += 1
+    var str = ""
+    while p.i < p.s.len and p.s[p.i] != '"':
+      if p.s[p.i] == '\\':
+        p.i += 1
+        case p.s[p.i]
+        of 'n': str.add('\n')
+        of 't': str.add('\t')
+        of '"': str.add('"')
+        of '\\': str.add('\\')
+        else: str.add(p.s[p.i])
       else:
-        return nil
-  
-  return parseSexpRecursive()
+        str.add(p.s[p.i])
+      p.i += 1
+    p.i += 1
+    return Sexp(kind: skString, str: str)
+  else:
+    var token = ""
+    while p.i < p.s.len and p.s[p.i] notin {' ', '\n', '\t', '\r', '(', ')'}:
+      token.add(p.s[p.i])
+      p.i += 1
+    if token.len > 0:
+      try:
+        return Sexp(kind: skInt, intVal: parseInt(token))
+      except ValueError:
+        try:
+          return Sexp(kind: skFloat, floatVal: parseFloat(token))
+        except ValueError:
+          return Sexp(kind: skSymbol, symbol: token)
+    else:
+      return nil
+
+proc parseAllSexps(s: string): seq[Sexp] =
+  var p = initParser(s)
+  result = @[]
+  while p.i < s.len:
+    p.skipWhitespace()
+    if p.i >= s.len: break
+    let sexp = p.parseSexp()
+    if sexp != nil:
+      result.add(sexp)
 
 # Quote a string literal safely for emitted Nim source
 proc quoteStr(s: string): string = 
@@ -153,11 +168,12 @@ proc emitLambda(n: Sexp): string =
   let body = emitExpr(n.list[2])
   return "(proc(" & paramList & "): auto = return " & body & ")"
 
-proc emitDo(n: Sexp): string =
+proc emitProgn(n: Sexp): string =
   if n.list.len == 1: return "nil"
   var sb = ""
-  for i in 1..<n.list.len:
-    sb.add "  " & emitExpr(n.list[i]) & "\n"
+  for i in 1..<n.list.len - 1:
+    sb.add "  discard " & emitExpr(n.list[i]) & "\n"
+  sb.add "  " & emitExpr(n.list[n.list.len - 1]) & "\n"
   return "((proc(): auto =\n" & sb & ")())"
 
 proc emitCar(n: Sexp): string =
@@ -202,13 +218,18 @@ proc emitExpr(n: Sexp): string =
     of "if": return emitIf(n)
     of "let": return emitLet(n)
     of "lambda": return emitLambda(n)
-    of "do": return emitDo(n)
+    of "progn": return emitProgn(n)
     of "car": return emitCar(n)
     of "cdr": return emitCdr(n)
     of "cons": return emitCons(n)
     else:
       if isOpIdent(op) and n.list.len == 3:
         return "(" & emitExpr(n.list[1]) & " " & op & " " & emitExpr(n.list[2]) & ")"
+      elif isOpIdent(op) and n.list.len > 3:
+        var folded = emitExpr(n.list[1])
+        for i in 2..<n.list.len:
+          folded = "(" & folded & " " & op & " " & emitExpr(n.list[i]) & ")"
+        return folded
       else:
         var opStr = op
         if isOpIdent(op):
@@ -221,14 +242,33 @@ proc emitExpr(n: Sexp): string =
         return opStr & "(" & args & ")"
 
 proc lispToNim*(code: string): string =
-  let sexp = parseSexp(code)
-  return emitExpr(sexp)
+  let sexps = parseAllSexps(code)
+  if sexps.len == 0:
+    return ""
+  elif sexps.len == 1:
+    return emitExpr(sexps[0])
+  else:
+    var output = ""
+    for sexp in sexps:
+      output.add emitExpr(sexp) & "\n"
+    return output
 
 macro lisp*(body: string): untyped =
   try:
-    let sexp = parseSexp(body.strVal)
-    let src = emitExpr(sexp)
-    result = parseExpr(src)
+    let sexps = parseAllSexps(body.strVal)
+    if sexps.len == 0:
+      result = newStmtList()
+    elif sexps.len == 1:
+      let src = emitExpr(sexps[0])
+      result = parseExpr(src)
+    else:
+      var stmts = newStmtList()
+      for j in 0..<sexps.len - 1:
+        let src = emitExpr(sexps[j])
+        stmts.add parseStmt("discard " & src)
+      let lastSrc = emitExpr(sexps[sexps.len - 1])
+      stmts.add parseExpr(lastSrc)
+      result = stmts
   except ValueError as e:
     error(e.msg)
 

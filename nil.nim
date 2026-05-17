@@ -19,6 +19,51 @@ import os
 import lisp
 import osproc
 
+type
+  CompileMode = enum cmNone, cmCompileOnly, cmCompile, cmCompileAndRun
+
+proc transpile(content: string): string =
+  lispToNim(content)
+
+proc runNimCompiler(nimFile: string, mode: CompileMode, nimcacheDir: string = "") =
+  var cmd = "nim c --path:. "
+  case mode
+  of cmNone:
+    return
+  of cmCompileOnly:
+    cmd &= "--compileOnly "
+    if nimcacheDir.len > 0:
+      cmd &= "--nimcache:" & nimcacheDir & " "
+  of cmCompile:
+    discard
+  of cmCompileAndRun:
+    cmd &= "-r "
+  cmd &= nimFile
+  try:
+    let output = execCmd(cmd)
+    echo output
+    if mode == cmCompileOnly and nimcacheDir.len > 0:
+      echo "Generated C files in ", nimcacheDir
+  except OSError as e:
+    echo "Failed to run compiler: ", e.msg
+    echo "You can run this yourself: ", cmd
+
+proc processFile(inFilename: string, mode: CompileMode) =
+  if not fileExists(inFilename):
+    echo "Error: file not found: ", inFilename
+    quit(1)
+  let content = readFile(inFilename)
+  let nimCode = transpile(content)
+  let outFilename = changeFileExt(inFilename, ".nim")
+  writeFile(outFilename, nimCode)
+  echo "Wrote ", outFilename
+
+  if mode == cmCompileOnly:
+    let cDir = changeFileExt(inFilename, "_c")
+    runNimCompiler(outFilename, mode, cDir)
+  else:
+    runNimCompiler(outFilename, mode)
+
 proc doRepl() =
   echo "nil repl (type Ctrl-D to exit)"
   while true:
@@ -38,45 +83,17 @@ proc doRepl() =
     except Exception as e:
       echo "Error: ", e.msg
 
-proc compileFile(inFilename: string) =
-  if not fileExists(inFilename):
-    echo "Error: file not found: ", inFilename
-    quit(1)
-  let content = readFile(inFilename)
-  let nimCode = lispToNim(content)
-  let outFilename = changeFileExt(inFilename, ".nim")
-  writeFile(outFilename, nimCode)
-  echo "Wrote ", outFilename
-
-proc runFile(inFilename: string) =
-  # Generate a .nim file and attempt to compile+run it using the Nim compiler.
-  if not fileExists(inFilename):
-    echo "Error: file not found: ", inFilename
-    quit(1)
-  let content = readFile(inFilename)
-  let nimCode = lispToNim(content)
-  let outFilename = changeFileExt(inFilename, ".nim")
-  writeFile(outFilename, nimCode)
-  echo "Wrote ", outFilename
-
-  # Try to compile and run with `nim c --path:. -r <outFilename>`
-  let cmd = "nim c --path:. -r " & outFilename
-  try:
-    let output = execCmd(cmd)
-    echo output
-  except OSError as e:
-    echo "Failed to run compiler: ", e.msg
-    echo "You can run this yourself: nim c --path:. -r ", outFilename
-
 proc showHelp() =
   echo "nil (Nim Implementation of Lisp)"
   echo "https://github.com/takeiteasy/nil"
   echo ""
   echo "Usage:"
-  echo "  nil run <file>      # compile and run a .lisp/.nil file"
-  echo "  nil compile <file>  # emit a .nim file from input"
-  echo "  nil repl            # interactive REPL (prints generated Nim)"
-  echo "  nil -h|--help       # show this help"
+  echo "  nil run <file>       # transpile -> compile -> run a .lisp/.nil file"
+  echo "  nil compile <file>   # transpile -> compile to executable"
+  echo "  nil transpile <file>     # emit a .nim file from input"
+  echo "  nil transpile -c <file>  # emit C source files from input"
+  echo "  nil repl             # interactive REPL (prints generated Nim)"
+  echo "  nil -h|--help        # show this help"
 
 proc main() =
   if paramCount() == 0:
@@ -89,12 +106,23 @@ proc main() =
     if paramCount() < 2:
       echo "run requires a filename"
       quit(1)
-    runFile(paramStr(2))
+    processFile(paramStr(2), cmCompileAndRun)
   of "compile":
     if paramCount() < 2:
       echo "compile requires a filename"
       quit(1)
-    compileFile(paramStr(2))
+    processFile(paramStr(2), cmCompile)
+  of "transpile":
+    if paramCount() < 2:
+      echo "transpile requires a filename"
+      quit(1)
+    if paramStr(2) == "-c":
+      if paramCount() < 3:
+        echo "transpile -c requires a filename"
+        quit(1)
+      processFile(paramStr(3), cmCompileOnly)
+    else:
+      processFile(paramStr(2), cmNone)
   of "repl":
     doRepl()
   of "-h", "--help":
