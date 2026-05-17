@@ -66,7 +66,7 @@ suite "lisp macro tests":
 
   test "lispToNim with single expression":
     let nimCode = lispToNim("(+ 1 2)")
-    check(nimCode == "(1 + 2)")
+    check(nimCode.contains("(1 + 2)"))
 
   test "operator with more than 2 args":
     let result = lisp("(+ 1 2 3 4)")
@@ -136,3 +136,76 @@ suite "lisp macro tests":
   test "quote syntax with nested lists":
     let result = lisp("'((1 2) (3 4))")
     check(result == @[@[1, 2], @[3, 4]])
+
+  test "line comments":
+    let result = lisp("(+ 1 2) ; this is a comment\n(* 3 4)")
+    check(result == 12)
+
+  test "block comments":
+    let result = lisp("(+ 1 2) #| block comment |# (* 3 4)")
+    check(result == 12)
+
+  test "multi-line block comments":
+    let result = lisp("""(+ 1 2) #| this is
+a multi-line
+comment |# (* 3 4)""")
+    check(result == 12)
+
+  test "inline comments":
+    let result = lisp("(+ 1 2) ; comment\n")
+    check(result == 3)
+
+  test "cond with single clause":
+    let result = lisp("(cond ((> 5 3) 10) (else 0))")
+    check(result == 10)
+
+  test "cond with multiple clauses":
+    let result = lisp("(cond ((> 5 10) 1) ((> 5 3) 2) (else 3))")
+    check(result == 2)
+
+  test "cond with else":
+    let result = lisp("(cond ((> 5 10) 1) (else 99))")
+    check(result == 99)
+
+  test "and with true values":
+    let result = lisp("(and (> 5 3) (< 5 10))")
+    check(result == true)
+
+  test "and with false value":
+    let result = lisp("(and (> 5 3) (< 5 3))")
+    check(result == false)
+
+  test "or with true value":
+    let result = lisp("(or (> 5 3) (< 5 3))")
+    check(result == true)
+
+  test "or with all false":
+    let result = lisp("(or (< 5 3) (> 3 5))")
+    check(result == false)
+
+  test "map over list":
+    let double = lisp("(lambda ((x int)) (* x 2))")
+    let result = lisp("(map double @[1, 2, 3])")
+    check(result == @[2, 4, 6])
+
+  test "filter even numbers":
+    let isEven = lisp("(lambda ((x int)) (== (mod x 2) 0))")
+    let result = lisp("(filter isEven @[1, 2, 3, 4, 5, 6])")
+    check(result == @[2, 4, 6])
+
+  test "map with lambda inline":
+    let result = lisp("(map (lambda ((x int)) (+ x 1)) @[1, 2, 3])")
+    check(result == @[2, 3, 4])
+
+  test "set! mutation in let":
+    let result = lisp("(let ((x 10)) (set! x 20) x)")
+    check(result == 20)
+
+  test "set! with calculation":
+    let result = lisp("(let ((x 5)) (set! x (+ x 10)) x)")
+    check(result == 15)
+
+  test "cond transpiles to if/else":
+    let nimCode = lispToNim("(cond ((> x 0) 1) (else -1))")
+    check(nimCode.contains("if"))
+    check(nimCode.contains("else"))

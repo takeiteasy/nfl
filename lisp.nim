@@ -15,7 +15,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import macros, strutils
+import macros, strutils, os
+
+const stdlibPath = currentSourcePath().parentDir() / "std" / "std.nil"
+const stdlib* = staticRead(stdlibPath)
 
 type
   SourceLoc = object
@@ -44,14 +47,37 @@ type
 proc initParser(s: string): Parser =
   Parser(s: s, i: 0, line: 1, col: 1)
 
+proc currentLoc(p: Parser): SourceLoc
+
+proc parseError(loc: SourceLoc, msg: string): ref ValueError
+
 proc skipWhitespace(p: var Parser) =
-  while p.i < p.s.len and p.s[p.i] in {' ', '\n', '\t', '\r'}:
-    if p.s[p.i] == '\n':
-      p.line += 1
-      p.col = 1
+  while p.i < p.s.len:
+    if p.s[p.i] in {' ', '\n', '\t', '\r'}:
+      if p.s[p.i] == '\n':
+        p.line += 1
+        p.col = 1
+      else:
+        p.col += 1
+      p.i += 1
+    elif p.s[p.i] == ';':
+      while p.i < p.s.len and p.s[p.i] != '\n':
+        p.i += 1
+    elif p.i + 1 < p.s.len and p.s[p.i] == '#' and p.s[p.i + 1] == '|':
+      p.i += 2
+      while p.i + 1 < p.s.len and not (p.s[p.i] == '|' and p.s[p.i + 1] == '#'):
+        if p.s[p.i] == '\n':
+          p.line += 1
+          p.col = 1
+        else:
+          p.col += 1
+        p.i += 1
+      if p.i + 1 < p.s.len:
+        p.i += 2
+      else:
+        raise parseError(p.currentLoc(), "unterminated block comment")
     else:
-      p.col += 1
-    p.i += 1
+      break
 
 proc currentLoc(p: Parser): SourceLoc =
   SourceLoc(line: p.line, col: p.col)
@@ -150,7 +176,7 @@ proc parseSexp(p: var Parser): Sexp =
     return quoted
   else:
     var token = ""
-    while p.i < p.s.len and p.s[p.i] notin {' ', '\n', '\t', '\r', '(', ')', '[', ']', ',', '\''}:
+    while p.i < p.s.len and p.s[p.i] notin {' ', '\n', '\t', '\r', '(', ')', '[', ']', ',', '\'', ';', '#'}:
       token.add(p.s[p.i])
       p.advance()
     if token.len > 0:
@@ -174,7 +200,6 @@ proc parseAllSexps(s: string): seq[Sexp] =
     if sexp != nil:
       result.add(sexp)
 
-# Quote a string literal safely for emitted Nim source
 proc quoteStr(s: string): string = 
   var res = newStringOfCap(s.len * 2 + 2)
   res.add "\""
@@ -188,14 +213,37 @@ proc quoteStr(s: string): string =
   res.add "\""
   result = res
 
-# Detect operator-like identifiers (non-alphanumeric)
 proc isOpIdent(s: string): bool = 
   if s.len == 0: return false
   for ch in s:
-    if not (ch.isAlphaNumeric or ch == '_'): return true
-  return false
+    if ch.isAlphaNumeric or ch == '_': return false
+  return true
+
+proc sanitizeName(s: string): string =
+  result = newStringOfCap(s.len)
+  for ch in s:
+    case ch
+    of '-': result.add '_'
+    of '?': result.add 'p'
+    of '!': discard
+    else: result.add ch
+
+proc isDefine(n: Sexp): bool
+
+proc opName(n: Sexp): string =
+  if n.kind == skList and n.list.len > 0 and n.list[0].kind == skSymbol:
+    return n.list[0].symbol
+  return ""
 
 proc emitExpr(n: Sexp, quoted: bool = false): string
+proc emitBody(exprs: seq[Sexp]): string
+proc emitDefine(n: Sexp, topLevel: bool): string
+proc indentLines(s: string, spaces: int): string
+
+proc forceValue(n: Sexp): string =
+  result = emitExpr(n)
+  if opName(n) in ["echo", "stdout.write", "stderr.write"]:
+    result = "(" & result & "; 0)"
 
 proc emitIf(n: Sexp): string =
   if n.list.len != 4:
@@ -206,8 +254,8 @@ proc emitIf(n: Sexp): string =
   return "(if " & cond & ": " & thenB & " else: " & elseB & ")"
 
 proc emitLet(n: Sexp): string =
-  if n.list.len != 3:
-    raise parseError(n.loc, "let requires 2 arguments: bindings and body")
+  if n.list.len < 3:
+    raise parseError(n.loc, "let requires bindings and at least 1 body expression")
   let bindings = n.list[1]
   if bindings.kind != skList:
     raise parseError(bindings.loc, "let bindings must be a list")
@@ -217,11 +265,17 @@ proc emitLet(n: Sexp): string =
       raise parseError(binding.loc, "each binding must be (name value)")
     if binding.list[0].kind != skSymbol:
       raise parseError(binding.list[0].loc, "binding name must be a symbol")
-    let name = binding.list[0].symbol
+    let name = sanitizeName(binding.list[0].symbol)
     let val = emitExpr(binding.list[1])
-    binds.add "  let " & name & " = " & val & "\n"
-  let body = emitExpr(n.list[2])
-  return "((proc(): auto =\n" & binds & "  return " & body & "\n)())"
+    if val.contains("\n"):
+      binds.add "  var " & name & " = " & val.replace("\n", "\n  ") & "\n"
+    else:
+      binds.add "  var " & name & " = " & val & "\n"
+  var body = ""
+  for i in 2..<n.list.len - 1:
+    body.add "  discard " & forceValue(n.list[i]) & "\n"
+  body.add "  " & emitExpr(n.list[n.list.len - 1]) & "\n"
+  return "(block:\n" & binds & body & ")"
 
 proc emitLambda(n: Sexp): string =
   if n.list.len != 3:
@@ -232,24 +286,31 @@ proc emitLambda(n: Sexp): string =
   var paramList = ""
   var sep = ""
   for p in params.list:
-    if p.kind != skList or p.list.len != 2:
-      raise parseError(p.loc, "lambda param must be (name type)")
-    if p.list[0].kind != skSymbol or p.list[1].kind != skSymbol:
-      raise parseError(p.list[0].loc, "lambda param name and type must be symbols")
-    let name = p.list[0].symbol
-    let typ = p.list[1].symbol
-    paramList.add sep & name & ": " & typ
-    sep = ", "
-  let body = emitExpr(n.list[2])
-  return "(proc(" & paramList & "): auto = return " & body & ")"
+    if p.kind == skSymbol:
+      let name = sanitizeName(p.symbol)
+      paramList.add sep & name & ": auto"
+      sep = ", "
+    elif p.kind == skList:
+      if p.list.len != 2:
+        raise parseError(p.loc, "typed param must be (name type)")
+      if p.list[0].kind != skSymbol or p.list[1].kind != skSymbol:
+        raise parseError(p.list[0].loc, "param name and type must be symbols")
+      let name = sanitizeName(p.list[0].symbol)
+      let typ = p.list[1].symbol
+      paramList.add sep & name & ": " & typ
+      sep = ", "
+    else:
+      raise parseError(p.loc, "param must be a symbol or (name type)")
+  let bodyContent = emitBody(@[n.list[2]])
+  return "(proc(" & paramList & "): auto =\n" & indentLines(bodyContent, 2) & "\n)"
 
 proc emitProgn(n: Sexp): string =
   if n.list.len == 1: return "nil"
   var sb = ""
   for i in 1..<n.list.len - 1:
-    sb.add "  discard " & emitExpr(n.list[i]) & "\n"
+    sb.add "  discard " & forceValue(n.list[i]) & "\n"
   sb.add "  " & emitExpr(n.list[n.list.len - 1]) & "\n"
-  return "((proc(): auto =\n" & sb & ")())"
+  return "(block:\n" & sb & ")"
 
 proc emitCar(n: Sexp): string =
   if n.list.len != 2:
@@ -297,19 +358,139 @@ proc emitAppend(n: Sexp): string =
     output = "(" & output & " & " & next & ")"
   return output
 
-proc emitList(n: Sexp): string =
-  var args = ""
-  var sep = ""
-  for i in 1..<n.list.len:
-    args.add sep & emitExpr(n.list[i])
-    sep = ", "
-  return "@[" & args & "]"
-
 proc emitReverse(n: Sexp): string =
   if n.list.len != 2:
     raise parseError(n.loc, "reverse requires 1 argument")
   let list = emitExpr(n.list[1])
   return "block:\n  var revtmp = " & list & "\n  for i in 0 .. revtmp.len div 2 - 1:\n    let j = revtmp.len - 1 - i\n    let tmp = revtmp[i]\n    revtmp[i] = revtmp[j]\n    revtmp[j] = tmp\n  revtmp"
+
+proc emitSet(n: Sexp): string =
+  if n.list.len != 3:
+    raise parseError(n.loc, "set! requires 2 arguments: name and value")
+  if n.list[1].kind != skSymbol:
+    raise parseError(n.list[1].loc, "set! name must be a symbol")
+  let name = sanitizeName(n.list[1].symbol)
+  let val = emitExpr(n.list[2])
+  return "(block: " & name & " = " & val & "; " & name & ")"
+
+proc emitCond(n: Sexp): string =
+  if n.list.len < 2:
+    raise parseError(n.loc, "cond requires at least 1 clause")
+  var output = "(if "
+  var first = true
+  for i in 1..<n.list.len:
+    let clause = n.list[i]
+    if clause.kind != skList or clause.list.len < 2:
+      raise parseError(clause.loc, "each cond clause must be (test body...)")
+    let test = clause.list[0]
+    var bodyStr = emitExpr(clause.list[1])
+    for j in 2..<clause.list.len:
+      bodyStr = "(discard " & bodyStr & "; " & emitExpr(clause.list[j]) & ")"
+    if test.kind == skSymbol and test.symbol == "else":
+      if not first:
+        output.add " "
+      output.add "else: " & bodyStr
+    else:
+      if first:
+        output.add emitExpr(test) & ": " & bodyStr
+        first = false
+      else:
+        output.add " elif " & emitExpr(test) & ": " & bodyStr
+  output.add ")"
+  return output
+
+proc emitAnd(n: Sexp): string =
+  if n.list.len < 2:
+    raise parseError(n.loc, "and requires at least 1 argument")
+  if n.list.len == 2:
+    return emitExpr(n.list[1])
+  var output = emitExpr(n.list[1])
+  for i in 2..<n.list.len:
+    output = "(if " & output & ": " & emitExpr(n.list[i]) & " else: false)"
+  return output
+
+proc emitOr(n: Sexp): string =
+  if n.list.len < 2:
+    raise parseError(n.loc, "or requires at least 1 argument")
+  if n.list.len == 2:
+    return emitExpr(n.list[1])
+  var output = emitExpr(n.list[1])
+  for i in 2..<n.list.len:
+    output = "(if " & output & ": " & output & " else: " & emitExpr(n.list[i]) & ")"
+  return output
+
+proc isDefine(n: Sexp): bool =
+  n.kind == skList and n.list.len > 0 and
+  n.list[0].kind == skSymbol and n.list[0].symbol == "define"
+
+proc emitBody(exprs: seq[Sexp]): string =
+  var bindings = ""
+  var bodyExprs: seq[Sexp] = @[]
+  
+  for expr in exprs:
+    if isDefine(expr):
+      bindings.add emitDefine(expr, false) & "\n"
+    else:
+      bodyExprs.add(expr)
+  
+  if bodyExprs.len == 0:
+    return bindings & "nil"
+  
+  var body = ""
+  for i in 0..<bodyExprs.len - 1:
+    body.add "discard " & forceValue(bodyExprs[i]) & "\n"
+  body.add emitExpr(bodyExprs[bodyExprs.len - 1]) & "\n"
+  
+  return bindings & body
+
+proc indentLines(s: string, spaces: int): string =
+  let prefix = repeat(' ', spaces)
+  result = ""
+  var first = true
+  for line in s.splitLines():
+    if line.strip().len == 0: continue
+    if not first:
+      result.add "\n"
+    result.add prefix & line
+    first = false
+
+proc emitDefine(n: Sexp, topLevel: bool): string =
+  if n.list.len < 3:
+    raise parseError(n.loc, "define requires name and value")
+  
+  if n.list[1].kind == skSymbol:
+    let name = sanitizeName(n.list[1].symbol)
+    if n.list.len == 3:
+      let val = emitExpr(n.list[2])
+      return "let " & name & " = " & val
+    else:
+      var bodyContent = emitBody(n.list[2..^1])
+      return "let " & name & " = (block:\n" & indentLines(bodyContent, 2) & "\n)"
+  elif n.list[1].kind == skList:
+    let nameNode = n.list[1].list[0]
+    if nameNode.kind != skSymbol:
+      raise parseError(nameNode.loc, "function name must be a symbol")
+    let name = sanitizeName(nameNode.symbol)
+    var params = ""
+    var sep = ""
+    for i in 1..<n.list[1].list.len:
+      let p = n.list[1].list[i]
+      if p.kind == skSymbol:
+        params.add sep & sanitizeName(p.symbol) & ": auto"
+        sep = ", "
+      elif p.kind == skList:
+        if p.list.len != 2:
+          raise parseError(p.loc, "typed param must be (name type)")
+        params.add sep & sanitizeName(p.list[0].symbol) & ": " & p.list[1].symbol
+        sep = ", "
+      else:
+        raise parseError(p.loc, "param must be a symbol or (name type)")
+    
+    let bodyContent = emitBody(n.list[2..^1])
+    
+    return "proc " & name & "(" & params & "): auto =\n" & indentLines(bodyContent, 2) & "\n"
+  else:
+    raise parseError(n.list[1].loc, "define name must be a symbol or (name params...)")
 
 proc emitExpr(n: Sexp, quoted: bool = false): string =
   if n == nil: return "nil"
@@ -317,7 +498,7 @@ proc emitExpr(n: Sexp, quoted: bool = false): string =
   of skSymbol:
     if quoted:
       return quoteStr(n.symbol)
-    return n.symbol
+    return sanitizeName(n.symbol)
   of skString:
     return quoteStr(n.str)
   of skInt:
@@ -358,8 +539,41 @@ proc emitExpr(n: Sexp, quoted: bool = false): string =
     of "list?": return emitListPred(n)
     of "length": return emitLength(n)
     of "append": return emitAppend(n)
-    of "list": return emitList(n)
     of "reverse": return emitReverse(n)
+    of "set!": return emitSet(n)
+    of "define": return emitDefine(n, false)
+    of "cond": return emitCond(n)
+    of "and": return emitAnd(n)
+    of "or": return emitOr(n)
+    of "list":
+      var args = ""
+      var sep = ""
+      for i in 1..<n.list.len:
+        args.add sep & emitExpr(n.list[i])
+        sep = ", "
+      return "@[" & args & "]"
+    of "map":
+      if n.list.len != 3:
+        raise parseError(n.loc, "map requires 2 arguments: function and list")
+      let fn = emitExpr(n.list[1])
+      let lst = emitExpr(n.list[2])
+      let fnIndented = indentLines(fn, 6)
+      return "block:\n    var r: seq[type(" & lst & "[0])] = @[]\n    for x in " & lst & ":\n      r.add((" & fnIndented & ")(x))\n    r"
+    of "filter":
+      if n.list.len != 3:
+        raise parseError(n.loc, "filter requires 2 arguments: predicate and list")
+      let pred = emitExpr(n.list[1])
+      let lst = emitExpr(n.list[2])
+      let predIndented = indentLines(pred, 6)
+      return "block:\n    var r: seq[type(" & lst & "[0])] = @[]\n    for x in " & lst & ":\n      if (" & predIndented & ")(x):\n        r.add(x)\n    r"
+    of "mod":
+      if n.list.len != 3:
+        raise parseError(n.loc, "mod requires 2 arguments")
+      return "(" & emitExpr(n.list[1]) & " mod " & emitExpr(n.list[2]) & ")"
+    of "div":
+      if n.list.len != 3:
+        raise parseError(n.loc, "div requires 2 arguments")
+      return "(" & emitExpr(n.list[1]) & " div " & emitExpr(n.list[2]) & ")"
     else:
       if isOpIdent(op) and n.list.len == 3:
         return "(" & emitExpr(n.list[1]) & " " & op & " " & emitExpr(n.list[2]) & ")"
@@ -369,7 +583,7 @@ proc emitExpr(n: Sexp, quoted: bool = false): string =
           folded = "(" & folded & " " & op & " " & emitExpr(n.list[i]) & ")"
         return folded
       else:
-        var opStr = op
+        var opStr = sanitizeName(op)
         if isOpIdent(op):
           opStr = "(" & op & ")"
         var args = ""
@@ -380,33 +594,43 @@ proc emitExpr(n: Sexp, quoted: bool = false): string =
         return opStr & "(" & args & ")"
 
 proc lispToNim*(code: string): string =
-  let sexps = parseAllSexps(code)
+  let fullCode = stdlib & "\n" & code
+  let sexps = parseAllSexps(fullCode)
   if sexps.len == 0:
     return ""
-  elif sexps.len == 1:
-    return emitExpr(sexps[0])
-  else:
-    var output = ""
-    for sexp in sexps:
-      output.add emitExpr(sexp) & "\n"
-    return output
+  var output = ""
+  for i, sexp in sexps:
+    if sexp.kind == skList and sexp.list.len > 0 and
+       sexp.list[0].kind == skSymbol and sexp.list[0].symbol == "define":
+      output.add emitDefine(sexp, true) & "\n"
+    else:
+      output.add "discard " & forceValue(sexp) & "\n"
+  return output
 
 macro lisp*(body: string): untyped =
   try:
     let sexps = parseAllSexps(body.strVal)
     if sexps.len == 0:
       result = newStmtList()
-    elif sexps.len == 1:
-      let src = emitExpr(sexps[0])
-      result = parseStmt(src)
     else:
       var stmts = newStmtList()
       for j in 0..<sexps.len - 1:
-        let src = emitExpr(sexps[j])
-        stmts.add parseStmt("discard " & src)
-      let lastSrc = emitExpr(sexps[sexps.len - 1])
-      stmts.add parseStmt(lastSrc)
+        let s = sexps[j]
+        if s.kind == skList and s.list.len > 0 and
+           s.list[0].kind == skSymbol and s.list[0].symbol == "define":
+          let src = emitDefine(s, true)
+          stmts.add parseStmt(src)
+        else:
+          let src = emitExpr(s)
+          stmts.add parseStmt("discard " & src)
+      let lastSexp = sexps[sexps.len - 1]
+      if lastSexp.kind == skList and lastSexp.list.len > 0 and
+         lastSexp.list[0].kind == skSymbol and lastSexp.list[0].symbol == "define":
+        let src = emitDefine(lastSexp, true)
+        stmts.add parseStmt(src)
+      else:
+        let lastSrc = emitExpr(lastSexp)
+        stmts.add parseStmt(lastSrc)
       result = stmts
   except ValueError as e:
     error(e.msg)
-

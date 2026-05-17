@@ -18,6 +18,7 @@
 import os
 import lisp
 import osproc
+import strutils
 
 type
   CompileMode = enum cmNone, cmCompileOnly, cmCompile, cmCompileAndRun
@@ -66,22 +67,91 @@ proc processFile(inFilename: string, mode: CompileMode) =
 
 proc doRepl() =
   echo "nil repl (type Ctrl-D to exit)"
+  var accumulated = ""
+  var parenDepth = 0
+  var bracketDepth = 0
+  var inString = false
+  var stringEscape = false
+
+  proc countDelimiters(s: string) =
+    parenDepth = 0
+    bracketDepth = 0
+    inString = false
+    stringEscape = false
+    for ch in s:
+      if stringEscape:
+        stringEscape = false
+        continue
+      if ch == '\\' and inString:
+        stringEscape = true
+        continue
+      if ch == '"':
+        inString = not inString
+        continue
+      if inString:
+        continue
+      case ch
+      of '(': parenDepth += 1
+      of ')': parenDepth -= 1
+      of '[': bracketDepth += 1
+      of ']': bracketDepth -= 1
+      else: discard
+
+  proc isComplete(s: string): bool =
+    countDelimiters(s)
+    return parenDepth == 0 and bracketDepth == 0 and not inString
+
+  let tmpDir = getTempDir()
+  let tmpBase = tmpDir / "nil_repl_" & $getCurrentProcessId()
+
   while true:
     try:
-      stdout.write "> "
+      let prompt = if accumulated.len > 0: "... " else: "> "
+      stdout.write prompt
       stdout.flushFile()
       let line = stdin.readLine()
-      if line.len > 0:
-        # Show the generated Nim for the entered s-expression
-        try:
-          let nimSrc = lispToNim(line)
-          echo nimSrc
-        except Exception as e:
-          echo "Error: ", e.msg
+
+      if accumulated.len > 0:
+        accumulated &= "\n" & line
+      else:
+        accumulated = line
+
+      if not isComplete(accumulated):
+        continue
+
+      let nimCode = lispToNim(accumulated)
+      accumulated = ""
+
+      if nimCode.len == 0:
+        continue
+
+      let tmpNim = tmpBase & ".nim"
+      writeFile(tmpNim, nimCode)
+
+      let tmpExe = tmpBase & (if defined(windows): ".exe" else: "")
+      let cmd = "nim c --hints:off --warnings:off -o:" & tmpExe & " " & tmpNim
+      let exitCode = execCmd(cmd)
+
+      if exitCode == 0:
+        let output = execProcess(tmpExe)
+        if output.len > 0:
+          stdout.write output
+      else:
+        echo "Compilation error"
+
+      try:
+        removeFile(tmpNim)
+        if fileExists(tmpExe):
+          removeFile(tmpExe)
+      except:
+        discard
+
     except EOFError:
+      echo ""
       break
     except Exception as e:
       echo "Error: ", e.msg
+      accumulated = ""
 
 proc showHelp() =
   echo "nil (Nim Implementation of Lisp)"
