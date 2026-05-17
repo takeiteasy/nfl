@@ -18,8 +18,15 @@
 import macros, strutils
 
 type
+  SourceLoc = object
+    line: int
+    col: int
+
   SexpKind = enum skList, skSymbol, skString, skInt, skFloat
   Sexp = ref object
+    loc: SourceLoc
+    isBracket: bool
+    isQuoted: bool
     case kind: SexpKind
     of skList: list: seq[Sexp]
     of skSymbol: symbol: string
@@ -31,20 +38,47 @@ type
   Parser = object
     s: string
     i: int
+    line: int
+    col: int
 
 proc initParser(s: string): Parser =
-  Parser(s: s, i: 0)
+  Parser(s: s, i: 0, line: 1, col: 1)
 
 proc skipWhitespace(p: var Parser) =
   while p.i < p.s.len and p.s[p.i] in {' ', '\n', '\t', '\r'}:
+    if p.s[p.i] == '\n':
+      p.line += 1
+      p.col = 1
+    else:
+      p.col += 1
     p.i += 1
+
+proc currentLoc(p: Parser): SourceLoc =
+  SourceLoc(line: p.line, col: p.col)
+
+proc advance(p: var Parser) =
+  if p.i < p.s.len:
+    if p.s[p.i] == '\n':
+      p.line += 1
+      p.col = 1
+    else:
+      p.col += 1
+    p.i += 1
+
+proc parseError(loc: SourceLoc, msg: string): ref ValueError =
+  var e: ref ValueError
+  new(e)
+  e.msg = "line " & $loc.line & ":" & $loc.col & ": " & msg
+  return e
 
 proc parseSexp(p: var Parser): Sexp =
   p.skipWhitespace()
   if p.i >= p.s.len: return nil
 
+  let loc = p.currentLoc()
+
   if p.s[p.i] == '(':
-    p.i += 1
+    p.advance()
     var list: seq[Sexp] = @[]
     while p.i < p.s.len and p.s[p.i] != ')':
       let child = p.parseSexp()
@@ -52,16 +86,49 @@ proc parseSexp(p: var Parser): Sexp =
         list.add(child)
       p.skipWhitespace()
     if p.i < p.s.len and p.s[p.i] == ')':
-      p.i += 1
-      return Sexp(kind: skList, list: list)
+      p.advance()
+      return Sexp(kind: skList, list: list, loc: loc)
     else:
-      raise newException(ValueError, "unbalanced parentheses")
+      raise parseError(loc, "unbalanced parentheses")
+  elif p.s[p.i] == '@' and p.i + 1 < p.s.len and p.s[p.i + 1] == '[':
+    p.advance()
+    p.advance()
+    var list: seq[Sexp] = @[]
+    while p.i < p.s.len and p.s[p.i] != ']':
+      let child = p.parseSexp()
+      if child != nil:
+        list.add(child)
+      p.skipWhitespace()
+      while p.i < p.s.len and p.s[p.i] == ',':
+        p.advance()
+        p.skipWhitespace()
+    if p.i < p.s.len and p.s[p.i] == ']':
+      p.advance()
+      return Sexp(kind: skList, list: list, loc: loc, isBracket: true)
+    else:
+      raise parseError(loc, "unbalanced brackets")
+  elif p.s[p.i] == '[':
+    p.advance()
+    var list: seq[Sexp] = @[]
+    while p.i < p.s.len and p.s[p.i] != ']':
+      let child = p.parseSexp()
+      if child != nil:
+        list.add(child)
+      p.skipWhitespace()
+      while p.i < p.s.len and p.s[p.i] == ',':
+        p.advance()
+        p.skipWhitespace()
+    if p.i < p.s.len and p.s[p.i] == ']':
+      p.advance()
+      return Sexp(kind: skList, list: list, loc: loc)
+    else:
+      raise parseError(loc, "unbalanced brackets")
   elif p.s[p.i] == '"':
-    p.i += 1
+    p.advance()
     var str = ""
     while p.i < p.s.len and p.s[p.i] != '"':
       if p.s[p.i] == '\\':
-        p.i += 1
+        p.advance()
         case p.s[p.i]
         of 'n': str.add('\n')
         of 't': str.add('\t')
@@ -70,22 +137,30 @@ proc parseSexp(p: var Parser): Sexp =
         else: str.add(p.s[p.i])
       else:
         str.add(p.s[p.i])
-      p.i += 1
-    p.i += 1
-    return Sexp(kind: skString, str: str)
+      p.advance()
+    p.advance()
+    return Sexp(kind: skString, str: str, loc: loc)
+  elif p.s[p.i] == '\'':
+    p.advance()
+    let quoted = p.parseSexp()
+    if quoted == nil:
+      raise parseError(loc, "quote requires an expression")
+    if quoted.kind == skList:
+      quoted.isQuoted = true
+    return quoted
   else:
     var token = ""
-    while p.i < p.s.len and p.s[p.i] notin {' ', '\n', '\t', '\r', '(', ')'}:
+    while p.i < p.s.len and p.s[p.i] notin {' ', '\n', '\t', '\r', '(', ')', '[', ']', ',', '\''}:
       token.add(p.s[p.i])
-      p.i += 1
+      p.advance()
     if token.len > 0:
       try:
-        return Sexp(kind: skInt, intVal: parseInt(token))
+        return Sexp(kind: skInt, intVal: parseInt(token), loc: loc)
       except ValueError:
         try:
-          return Sexp(kind: skFloat, floatVal: parseFloat(token))
+          return Sexp(kind: skFloat, floatVal: parseFloat(token), loc: loc)
         except ValueError:
-          return Sexp(kind: skSymbol, symbol: token)
+          return Sexp(kind: skSymbol, symbol: token, loc: loc)
     else:
       return nil
 
@@ -120,11 +195,11 @@ proc isOpIdent(s: string): bool =
     if not (ch.isAlphaNumeric or ch == '_'): return true
   return false
 
-proc emitExpr(n: Sexp): string
+proc emitExpr(n: Sexp, quoted: bool = false): string
 
 proc emitIf(n: Sexp): string =
   if n.list.len != 4:
-    raise newException(ValueError, "if requires 3 arguments: condition, then, else")
+    raise parseError(n.loc, "if requires 3 arguments: condition, then, else")
   let cond = emitExpr(n.list[1])
   let thenB = emitExpr(n.list[2])
   let elseB = emitExpr(n.list[3])
@@ -132,16 +207,16 @@ proc emitIf(n: Sexp): string =
 
 proc emitLet(n: Sexp): string =
   if n.list.len != 3:
-    raise newException(ValueError, "let requires 2 arguments: bindings and body")
+    raise parseError(n.loc, "let requires 2 arguments: bindings and body")
   let bindings = n.list[1]
   if bindings.kind != skList:
-    raise newException(ValueError, "let bindings must be a list")
+    raise parseError(bindings.loc, "let bindings must be a list")
   var binds = ""
   for binding in bindings.list:
     if binding.kind != skList or binding.list.len != 2:
-      raise newException(ValueError, "each binding must be (name value)")
+      raise parseError(binding.loc, "each binding must be (name value)")
     if binding.list[0].kind != skSymbol:
-      raise newException(ValueError, "binding name must be a symbol")
+      raise parseError(binding.list[0].loc, "binding name must be a symbol")
     let name = binding.list[0].symbol
     let val = emitExpr(binding.list[1])
     binds.add "  let " & name & " = " & val & "\n"
@@ -150,17 +225,17 @@ proc emitLet(n: Sexp): string =
 
 proc emitLambda(n: Sexp): string =
   if n.list.len != 3:
-    raise newException(ValueError, "lambda requires 2 arguments: params and body")
+    raise parseError(n.loc, "lambda requires 2 arguments: params and body")
   let params = n.list[1]
   if params.kind != skList:
-    raise newException(ValueError, "lambda params must be a list")
+    raise parseError(params.loc, "lambda params must be a list")
   var paramList = ""
   var sep = ""
   for p in params.list:
     if p.kind != skList or p.list.len != 2:
-      raise newException(ValueError, "lambda param must be (name type)")
+      raise parseError(p.loc, "lambda param must be (name type)")
     if p.list[0].kind != skSymbol or p.list[1].kind != skSymbol:
-      raise newException(ValueError, "lambda param name and type must be symbols")
+      raise parseError(p.list[0].loc, "lambda param name and type must be symbols")
     let name = p.list[0].symbol
     let typ = p.list[1].symbol
     paramList.add sep & name & ": " & typ
@@ -178,27 +253,70 @@ proc emitProgn(n: Sexp): string =
 
 proc emitCar(n: Sexp): string =
   if n.list.len != 2:
-    raise newException(ValueError, "car requires 1 argument: a list")
+    raise parseError(n.loc, "car requires 1 argument: a list")
   let list = emitExpr(n.list[1])
   return list & "[0]"
 
 proc emitCdr(n: Sexp): string =
   if n.list.len != 2:
-    raise newException(ValueError, "cdr requires 1 argument: a list")
+    raise parseError(n.loc, "cdr requires 1 argument: a list")
   let list = emitExpr(n.list[1])
   return list & "[1..^1]"
 
 proc emitCons(n: Sexp): string =
   if n.list.len != 3:
-    raise newException(ValueError, "cons requires 2 arguments: an element and a list")
+    raise parseError(n.loc, "cons requires 2 arguments: an element and a list")
   let elem = emitExpr(n.list[1])
   let list = emitExpr(n.list[2])
   return "(@[" & elem & "] & " & list & ")"
 
-proc emitExpr(n: Sexp): string =
+proc emitNullPred(n: Sexp): string =
+  if n.list.len != 2:
+    raise parseError(n.loc, "null? requires 1 argument")
+  let list = emitExpr(n.list[1])
+  return "(" & list & ".len == 0)"
+
+proc emitListPred(n: Sexp): string =
+  if n.list.len != 2:
+    raise parseError(n.loc, "list? requires 1 argument")
+  let expr = emitExpr(n.list[1])
+  return "compiles(" & expr & "[0])"
+
+proc emitLength(n: Sexp): string =
+  if n.list.len != 2:
+    raise parseError(n.loc, "length requires 1 argument")
+  let list = emitExpr(n.list[1])
+  return "(" & list & ".len)"
+
+proc emitAppend(n: Sexp): string =
+  if n.list.len < 2:
+    raise parseError(n.loc, "append requires at least 1 argument")
+  var output = emitExpr(n.list[1])
+  for i in 2..<n.list.len:
+    let next = emitExpr(n.list[i])
+    output = "(" & output & " & " & next & ")"
+  return output
+
+proc emitList(n: Sexp): string =
+  var args = ""
+  var sep = ""
+  for i in 1..<n.list.len:
+    args.add sep & emitExpr(n.list[i])
+    sep = ", "
+  return "@[" & args & "]"
+
+proc emitReverse(n: Sexp): string =
+  if n.list.len != 2:
+    raise parseError(n.loc, "reverse requires 1 argument")
+  let list = emitExpr(n.list[1])
+  return "block:\n  var revtmp = " & list & "\n  for i in 0 .. revtmp.len div 2 - 1:\n    let j = revtmp.len - 1 - i\n    let tmp = revtmp[i]\n    revtmp[i] = revtmp[j]\n    revtmp[j] = tmp\n  revtmp"
+
+proc emitExpr(n: Sexp, quoted: bool = false): string =
   if n == nil: return "nil"
   case n.kind
   of skSymbol:
+    if quoted:
+      return quoteStr(n.symbol)
     return n.symbol
   of skString:
     return quoteStr(n.str)
@@ -208,10 +326,24 @@ proc emitExpr(n: Sexp): string =
     return $n.floatVal
   of skList:
     if n.list.len == 0:
-      return "nil"
+      return "@[]"
+    if n.isQuoted or quoted:
+      var args = ""
+      var sep = ""
+      for item in n.list:
+        args.add sep & emitExpr(item, true)
+        sep = ", "
+      return "@[" & args & "]"
+    if n.isBracket:
+      var args = ""
+      var sep = ""
+      for item in n.list:
+        args.add sep & emitExpr(item)
+        sep = ", "
+      return "@[" & args & "]"
     let opNode = n.list[0]
     if opNode.kind != skSymbol:
-      raise newException(ValueError, "operator must be a symbol")
+      raise parseError(opNode.loc, "operator must be a symbol")
     let op = opNode.symbol
 
     case op
@@ -222,6 +354,12 @@ proc emitExpr(n: Sexp): string =
     of "car": return emitCar(n)
     of "cdr": return emitCdr(n)
     of "cons": return emitCons(n)
+    of "null?": return emitNullPred(n)
+    of "list?": return emitListPred(n)
+    of "length": return emitLength(n)
+    of "append": return emitAppend(n)
+    of "list": return emitList(n)
+    of "reverse": return emitReverse(n)
     else:
       if isOpIdent(op) and n.list.len == 3:
         return "(" & emitExpr(n.list[1]) & " " & op & " " & emitExpr(n.list[2]) & ")"
@@ -260,14 +398,14 @@ macro lisp*(body: string): untyped =
       result = newStmtList()
     elif sexps.len == 1:
       let src = emitExpr(sexps[0])
-      result = parseExpr(src)
+      result = parseStmt(src)
     else:
       var stmts = newStmtList()
       for j in 0..<sexps.len - 1:
         let src = emitExpr(sexps[j])
         stmts.add parseStmt("discard " & src)
       let lastSrc = emitExpr(sexps[sexps.len - 1])
-      stmts.add parseExpr(lastSrc)
+      stmts.add parseStmt(lastSrc)
       result = stmts
   except ValueError as e:
     error(e.msg)

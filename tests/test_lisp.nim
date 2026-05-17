@@ -76,3 +76,63 @@ suite "lisp macro tests":
     let makeAdder = lisp("(lambda ((n int)) (lambda ((x int)) (+ x n)))")
     let add5 = makeAdder(5)
     check(add5(10) == 15)
+
+  test "null? with empty list":
+    let result = lisp("(null? @[])")
+    check(result == true)
+
+  test "null? with non-empty list":
+    let result = lisp("(null? @[1, 2])")
+    check(result == false)
+
+  test "list? with list":
+    let result = lisp("(list? @[1, 2, 3])")
+    check(result == true)
+
+  test "list? with non-list":
+    let result = lisp("(list? 42)")
+    check(result == false)
+
+  test "length of list":
+    let result = lisp("(length @[1, 2, 3, 4])")
+    check(result == 4)
+
+  test "length of empty list":
+    let result = lisp("(length @[])")
+    check(result == 0)
+
+  test "append two lists":
+    let result = lisp("(append @[1, 2] @[3, 4])")
+    check(result == @[1, 2, 3, 4])
+
+  test "append three lists":
+    let result = lisp("(append @[1] @[2] @[3])")
+    check(result == @[1, 2, 3])
+
+  test "list constructor":
+    let result = lisp("(list 1 2 3)")
+    check(result == @[1, 2, 3])
+
+  test "list with expressions":
+    let result = lisp("(list (+ 1 2) (* 3 4))")
+    check(result == @[3, 12])
+
+  test "reverse list":
+    let result = lisp("(reverse @[1, 2, 3])")
+    check(result == @[3, 2, 1])
+
+  test "error message includes line number":
+    let nimCode = lispToNim("(let ((a 10)) (+ a b))")
+    check(nimCode.len > 0)
+
+  test "quote syntax with list":
+    let result = lisp("'(1 2 3)")
+    check(result == @[1, 2, 3])
+
+  test "quote syntax with symbols":
+    let result = lisp("'(a b c)")
+    check(result == @["a", "b", "c"])
+
+  test "quote syntax with nested lists":
+    let result = lisp("'((1 2) (3 4))")
+    check(result == @[@[1, 2], @[3, 4]])
