@@ -209,3 +209,32 @@ comment |# (* 3 4)""")
     let nimCode = lispToNim("(cond ((> x 0) 1) (else -1))")
     check(nimCode.contains("if"))
     check(nimCode.contains("else"))
+
+  test "= for equality":
+    let t1 = lisp("(= 5 5)")
+    check(t1 == true)
+    let t2 = lisp("(= 5 3)")
+    check(t2 == false)
+
+  test "<= and >= comparisons":
+    let t1 = lisp("(<= 1 2 3)")
+    check(t1 == true)
+    let t2 = lisp("(<= 1 3 2)")
+    check(t2 == false)
+    let t3 = lisp("(>= 3 2 1)")
+    check(t3 == true)
+    let t4 = lisp("(>= 3 1 2)")
+    check(t4 == false)
+
+  test "$ stringification":
+    let result = lisp("($ 42)")
+    check(result == "42")
+
+  test "while loop":
+    let result = lisp("(let ((i 0) (acc 0)) (while (< i 3) (set! i (+ i 1)) (set! acc (+ acc 1))) acc)")
+    check(result == 3)
+
+  test "apply calls function with single list arg":
+    let double = lisp("(lambda ((x int)) (* x 2))")
+    let result = lisp("(apply double @[10])")
+    check(result == 20)

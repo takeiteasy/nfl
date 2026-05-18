@@ -25,3 +25,9 @@
 (define (cdddr x) (cdr (cdr (cdr x))))
 
 (define (identity x) x)
+
+(define (zero? x) (= x 0))
+(define (positive? x) (> x 0))
+(define (negative? x) (< x 0))
+(define (even? x) (zero? (mod x 2)))
+(define (odd? x) (!= (mod x 2) 0))

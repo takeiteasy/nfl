@@ -17,3 +17,6 @@ task test, "Run tests":
 
 task build, "Build lisp interpreter":
   exec "nim c --path:. lisp.nim -o:nil"
+
+task buildStd, "Build std/std.nim from std/std.nil":
+  exec "nim c --path:. -r build_std.nim"

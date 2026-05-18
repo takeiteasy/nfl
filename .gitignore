@@ -5,3 +5,5 @@ tests/test_lisp
 examples/*
 !examples/*.lisp
 !examples/*.nim
+nimbledeps
+build_std

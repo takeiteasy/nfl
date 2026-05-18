@@ -18,7 +18,8 @@
 import os
 import lisp
 import osproc
-import strutils
+
+const nilSourceDir = currentSourcePath().parentDir()
 
 type
   CompileMode = enum cmNone, cmCompileOnly, cmCompile, cmCompileAndRun
@@ -27,7 +28,7 @@ proc transpile(content: string): string =
   lispToNim(content)
 
 proc runNimCompiler(nimFile: string, mode: CompileMode, nimcacheDir: string = "") =
-  var cmd = "nim c --path:. "
+  var cmd = "nim c --path:. --path:" & nilSourceDir & " "
   case mode
   of cmNone:
     return
@@ -41,8 +42,9 @@ proc runNimCompiler(nimFile: string, mode: CompileMode, nimcacheDir: string = ""
     cmd &= "-r "
   cmd &= nimFile
   try:
-    let output = execCmd(cmd)
-    echo output
+    let exitCode = execCmd(cmd)
+    if exitCode != 0 and mode != cmCompileOnly:
+      echo "Compiler exited with code ", exitCode
     if mode == cmCompileOnly and nimcacheDir.len > 0:
       echo "Generated C files in ", nimcacheDir
   except OSError as e:
@@ -129,7 +131,7 @@ proc doRepl() =
       writeFile(tmpNim, nimCode)
 
       let tmpExe = tmpBase & (if defined(windows): ".exe" else: "")
-      let cmd = "nim c --hints:off --warnings:off -o:" & tmpExe & " " & tmpNim
+      let cmd = "nim c --path:" & nilSourceDir & " --hints:off --warnings:off -o:" & tmpExe & " " & tmpNim
       let exitCode = execCmd(cmd)
 
       if exitCode == 0:
