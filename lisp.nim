@@ -27,7 +27,7 @@ type
     line: int
     col: int
 
-  SexpKind = enum skList, skSymbol, skString, skInt, skFloat, skQuasiquote, skUnquote, skUnquoteSplicing, skClosure
+  SexpKind = enum skList, skSymbol, skString, skInt, skFloat, skQuasiquote, skUnquote, skUnquoteSplicing, skClosure, skNil
   Sexp = ref object
     loc: SourceLoc
     isBracket: bool
@@ -39,6 +39,8 @@ type
     of skInt: intVal: int
     of skFloat: floatVal: float
     of skQuasiquote, skUnquote, skUnquoteSplicing: child: Sexp
+    of skNil:
+      nil
     of skClosure:
       closParams: seq[Sexp]
       closRestParam: string
@@ -206,6 +208,12 @@ proc parseSexp(p: var Parser): Sexp =
       token.add(p.s[p.i])
       p.advance()
     if token.len > 0:
+      if token == "true":
+        return Sexp(kind: skSymbol, symbol: "true", loc: loc)
+      elif token == "false":
+        return Sexp(kind: skSymbol, symbol: "false", loc: loc)
+      elif token == "nil":
+        return Sexp(kind: skNil, loc: loc)
       try:
         return Sexp(kind: skInt, intVal: parseInt(token), loc: loc)
       except ValueError:
@@ -344,6 +352,8 @@ proc sexpEqual(a, b: Sexp): bool =
     return sexpEqual(a.child, b.child)
   of skClosure:
     return false
+  of skNil:
+    return true
 
 proc getInt(sexp: Sexp, loc: SourceLoc): int =
   if sexp.kind == skInt: return sexp.intVal
@@ -394,6 +404,14 @@ proc emitExpr(n: Sexp, quoted: bool = false): string
 proc emitBody(exprs: seq[Sexp]): string
 proc emitDefine(n: Sexp, topLevel: bool): string
 proc indentLines(s: string, spaces: int): string
+proc forceValue(n: Sexp): string
+
+proc asCond(n: Sexp): string =
+  let s = emitExpr(n)
+  if n.kind == skNil:
+    "(" & s & ".len != 0)"
+  else:
+    s
 
 
 proc expandQuasiquoteEval(sexp: Sexp, depth: int, env: Env, macros: MacroEnv): Sexp =
@@ -435,10 +453,12 @@ proc expandQuasiquoteEval(sexp: Sexp, depth: int, env: Env, macros: MacroEnv): S
     return Sexp(kind: skFloat, floatVal: sexp.floatVal, loc: sexp.loc)
   of skClosure:
     return sexp
+  of skNil:
+    return sexp
 
 proc evalSexp(sexp: Sexp, env: Env, macros: MacroEnv): Sexp =
   case sexp.kind
-  of skInt, skFloat, skString, skClosure:
+  of skInt, skFloat, skString, skClosure, skNil:
     return sexp
   of skSymbol:
     let entry = envGet(env, sexp.symbol, sexp.loc)
@@ -480,6 +500,8 @@ proc evalSexp(sexp: Sexp, env: Env, macros: MacroEnv): Sexp =
       elif cond.kind == skFloat:
         if cond.floatVal != 0.0: return evalSexp(sexp.list[2], env, macros)
         else: return evalSexp(sexp.list[3], env, macros)
+      elif cond.kind == skNil:
+        return evalSexp(sexp.list[3], env, macros)
       elif cond.kind == skSymbol:
         if cond.symbol == "false" or cond.symbol == "nil": return evalSexp(sexp.list[3], env, macros)
         else: return evalSexp(sexp.list[2], env, macros)
@@ -526,7 +548,7 @@ proc evalSexp(sexp: Sexp, env: Env, macros: MacroEnv): Sexp =
     of "set!":
       if sexp.list.len != 3:
         raise parseError(sexp.loc, "set! requires 2 arguments")
-      let name = sexp.list[1].symbol
+      let name = sanitizeName(sexp.list[1].symbol)
       let val = evalSexp(sexp.list[2], env, macros)
       var e = env
       while e != nil:
@@ -569,6 +591,8 @@ proc evalSexp(sexp: Sexp, env: Env, macros: MacroEnv): Sexp =
       if sexp.list.len != 2:
         raise parseError(sexp.loc, "null? requires 1 argument")
       let lst = evalSexp(sexp.list[1], env, macros)
+      if lst.kind == skNil:
+        return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
       if lst.kind == skList and lst.list.len == 0:
         return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
       else:
@@ -577,7 +601,7 @@ proc evalSexp(sexp: Sexp, env: Env, macros: MacroEnv): Sexp =
       if sexp.list.len != 2:
         raise parseError(sexp.loc, "list? requires 1 argument")
       let val = evalSexp(sexp.list[1], env, macros)
-      if val.kind == skList:
+      if val.kind == skList or val.kind == skNil:
         return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
       else:
         return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
@@ -893,13 +917,13 @@ proc expandMacros(sexp: Sexp, macros: MacroEnv): Sexp =
 
 proc forceValue(n: Sexp): string =
   result = emitExpr(n)
-  if opName(n) in ["echo", "stdout.write", "stderr.write"]:
+  if opName(n) in ["echo", "println", "stdout.write", "stderr.write"]:
     result = "(" & result & "; 0)"
 
 proc emitIf(n: Sexp): string =
   if n.list.len != 4:
     raise parseError(n.loc, "if requires 3 arguments: condition, then, else")
-  let cond = emitExpr(n.list[1])
+  let cond = asCond(n.list[1])
   let thenB = forceValue(n.list[2])
   let elseB = forceValue(n.list[3])
   return "(if " & cond & ": " & thenB & " else: " & elseB & ")"
@@ -924,9 +948,9 @@ proc emitLet(n: Sexp): string =
       binds.add "  var " & name & " = " & val & "\n"
   var body = ""
   for i in 2..<n.list.len - 1:
-    body.add "  discard " & forceValue(n.list[i]) & "\n"
-  body.add "  " & forceValue(n.list[n.list.len - 1]) & "\n"
-  return "(block:\n" & binds & body & ")"
+    body.add "discard " & forceValue(n.list[i]) & "\n"
+  body.add forceValue(n.list[n.list.len - 1]) & "\n"
+  return "(block:\n" & binds & indentLines(body, 2) & ")"
 
 proc emitLambda(n: Sexp): string =
   if n.list.len != 3:
@@ -1043,10 +1067,10 @@ proc emitCond(n: Sexp): string =
       output.add "else: " & bodyStr
     else:
       if first:
-        output.add emitExpr(test) & ": " & bodyStr
+        output.add asCond(test) & ": " & bodyStr
         first = false
       else:
-        output.add " elif " & emitExpr(test) & ": " & bodyStr
+        output.add " elif " & asCond(test) & ": " & bodyStr
   output.add ")"
   return output
 
@@ -1055,7 +1079,7 @@ proc emitAnd(n: Sexp): string =
     raise parseError(n.loc, "and requires at least 1 argument")
   if n.list.len == 2:
     return emitExpr(n.list[1])
-  var output = emitExpr(n.list[1])
+  var output = asCond(n.list[1])
   for i in 2..<n.list.len:
     output = "(if " & output & ": " & emitExpr(n.list[i]) & " else: false)"
   return output
@@ -1065,7 +1089,7 @@ proc emitOr(n: Sexp): string =
     raise parseError(n.loc, "or requires at least 1 argument")
   if n.list.len == 2:
     return emitExpr(n.list[1])
-  var output = emitExpr(n.list[1])
+  var output = asCond(n.list[1])
   for i in 2..<n.list.len:
     output = "(if " & output & ": " & output & " else: " & emitExpr(n.list[i]) & ")"
   return output
@@ -1080,7 +1104,7 @@ proc emitApply(n: Sexp): string =
 proc emitWhile(n: Sexp): string =
   if n.list.len < 3:
     raise parseError(n.loc, "while requires at least 2 arguments: condition and body")
-  let cond = emitExpr(n.list[1])
+  let cond = asCond(n.list[1])
   var body = ""
   for i in 2..<n.list.len:
     body.add (if body.len > 0: "\n" else: "") & "discard " & forceValue(n.list[i])
@@ -1104,12 +1128,12 @@ proc emitNegativePred(n: Sexp): string =
 proc emitEvenPred(n: Sexp): string =
   if n.list.len != 2:
     raise parseError(n.loc, "even? requires 1 argument")
-  return "(((" & emitExpr(n.list[1]) & " mod 2) == 0)"
+  return "((" & emitExpr(n.list[1]) & " mod 2) == 0)"
 
 proc emitOddPred(n: Sexp): string =
   if n.list.len != 2:
     raise parseError(n.loc, "odd? requires 1 argument")
-  return "(((" & emitExpr(n.list[1]) & " mod 2) != 0)"
+  return "((" & emitExpr(n.list[1]) & " mod 2) != 0)"
 
 proc emitComparisonChain(n: Sexp, nimOp: string): string =
   if n.list.len < 3:
@@ -1146,7 +1170,11 @@ proc emitBody(exprs: seq[Sexp]): string =
   var body = ""
   for i in 0..<bodyExprs.len - 1:
     body.add "discard " & forceValue(bodyExprs[i]) & "\n"
-  body.add emitExpr(bodyExprs[bodyExprs.len - 1]) & "\n"
+  let lastExpr = bodyExprs[bodyExprs.len - 1]
+  if opName(lastExpr) in ["echo", "println", "stdout.write", "stderr.write"]:
+    body.add forceValue(lastExpr) & "\n"
+  else:
+    body.add emitExpr(lastExpr) & "\n"
 
   return bindings & body
 
@@ -1167,17 +1195,19 @@ proc emitDefine(n: Sexp, topLevel: bool): string =
 
   if n.list[1].kind == skSymbol:
     let name = sanitizeName(n.list[1].symbol)
+    let exportMarker = if topLevel: "*" else: ""
     if n.list.len == 3:
       let val = emitExpr(n.list[2])
-      return "let " & name & " = " & val
+      return "let " & name & exportMarker & " = " & val
     else:
       var bodyContent = emitBody(n.list[2..^1])
-      return "let " & name & " = (block:\n" & indentLines(bodyContent, 2) & "\n)"
+      return "let " & name & exportMarker & " = (block:\n" & indentLines(bodyContent, 2) & "\n)"
   elif n.list[1].kind == skList:
     let nameNode = n.list[1].list[0]
     if nameNode.kind != skSymbol:
       raise parseError(nameNode.loc, "function name must be a symbol")
     let name = sanitizeName(nameNode.symbol)
+    let exportMarker = if topLevel: "*" else: ""
     var params = ""
     var sep = ""
     for i in 1..<n.list[1].list.len:
@@ -1195,7 +1225,7 @@ proc emitDefine(n: Sexp, topLevel: bool): string =
 
     let bodyContent = emitBody(n.list[2..^1])
 
-    return "proc " & name & "(" & params & "): auto =\n" & indentLines(bodyContent, 2) & "\n"
+    return "proc " & name & exportMarker & "(" & params & "): auto =\n" & indentLines(bodyContent, 2) & "\n"
   else:
     raise parseError(n.list[1].loc, "define name must be a symbol or (name params...)")
 
@@ -1218,6 +1248,8 @@ proc emitExpr(n: Sexp, quoted: bool = false): string =
     return $n.intVal
   of skFloat:
     return $n.floatVal
+  of skNil:
+    return "@[]"
   of skClosure:
     return "(proc() = nil)"
   of skList:
@@ -1272,16 +1304,36 @@ proc emitExpr(n: Sexp, quoted: bool = false): string =
         raise parseError(n.loc, "map requires 2 arguments: function and list")
       let fn = emitExpr(n.list[1])
       let lst = emitExpr(n.list[2])
-      let fnIndented = indentLines(fn, 6)
-      return "block:\n    var r: seq[type(" & lst & "[0])] = @[]\n    for x in " & lst & ":\n      r.add((" & fnIndented & ")(x))\n    r"
+      let fnIndented = indentLines(fn, 4)
+      return "(block:\n  var r: seq[typeof(" & lst & "[0])] = @[]\n  for x in " & lst & ":\n    r.add((" & fnIndented & ")(x))\n  r)"
     of "filter":
       if n.list.len != 3:
         raise parseError(n.loc, "filter requires 2 arguments: predicate and list")
       let pred = emitExpr(n.list[1])
       let lst = emitExpr(n.list[2])
-      let predIndented = indentLines(pred, 6)
-      return "block:\n    var r: seq[type(" & lst & "[0])] = @[]\n    for x in " & lst & ":\n      if (" & predIndented & ")(x):\n        r.add(x)\n    r"
+      let predIndented = indentLines(pred, 4)
+      return "(block:\n  var r: seq[typeof(" & lst & "[0])] = @[]\n  for x in " & lst & ":\n    if (" & predIndented & ")(x):\n      r.add(x)\n  r)"
+    of "nth":
+      if n.list.len != 3:
+        raise parseError(n.loc, "nth requires 2 arguments")
+      return "(" & emitExpr(n.list[2]) & "[" & emitExpr(n.list[1]) & "])"
+    of "take":
+      if n.list.len != 3:
+        raise parseError(n.loc, "take requires 2 arguments")
+      return "(" & emitExpr(n.list[2]) & "[0..<" & emitExpr(n.list[1]) & "])"
+    of "drop":
+      if n.list.len != 3:
+        raise parseError(n.loc, "drop requires 2 arguments")
+      return "(" & emitExpr(n.list[2]) & "[" & emitExpr(n.list[1]) & "..^1])"
     of "apply": return emitApply(n)
+    of "eq?":
+      if n.list.len != 3:
+        raise parseError(n.loc, "eq? requires 2 arguments")
+      return "(" & emitExpr(n.list[1]) & " == " & emitExpr(n.list[2]) & ")"
+    of "quote":
+      if n.list.len != 2:
+        raise parseError(n.loc, "quote requires 1 argument")
+      return emitExpr(n.list[1], true)
     of "while": return emitWhile(n)
     of "zero?": return emitZeroPred(n)
     of "positive?": return emitPositivePred(n)

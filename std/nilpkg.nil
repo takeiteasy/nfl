@@ -1,6 +1,12 @@
 ; nil Standard Library
-; Non-recursive utilities built from minimal primitives: if, let, lambda, progn, set!, car, cdr, cons, null?
-; Recursive/higher-order functions are built-in special forms or Nim runtime procs
+;
+; Built from minimal primitives: define, if, let, lambda, progn, set!,
+; car, cdr, cons, null?, list?, =, eq?, +, -, *, /, <, >, <=, >=
+;
+; All standard library functions and macros are available in nil files
+; via automatic loading at compile time.
+
+;; Basic truth and type predicates
 
 (define t true)
 
@@ -9,6 +15,8 @@
 
 (define (atom? x)
   (if (pair? x) false t))
+
+;; List accessor chain helpers (caar, cadr, ...)
 
 (define (caar x) (car (car x)))
 (define (cadr x) (car (cdr x)))
@@ -24,6 +32,8 @@
 (define (cddar x) (cdr (cdr (car x))))
 (define (cdddr x) (cdr (cdr (cdr x))))
 
+;; Identity and numeric predicates
+
 (define (identity x) x)
 
 (define (zero? x) (= x 0))
@@ -31,3 +41,191 @@
 (define (negative? x) (< x 0))
 (define (even? x) (zero? (mod x 2)))
 (define (odd? x) (!= (mod x 2) 0))
+
+;; Higher-order functions (recursive via Nim procs)
+
+(define (foldl f init lst)
+  (if (null? lst)
+      init
+      (foldl f (f init (car lst)) (cdr lst))))
+
+(define (foldr f init lst)
+  (if (null? lst)
+      init
+      (f (car lst) (foldr f init (cdr lst)))))
+
+(define (reduce f lst)
+  (if (null? lst)
+      nil
+      (foldl f (car lst) (cdr lst))))
+
+(define (some pred lst)
+  (if (null? lst)
+      false
+      (if (pred (car lst))
+          true
+          (some pred (cdr lst)))))
+
+(define (every pred lst)
+  (if (null? lst)
+      true
+      (if (pred (car lst))
+          (every pred (cdr lst))
+          false)))
+
+(define (range n)
+  (if (zero? n)
+      nil
+      (append (range (- n 1)) (list (- n 1)))))
+
+(define (repeat x n)
+  (if (zero? n)
+      nil
+      (cons x (repeat x (- n 1)))))
+
+; take, drop, nth are built-in emit forms
+
+(define (member x lst)
+  (if (null? lst)
+      nil
+      (if (eq? x (car lst))
+          lst
+          (member x (cdr lst)))))
+
+(define (assoc key alist)
+  (if (null? alist)
+      nil
+      (if (eq? key (caar alist))
+          (car alist)
+          (assoc key (cdr alist)))))
+
+(define (last lst)
+  (if (null? (cdr lst))
+      (car lst)
+      (last (cdr lst))))
+
+(define (butlast lst)
+  (if (null? (cdr lst))
+      nil
+      (cons (car lst) (butlast (cdr lst)))))
+
+(define (str x)
+  (if (null? x)
+      ""
+      ($ x)))
+
+;; Macro: let* — sequential let bindings
+;;   (let* ((x 1) (y (+ x 1))) (+ x y))  => 3
+
+(defmacro (let* bindings &rest body)
+  (if (null? bindings)
+      `(let () ,@body)
+      (let ((binding (car bindings)))
+        `(let (,binding)
+           (let* ,(cdr bindings) ,@body)))))
+
+;; Macro: swap — exchange two places
+;;   (let ((a 1) (b 2)) (swap a b) (list a b))  => (2 1)
+
+(defmacro (swap a b)
+  (let ((tmp (gensym "swap-")))
+    `(let ((,tmp ,a))
+       (set! ,a ,b)
+       (set! ,b ,tmp))))
+
+;; Macro: -> (thread-first)
+;;   (-> 5 (+ 1) (* 2))  => (* (+ 5 1) 2) => 12
+
+(defmacro (-> x &rest forms)
+  (if (null? forms)
+      x
+      (let ((form (car forms)))
+        (if (list? form)
+            `(-> (,(car form) ,x ,@(cdr form)) ,@(cdr forms))
+            `(-> (,form ,x) ,@(cdr forms))))))
+
+;; Macro: ->> (thread-last)
+;;   (->> (list 1 2 3) (map inc) (filter even?))
+
+(defmacro (->> x &rest forms)
+  (if (null? forms)
+      x
+      (let ((form (car forms)))
+        (if (list? form)
+            `(->> (,(car form) ,@(cdr form) ,x) ,@(cdr forms))
+            `(->> (,form ,x) ,@(cdr forms))))))
+
+;; Macro: with-gensyms — generate unique symbols for macro hygiene
+;;   (defmacro (my-macro x)
+;;     (with-gensyms (tmp)
+;;       `(let ((,tmp ,x)) ,tmp)))
+
+(defmacro (with-gensyms names &rest body)
+  (if (null? names)
+      `(progn ,@body)
+      `(let ((,(car names) (gensym ,(car names))))
+         (with-gensyms ,(cdr names) ,@body))))
+
+;; Macro: case — eql-based conditional
+;;   (case x
+;;     ((1 2 3) (echo "small"))
+;;     ((4 5 6) (echo "medium"))
+;;     (else (echo "large")))
+
+(defmacro (case expr &rest clauses)
+  (if (null? clauses)
+      nil
+      (let ((clause (car clauses)))
+        (if (eq? (car clause) (quote else))
+            `(progn ,@(cdr clause))
+            (let ((keys (car clause))
+                  (body `(progn ,@(cdr clause))))
+              (if (null? (cdr keys))
+                  `(if (= ,expr (quote ,(car keys)))
+                       ,body
+                       (case ,expr ,@(cdr clauses)))
+                  `(if (= ,expr (quote ,(car keys)))
+                       ,body
+                       (case ,expr (,(cdr keys) ,@(cdr clause)) ,@(cdr clauses)))))))))
+
+;; Macro: match-bind — helper for match, binds list elements
+;;   (match-bind (x y) expr 0 body)
+;;   => (let ((x (nth 0 expr))) (let ((y (nth 1 expr))) body))
+
+(defmacro (match-bind bindings expr i body)
+  (if (null? bindings)
+      body
+      `(let ((,(car bindings) (nth ,i ,expr)))
+         (match-bind ,(cdr bindings) ,expr (+ ,i 1) ,body))))
+
+;; Macro: match — structural pattern matching
+;; Patterns:
+;;   (list p1 p2 ...)  — match list of given length, bind elements
+;;   sym               — match anything, bind to sym
+;;   _                 — match anything (no bind)
+;;   else              — catch-all (no bind)
+
+(defmacro (match expr &rest clauses)
+  (if (null? clauses)
+      nil
+      (let ((clause (car clauses)))
+        (if (eq? (car clause) (quote else))
+            `(progn ,@(cdr clause))
+            (if (eq? (car clause) (quote _))
+                `(progn ,@(cdr clause))
+                (let ((pattern (car clause))
+                      (body `(progn ,@(cdr clause))))
+                  (if (list? pattern)
+                      (if (eq? (car pattern) (quote list))
+                          (let ((bindings (cdr pattern))
+                                (g (gensym "match-")))
+                            `(let ((,g ,expr))
+                               (if (list? ,g)
+                                   (if (= (length ,g) ,(length bindings))
+                                       (match-bind ,bindings ,g 0 ,body)
+                                       (match ,g ,@(cdr clauses)))
+                                   (match ,g ,@(cdr clauses)))))
+                          `(let ((,pattern ,expr))
+                             ,body))
+                      `(let ((,pattern ,expr))
+                         ,body))))))))

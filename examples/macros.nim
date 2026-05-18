@@ -16,20 +16,18 @@ discard (if (3 > 5): 0 else: (block:
 discard (echo("Testing my-and:"); 0)
 discard (echo("  (my-and true true true): ", (if true: (if true: true else: false) else: false)); 0)
 discard (echo("  (my-and true false true): ", (if true: (if false: true else: false) else: false)); 0)
-proc first(lst: auto): auto =
+proc first*(lst: auto): auto =
   lst[0]
 
-proc rest(lst: auto): auto =
+proc rest*(lst: auto): auto =
   lst[1..^1]
 
 discard (block:
   var data = @[1, 2, 3, 4, 5]
   discard (echo("First element: ", first(data)); 0)
-  (echo("Rest of list: ", rest(data)); 0)
-)
+  (echo("Rest of list: ", rest(data)); 0))
 discard (echo("Testing my-cond:"); 0)
 discard (block:
   var n = 7
   discard (echo("  n = ", n); 0)
-  (if (n < 0): (echo("    negative"); 0) else: (if (n == 0): (echo("    zero"); 0) else: (if (n < 5): (echo("    small"); 0) else: (if (n >= 5): (echo("    big"); 0) else: 0))))
-)
+  (if (n < 0): (echo("    negative"); 0) else: (if (n == 0): (echo("    zero"); 0) else: (if (n < 5): (echo("    small"); 0) else: (if (n >= 5): (echo("    big"); 0) else: 0)))))

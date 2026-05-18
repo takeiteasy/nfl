@@ -1,6 +1,7 @@
 nimble.develop
 nimble.paths
 nil
+nil_bin
 tests/test_lisp
 examples/*
 !examples/*.lisp
