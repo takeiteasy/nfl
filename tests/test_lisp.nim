@@ -238,3 +238,61 @@ comment |# (* 3 4)""")
     let double = lisp("(lambda ((x int)) (* x 2))")
     let result = lisp("(apply double @[10])")
     check(result == 20)
+
+suite "macro and quasiquote tests":
+  test "parser handles quasiquote in macro":
+    let nimCode = lispToNim("(defmacro (qq) `(foo))")
+    check(nimCode.len > 0)
+
+  test "parser handles unquote in macro body":
+    let nimCode = lispToNim("(defmacro (qq x) `(foo ,x))")
+    check(nimCode.len > 0)
+
+  test "parser handles unquote-splicing in macro body":
+    let nimCode = lispToNim("(defmacro (qq x) `(foo ,@x))")
+    check(nimCode.len > 0)
+
+  test "simple macro definition and use":
+    let result = lisp("""
+(defmacro (double x)
+  `(+ ,x ,x))
+(double 5)
+""")
+    check(result == 10)
+
+  test "macro with &rest parameter":
+    let result = lisp("""
+(defmacro (my-and &rest terms)
+  (if (null? terms)
+      true
+      (if (null? (cdr terms))
+          (car terms)
+          `(if ,(car terms) (my-and ,@(cdr terms)) false))))
+(my-and (> 5 3) (< 5 10) (= 5 5))
+""")
+    check(result == true)
+
+  test "when macro":
+    let result = lisp("""
+(defmacro (when test &rest body)
+  `(if ,test (progn ,@body) 0))
+(when (> 5 3)
+  (+ 1 2))
+""")
+    check(result == 3)
+
+  test "macro produces correct Nim code":
+    let nimCode = lispToNim("""
+(defmacro (double x)
+  `(+ ,x ,x))
+(double 5)
+""")
+    check(nimCode.contains("(5 + 5)"))
+
+  test "defmacro does not emit Nim code":
+    let nimCode = lispToNim("""
+(defmacro (noop) nil)
+(+ 1 2)
+""")
+    check(not nimCode.contains("discard nil"))
+    check(nimCode.contains("(1 + 2)"))

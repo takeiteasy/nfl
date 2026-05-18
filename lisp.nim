@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import macros, strutils
+import os, macros, strutils, tables
 
 const runtimeHelpers* = """
 template apply(f: untyped, args: untyped): untyped =
@@ -27,7 +27,7 @@ type
     line: int
     col: int
 
-  SexpKind = enum skList, skSymbol, skString, skInt, skFloat
+  SexpKind = enum skList, skSymbol, skString, skInt, skFloat, skQuasiquote, skUnquote, skUnquoteSplicing, skClosure
   Sexp = ref object
     loc: SourceLoc
     isBracket: bool
@@ -38,6 +38,11 @@ type
     of skString: str: string
     of skInt: intVal: int
     of skFloat: floatVal: float
+    of skQuasiquote, skUnquote, skUnquoteSplicing: child: Sexp
+    of skClosure:
+      closParams: seq[Sexp]
+      closRestParam: string
+      closBody: Sexp
 
 type
   Parser = object
@@ -176,9 +181,28 @@ proc parseSexp(p: var Parser): Sexp =
     if quoted.kind == skList:
       quoted.isQuoted = true
     return quoted
+  elif p.s[p.i] == '`':
+    p.advance()
+    let qq = p.parseSexp()
+    if qq == nil:
+      raise parseError(loc, "quasiquote requires an expression")
+    return Sexp(kind: skQuasiquote, child: qq, loc: loc)
+  elif p.s[p.i] == ',':
+    p.advance()
+    if p.i < p.s.len and p.s[p.i] == '@':
+      p.advance()
+      let uqs = p.parseSexp()
+      if uqs == nil:
+        raise parseError(loc, "unquote-splicing requires an expression")
+      return Sexp(kind: skUnquoteSplicing, child: uqs, loc: loc)
+    else:
+      let uq = p.parseSexp()
+      if uq == nil:
+        raise parseError(loc, "unquote requires an expression")
+      return Sexp(kind: skUnquote, child: uq, loc: loc)
   else:
     var token = ""
-    while p.i < p.s.len and p.s[p.i] notin {' ', '\n', '\t', '\r', '(', ')', '[', ']', ',', '\'', ';', '#'}:
+    while p.i < p.s.len and p.s[p.i] notin {' ', '\n', '\t', '\r', '(', ')', '[', ']', ',', '\'', ';', '#', '`', '@'}:
       token.add(p.s[p.i])
       p.advance()
     if token.len > 0:
@@ -237,10 +261,635 @@ proc opName(n: Sexp): string =
     return n.list[0].symbol
   return ""
 
+
+type
+  MacroDef = object
+    params: seq[Sexp]
+    restParam: string
+    body: Sexp
+
+  MacroEnv = ref object
+    bindings: Table[string, MacroDef]
+
+  EnvEntryKind = enum eekSexp, eekClosure
+  EnvEntry = object
+    case kind: EnvEntryKind
+    of eekSexp:
+      value: Sexp
+    of eekClosure:
+      params: seq[Sexp]
+      restParam: string
+      body: Sexp
+
+  EnvBinding = object
+    name: string
+    entry: EnvEntry
+    next: ref EnvBinding
+
+  Env = ref object
+    head: ref EnvBinding
+    parent: Env
+
+proc newEnv(parent: Env = nil): Env =
+  Env(head: nil, parent: parent)
+
+proc envGet(env: Env, name: string, loc: SourceLoc): EnvEntry =
+  var e = env
+  var envCount = 0
+  while e != nil:
+    inc(envCount)
+    if envCount > 1000:
+      raise parseError(loc, "envGet cycle detected looking for: " & name)
+    var binding = e.head
+    var bindCount = 0
+    while binding != nil:
+      inc(bindCount)
+      if bindCount > 1000:
+        raise parseError(loc, "envGet binding cycle detected looking for: " & name)
+      if binding.name == name:
+        return binding.entry
+      binding = binding.next
+    e = e.parent
+  raise parseError(loc, "unbound variable: " & name)
+
+proc envSet(env: Env, name: string, entry: EnvEntry) =
+  var newBinding: ref EnvBinding
+  new(newBinding)
+  newBinding.name = name
+  newBinding.entry = entry
+  newBinding.next = env.head
+  env.head = newBinding
+
+var gensymCounter*: int = 0
+
+proc gensym*(prefix: string = "g"): string =
+  inc(gensymCounter)
+  prefix & $gensymCounter
+
+proc sexpEqual(a, b: Sexp): bool =
+  if a == nil and b == nil: return true
+  if a == nil or b == nil: return false
+  if a.kind != b.kind: return false
+  case a.kind
+  of skSymbol: return a.symbol == b.symbol
+  of skString: return a.str == b.str
+  of skInt: return a.intVal == b.intVal
+  of skFloat: return a.floatVal == b.floatVal
+  of skList:
+    if a.list.len != b.list.len: return false
+    for i in 0..<a.list.len:
+      if not sexpEqual(a.list[i], b.list[i]): return false
+    return true
+  of skQuasiquote, skUnquote, skUnquoteSplicing:
+    return sexpEqual(a.child, b.child)
+  of skClosure:
+    return false
+
+proc getInt(sexp: Sexp, loc: SourceLoc): int =
+  if sexp.kind == skInt: return sexp.intVal
+  raise parseError(loc, "expected integer")
+
+proc getFloat(sexp: Sexp, loc: SourceLoc): float =
+  if sexp.kind == skFloat: return sexp.floatVal
+  if sexp.kind == skInt: return float(sexp.intVal)
+  raise parseError(loc, "expected number")
+
+proc evalSexp(sexp: Sexp, env: Env, macros: MacroEnv): Sexp
+proc expandMacros(sexp: Sexp, macros: MacroEnv): Sexp
+proc expandQuasiquoteEval(sexp: Sexp, depth: int, env: Env, macros: MacroEnv): Sexp
+
+proc applyClosure(closure: EnvEntry, args: seq[Sexp], loc: SourceLoc, macros: MacroEnv): Sexp =
+  let newEnv = newEnv(nil)
+  for i, p in closure.params:
+    if i < args.len:
+      envSet(newEnv, sanitizeName(p.symbol), EnvEntry(kind: eekSexp, value: args[i]))
+    else:
+      raise parseError(loc, "too few arguments")
+  if closure.restParam.len > 0:
+    var restList: seq[Sexp] = @[]
+    let startIdx = closure.params.len
+    if startIdx < args.len:
+      for i in startIdx..<args.len:
+        restList.add(args[i])
+    envSet(newEnv, closure.restParam, EnvEntry(kind: eekSexp, value: Sexp(kind: skList, list: restList, loc: loc)))
+  result = evalSexp(closure.body, newEnv, macros)
+
+proc applySexpClosure(clos: Sexp, args: seq[Sexp], loc: SourceLoc, macros: MacroEnv): Sexp =
+  let newEnv = newEnv(nil)
+  for i, p in clos.closParams:
+    if i < args.len:
+      envSet(newEnv, sanitizeName(p.symbol), EnvEntry(kind: eekSexp, value: args[i]))
+    else:
+      raise parseError(loc, "too few arguments")
+  if clos.closRestParam.len > 0:
+    var restList: seq[Sexp] = @[]
+    let startIdx = clos.closParams.len
+    if startIdx < args.len:
+      for i in startIdx..<args.len:
+        restList.add(args[i])
+    envSet(newEnv, clos.closRestParam, EnvEntry(kind: eekSexp, value: Sexp(kind: skList, list: restList, loc: loc)))
+  result = evalSexp(clos.closBody, newEnv, macros)
+
 proc emitExpr(n: Sexp, quoted: bool = false): string
 proc emitBody(exprs: seq[Sexp]): string
 proc emitDefine(n: Sexp, topLevel: bool): string
 proc indentLines(s: string, spaces: int): string
+
+
+proc expandQuasiquoteEval(sexp: Sexp, depth: int, env: Env, macros: MacroEnv): Sexp =
+  case sexp.kind
+  of skUnquote:
+    if depth == 1:
+      return evalSexp(sexp.child, env, macros)
+    else:
+      return Sexp(kind: skUnquote, child: expandQuasiquoteEval(sexp.child, depth + 1, env, macros), loc: sexp.loc)
+  of skUnquoteSplicing:
+    if depth == 1:
+      let evaluated = evalSexp(sexp.child, env, macros)
+      if evaluated.kind != skList:
+        raise parseError(sexp.loc, "unquote-splicing requires a list")
+      return evaluated
+    else:
+      return Sexp(kind: skUnquoteSplicing, child: expandQuasiquoteEval(sexp.child, depth + 1, env, macros), loc: sexp.loc)
+  of skQuasiquote:
+    return Sexp(kind: skQuasiquote, child: expandQuasiquoteEval(sexp.child, depth + 1, env, macros), loc: sexp.loc)
+  of skList:
+    var items: seq[Sexp] = @[]
+    for elem in sexp.list:
+      if elem.kind == skUnquoteSplicing and depth == 1:
+        let spliced = evalSexp(elem.child, env, macros)
+        if spliced.kind != skList:
+          raise parseError(elem.loc, "unquote-splicing requires a list")
+        for s in spliced.list:
+          items.add(s)
+      else:
+        items.add(expandQuasiquoteEval(elem, depth, env, macros))
+    return Sexp(kind: skList, list: items, loc: sexp.loc, isBracket: sexp.isBracket, isQuoted: sexp.isQuoted)
+  of skSymbol:
+    return Sexp(kind: skSymbol, symbol: sexp.symbol, loc: sexp.loc)
+  of skString:
+    return Sexp(kind: skString, str: sexp.str, loc: sexp.loc)
+  of skInt:
+    return Sexp(kind: skInt, intVal: sexp.intVal, loc: sexp.loc)
+  of skFloat:
+    return Sexp(kind: skFloat, floatVal: sexp.floatVal, loc: sexp.loc)
+  of skClosure:
+    return sexp
+
+proc evalSexp(sexp: Sexp, env: Env, macros: MacroEnv): Sexp =
+  case sexp.kind
+  of skInt, skFloat, skString, skClosure:
+    return sexp
+  of skSymbol:
+    let entry = envGet(env, sexp.symbol, sexp.loc)
+    return entry.value
+  of skQuasiquote:
+    return expandQuasiquoteEval(sexp.child, 1, env, macros)
+  of skUnquote:
+    raise parseError(sexp.loc, "unquote outside of quasiquote")
+  of skUnquoteSplicing:
+    raise parseError(sexp.loc, "unquote-splicing outside of quasiquote")
+  of skList:
+    if sexp.list.len == 0:
+      return sexp
+    let head = sexp.list[0]
+    var op = ""
+    if head.kind == skSymbol:
+      op = head.symbol
+    else:
+      let fnVal = evalSexp(head, env, macros)
+      if fnVal.kind == skClosure:
+        var args: seq[Sexp] = @[]
+        for i in 1..<sexp.list.len:
+          args.add(evalSexp(sexp.list[i], env, macros))
+        return applySexpClosure(fnVal, args, sexp.loc, macros)
+      else:
+        raise parseError(head.loc, "operator must evaluate to a function")
+    case op
+    of "quote":
+      if sexp.list.len != 2:
+        raise parseError(sexp.loc, "quote requires 1 argument")
+      return sexp.list[1]
+    of "if":
+      if sexp.list.len != 4:
+        raise parseError(sexp.loc, "if requires 3 arguments")
+      let cond = evalSexp(sexp.list[1], env, macros)
+      if cond.kind == skInt:
+        if cond.intVal != 0: return evalSexp(sexp.list[2], env, macros)
+        else: return evalSexp(sexp.list[3], env, macros)
+      elif cond.kind == skFloat:
+        if cond.floatVal != 0.0: return evalSexp(sexp.list[2], env, macros)
+        else: return evalSexp(sexp.list[3], env, macros)
+      elif cond.kind == skSymbol:
+        if cond.symbol == "false" or cond.symbol == "nil": return evalSexp(sexp.list[3], env, macros)
+        else: return evalSexp(sexp.list[2], env, macros)
+      else:
+        return evalSexp(sexp.list[2], env, macros)
+    of "let":
+      if sexp.list.len < 3:
+        raise parseError(sexp.loc, "let requires bindings and body")
+      let bindings = sexp.list[1]
+      if bindings.kind != skList:
+        raise parseError(bindings.loc, "let bindings must be a list")
+      let newEnv = newEnv(env)
+      for binding in bindings.list:
+        if binding.kind != skList or binding.list.len != 2:
+          raise parseError(binding.loc, "each binding must be (name value)")
+        let name = sanitizeName(binding.list[0].symbol)
+        let val = evalSexp(binding.list[1], env, macros)
+        envSet(newEnv, name, EnvEntry(kind: eekSexp, value: val))
+      var lastResult: Sexp = Sexp(kind: skInt, intVal: 0, loc: sexp.loc)
+      for i in 2..<sexp.list.len:
+        lastResult = evalSexp(sexp.list[i], newEnv, macros)
+      return lastResult
+    of "lambda":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "lambda requires params and body")
+      let params = sexp.list[1]
+      if params.kind != skList:
+        raise parseError(params.loc, "lambda params must be a list")
+      var restParam = ""
+      var closParams: seq[Sexp] = @[]
+      for p in params.list:
+        if p.kind == skSymbol and p.symbol == "&rest":
+          restParam = "&rest-marker"
+        elif restParam == "&rest-marker":
+          restParam = sanitizeName(p.symbol)
+        else:
+          closParams.add(p)
+      return Sexp(kind: skClosure, closParams: closParams, closRestParam: restParam, closBody: sexp.list[2], loc: sexp.loc)
+    of "progn":
+      var lastResult: Sexp = Sexp(kind: skInt, intVal: 0, loc: sexp.loc)
+      for i in 1..<sexp.list.len:
+        lastResult = evalSexp(sexp.list[i], env, macros)
+      return lastResult
+    of "set!":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "set! requires 2 arguments")
+      let name = sexp.list[1].symbol
+      let val = evalSexp(sexp.list[2], env, macros)
+      var e = env
+      while e != nil:
+        var binding = e.head
+        while binding != nil:
+          if binding.name == name:
+            binding.entry = EnvEntry(kind: eekSexp, value: val)
+            return val
+          binding = binding.next
+        e = e.parent
+      raise parseError(sexp.list[1].loc, "set!: unbound variable " & name)
+    of "car":
+      if sexp.list.len != 2:
+        raise parseError(sexp.loc, "car requires 1 argument")
+      let lst = evalSexp(sexp.list[1], env, macros)
+      if lst.kind != skList or lst.list.len == 0:
+        raise parseError(sexp.loc, "car: expected non-empty list")
+      return lst.list[0]
+    of "cdr":
+      if sexp.list.len != 2:
+        raise parseError(sexp.loc, "cdr requires 1 argument")
+      let lst = evalSexp(sexp.list[1], env, macros)
+      if lst.kind != skList:
+        raise parseError(sexp.loc, "cdr: expected list")
+      if lst.list.len <= 1:
+        return Sexp(kind: skList, list: @[], loc: lst.loc)
+      return Sexp(kind: skList, list: lst.list[1..^1], loc: lst.loc)
+    of "cons":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "cons requires 2 arguments")
+      let elem = evalSexp(sexp.list[1], env, macros)
+      let lst = evalSexp(sexp.list[2], env, macros)
+      if lst.kind != skList:
+        raise parseError(sexp.loc, "cons: second argument must be a list")
+      var newList: seq[Sexp] = @[elem]
+      for item in lst.list:
+        newList.add(item)
+      return Sexp(kind: skList, list: newList, loc: sexp.loc)
+    of "null?":
+      if sexp.list.len != 2:
+        raise parseError(sexp.loc, "null? requires 1 argument")
+      let lst = evalSexp(sexp.list[1], env, macros)
+      if lst.kind == skList and lst.list.len == 0:
+        return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+      else:
+        return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    of "list?":
+      if sexp.list.len != 2:
+        raise parseError(sexp.loc, "list? requires 1 argument")
+      let val = evalSexp(sexp.list[1], env, macros)
+      if val.kind == skList:
+        return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+      else:
+        return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    of "length":
+      if sexp.list.len != 2:
+        raise parseError(sexp.loc, "length requires 1 argument")
+      let lst = evalSexp(sexp.list[1], env, macros)
+      if lst.kind != skList:
+        raise parseError(sexp.loc, "length: expected list")
+      return Sexp(kind: skInt, intVal: lst.list.len, loc: sexp.loc)
+    of "append":
+      if sexp.list.len < 2:
+        raise parseError(sexp.loc, "append requires at least 1 argument")
+      var combined: seq[Sexp] = @[]
+      for i in 1..<sexp.list.len:
+        let lst = evalSexp(sexp.list[i], env, macros)
+        if lst.kind != skList:
+          raise parseError(sexp.loc, "append: all arguments must be lists")
+        for item in lst.list:
+          combined.add(item)
+      return Sexp(kind: skList, list: combined, loc: sexp.loc)
+    of "reverse":
+      if sexp.list.len != 2:
+        raise parseError(sexp.loc, "reverse requires 1 argument")
+      let lst = evalSexp(sexp.list[1], env, macros)
+      if lst.kind != skList:
+        raise parseError(sexp.loc, "reverse: expected list")
+      var reversed: seq[Sexp] = @[]
+      for i in 0..<lst.list.len:
+        reversed.add(lst.list[lst.list.len - 1 - i])
+      return Sexp(kind: skList, list: reversed, loc: sexp.loc)
+    of "list":
+      var items: seq[Sexp] = @[]
+      for i in 1..<sexp.list.len:
+        items.add(evalSexp(sexp.list[i], env, macros))
+      return Sexp(kind: skList, list: items, loc: sexp.loc)
+    of "gensym":
+      if sexp.list.len == 1:
+        return Sexp(kind: skSymbol, symbol: gensym(), loc: sexp.loc)
+      elif sexp.list.len == 2:
+        let prefix = sexp.list[1]
+        if prefix.kind == skString:
+          return Sexp(kind: skSymbol, symbol: gensym(prefix.str), loc: sexp.loc)
+        elif prefix.kind == skSymbol:
+          return Sexp(kind: skSymbol, symbol: gensym(prefix.symbol), loc: sexp.loc)
+        else:
+          raise parseError(sexp.loc, "gensym prefix must be a string or symbol")
+      else:
+        raise parseError(sexp.loc, "gensym takes 0 or 1 arguments")
+    of "eq?":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "eq? requires 2 arguments")
+      let a = evalSexp(sexp.list[1], env, macros)
+      let b = evalSexp(sexp.list[2], env, macros)
+      if sexpEqual(a, b):
+        return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+      else:
+        return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    of "+":
+      if sexp.list.len < 2:
+        raise parseError(sexp.loc, "+ requires at least 1 argument")
+      var useFloat = false
+      for i in 1..<sexp.list.len:
+        let arg = evalSexp(sexp.list[i], env, macros)
+        if arg.kind == skFloat:
+          useFloat = true
+          break
+      if useFloat:
+        var sum = 0.0
+        for i in 1..<sexp.list.len:
+          sum += getFloat(evalSexp(sexp.list[i], env, macros), sexp.loc)
+        return Sexp(kind: skFloat, floatVal: sum, loc: sexp.loc)
+      else:
+        var sum = 0
+        for i in 1..<sexp.list.len:
+          sum += getInt(evalSexp(sexp.list[i], env, macros), sexp.loc)
+        return Sexp(kind: skInt, intVal: sum, loc: sexp.loc)
+    of "-":
+      if sexp.list.len < 2:
+        raise parseError(sexp.loc, "- requires at least 1 argument")
+      let first = evalSexp(sexp.list[1], env, macros)
+      var useFloat = first.kind == skFloat
+      if not useFloat:
+        for i in 2..<sexp.list.len:
+          if evalSexp(sexp.list[i], env, macros).kind == skFloat:
+            useFloat = true
+            break
+      if sexp.list.len == 2:
+        if useFloat:
+          return Sexp(kind: skFloat, floatVal: -getFloat(first, sexp.loc), loc: sexp.loc)
+        else:
+          return Sexp(kind: skInt, intVal: -getInt(first, sexp.loc), loc: sexp.loc)
+      if useFloat:
+        var diff = getFloat(first, sexp.loc)
+        for i in 2..<sexp.list.len:
+          diff -= getFloat(evalSexp(sexp.list[i], env, macros), sexp.loc)
+        return Sexp(kind: skFloat, floatVal: diff, loc: sexp.loc)
+      else:
+        var diff = getInt(first, sexp.loc)
+        for i in 2..<sexp.list.len:
+          diff -= getInt(evalSexp(sexp.list[i], env, macros), sexp.loc)
+        return Sexp(kind: skInt, intVal: diff, loc: sexp.loc)
+    of "*":
+      if sexp.list.len < 2:
+        raise parseError(sexp.loc, "* requires at least 1 argument")
+      var useFloat = false
+      for i in 1..<sexp.list.len:
+        let arg = evalSexp(sexp.list[i], env, macros)
+        if arg.kind == skFloat:
+          useFloat = true
+          break
+      if useFloat:
+        var prod = 1.0
+        for i in 1..<sexp.list.len:
+          prod *= getFloat(evalSexp(sexp.list[i], env, macros), sexp.loc)
+        return Sexp(kind: skFloat, floatVal: prod, loc: sexp.loc)
+      else:
+        var prod = 1
+        for i in 1..<sexp.list.len:
+          prod *= getInt(evalSexp(sexp.list[i], env, macros), sexp.loc)
+        return Sexp(kind: skInt, intVal: prod, loc: sexp.loc)
+    of "/":
+      if sexp.list.len < 2:
+        raise parseError(sexp.loc, "/ requires at least 1 argument")
+      var quot = getFloat(evalSexp(sexp.list[1], env, macros), sexp.loc)
+      for i in 2..<sexp.list.len:
+        quot /= getFloat(evalSexp(sexp.list[i], env, macros), sexp.loc)
+      return Sexp(kind: skFloat, floatVal: quot, loc: sexp.loc)
+    of "mod":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "mod requires 2 arguments")
+      let a = getInt(evalSexp(sexp.list[1], env, macros), sexp.loc)
+      let b = getInt(evalSexp(sexp.list[2], env, macros), sexp.loc)
+      return Sexp(kind: skInt, intVal: a mod b, loc: sexp.loc)
+    of "div":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "div requires 2 arguments")
+      let a = getInt(evalSexp(sexp.list[1], env, macros), sexp.loc)
+      let b = getInt(evalSexp(sexp.list[2], env, macros), sexp.loc)
+      return Sexp(kind: skInt, intVal: a div b, loc: sexp.loc)
+    of "==":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "== requires 2 arguments")
+      let a = evalSexp(sexp.list[1], env, macros)
+      let b = evalSexp(sexp.list[2], env, macros)
+      if sexpEqual(a, b):
+        return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+      else:
+        return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    of "=":
+      if sexp.list.len < 3:
+        raise parseError(sexp.loc, "= requires at least 2 arguments")
+      for i in 1..<sexp.list.len - 1:
+        let a = evalSexp(sexp.list[i], env, macros)
+        let b = evalSexp(sexp.list[i + 1], env, macros)
+        if not sexpEqual(a, b):
+          return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+      return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+    of "!=":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "!= requires 2 arguments")
+      let a = evalSexp(sexp.list[1], env, macros)
+      let b = evalSexp(sexp.list[2], env, macros)
+      if not sexpEqual(a, b):
+        return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+      else:
+        return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    of "<":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "< requires 2 arguments")
+      let a = getFloat(evalSexp(sexp.list[1], env, macros), sexp.loc)
+      let b = getFloat(evalSexp(sexp.list[2], env, macros), sexp.loc)
+      if a < b: return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+      else: return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    of ">":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "> requires 2 arguments")
+      let a = getFloat(evalSexp(sexp.list[1], env, macros), sexp.loc)
+      let b = getFloat(evalSexp(sexp.list[2], env, macros), sexp.loc)
+      if a > b: return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+      else: return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    of "<=":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, "<= requires 2 arguments")
+      let a = getFloat(evalSexp(sexp.list[1], env, macros), sexp.loc)
+      let b = getFloat(evalSexp(sexp.list[2], env, macros), sexp.loc)
+      if a <= b: return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+      else: return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    of ">=":
+      if sexp.list.len != 3:
+        raise parseError(sexp.loc, ">= requires 2 arguments")
+      let a = getFloat(evalSexp(sexp.list[1], env, macros), sexp.loc)
+      let b = getFloat(evalSexp(sexp.list[2], env, macros), sexp.loc)
+      if a >= b: return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+      else: return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    of "true":
+      return Sexp(kind: skSymbol, symbol: "true", loc: sexp.loc)
+    of "false":
+      return Sexp(kind: skSymbol, symbol: "false", loc: sexp.loc)
+    else:
+      let entry = envGet(env, op, sexp.loc)
+      if entry.kind == eekClosure:
+        var args: seq[Sexp] = @[]
+        for i in 1..<sexp.list.len:
+          args.add(evalSexp(sexp.list[i], env, macros))
+        return applyClosure(entry, args, sexp.loc, macros)
+      elif entry.kind == eekSexp and entry.value.kind == skClosure:
+        let clos = entry.value
+        var args: seq[Sexp] = @[]
+        for i in 1..<sexp.list.len:
+          args.add(evalSexp(sexp.list[i], env, macros))
+        return applySexpClosure(clos, args, sexp.loc, macros)
+      else:
+        raise parseError(sexp.loc, "not a function: " & op)
+
+proc isDefmacro(n: Sexp): bool =
+  n.kind == skList and n.list.len > 0 and
+  n.list[0].kind == skSymbol and n.list[0].symbol == "defmacro"
+
+proc collectMacros(sexps: seq[Sexp]): MacroEnv =
+  result = MacroEnv(bindings: initTable[string, MacroDef]())
+  for sexp in sexps:
+    if isDefmacro(sexp):
+      if sexp.list.len < 3:
+        raise parseError(sexp.loc, "defmacro requires name, params, and body")
+      let nameNode = sexp.list[1]
+      var name: string
+      var params: seq[Sexp]
+      var restParam = ""
+      if nameNode.kind == skSymbol:
+        name = nameNode.symbol
+        let paramsNode = sexp.list[2]
+        if paramsNode.kind != skList:
+          raise parseError(paramsNode.loc, "defmacro params must be a list")
+        for p in paramsNode.list:
+          if p.kind == skSymbol:
+            if p.symbol == "&rest":
+              restParam = "&rest-marker"
+            elif restParam == "&rest-marker":
+              restParam = sanitizeName(p.symbol)
+            else:
+              params.add(p)
+          else:
+            raise parseError(p.loc, "macro param must be a symbol")
+        result.bindings[name] = MacroDef(params: params, restParam: restParam, body: sexp.list[3])
+      elif nameNode.kind == skList:
+        if nameNode.list.len == 0:
+          raise parseError(nameNode.loc, "defmacro name list cannot be empty")
+        name = nameNode.list[0].symbol
+        for i in 1..<nameNode.list.len:
+          let p = nameNode.list[i]
+          if p.kind == skSymbol:
+            if p.symbol == "&rest":
+              restParam = "&rest-marker"
+            elif restParam == "&rest-marker":
+              restParam = sanitizeName(p.symbol)
+            else:
+              params.add(p)
+          else:
+            raise parseError(p.loc, "macro param must be a symbol")
+        result.bindings[name] = MacroDef(params: params, restParam: restParam, body: sexp.list[2])
+      else:
+        raise parseError(nameNode.loc, "defmacro name must be a symbol or (name params...)")
+
+proc expandMacros(sexp: Sexp, macros: MacroEnv): Sexp =
+  case sexp.kind
+  of skList:
+    if sexp.list.len == 0:
+      return sexp
+    let head = sexp.list[0]
+    if head.kind == skSymbol and macros.bindings.hasKey(head.symbol):
+      let macroDef = macros.bindings[head.symbol]
+      let argCount = sexp.list.len - 1
+      let paramCount = macroDef.params.len
+      var args: seq[Sexp] = @[]
+      if macroDef.restParam.len > 0:
+        if argCount < paramCount:
+          raise parseError(sexp.loc, "macro " & head.symbol & " requires at least " & $paramCount & " arguments")
+        for i in 1..paramCount:
+          args.add(sexp.list[i])
+        var restList: seq[Sexp] = @[]
+        for i in (paramCount + 1)..<sexp.list.len:
+          restList.add(sexp.list[i])
+        let macroEnv = newEnv(nil)
+        for i, p in macroDef.params:
+          envSet(macroEnv, sanitizeName(p.symbol), EnvEntry(kind: eekSexp, value: args[i]))
+        envSet(macroEnv, macroDef.restParam, EnvEntry(kind: eekSexp, value: Sexp(kind: skList, list: restList, loc: sexp.loc)))
+        let expanded = evalSexp(macroDef.body, macroEnv, macros)
+        return expandMacros(expanded, macros)
+      else:
+        if argCount != paramCount:
+          raise parseError(sexp.loc, "macro " & head.symbol & " requires " & $paramCount & " arguments, got " & $argCount)
+        let macroEnv = newEnv(nil)
+        for i in 0..<paramCount:
+          envSet(macroEnv, sanitizeName(macroDef.params[i].symbol), EnvEntry(kind: eekSexp, value: sexp.list[i + 1]))
+        let expanded = evalSexp(macroDef.body, macroEnv, macros)
+        return expandMacros(expanded, macros)
+    else:
+      var newList: seq[Sexp] = @[]
+      for item in sexp.list:
+        newList.add(expandMacros(item, macros))
+      return Sexp(kind: skList, list: newList, loc: sexp.loc, isBracket: sexp.isBracket, isQuoted: sexp.isQuoted)
+  of skQuasiquote:
+    return Sexp(kind: skQuasiquote, child: expandMacros(sexp.child, macros), loc: sexp.loc)
+  of skUnquote:
+    return Sexp(kind: skUnquote, child: expandMacros(sexp.child, macros), loc: sexp.loc)
+  of skUnquoteSplicing:
+    return Sexp(kind: skUnquoteSplicing, child: expandMacros(sexp.child, macros), loc: sexp.loc)
+  of skClosure:
+    return Sexp(kind: skClosure, closParams: sexp.closParams, closRestParam: sexp.closRestParam, closBody: expandMacros(sexp.closBody, macros), loc: sexp.loc)
+  else:
+    return sexp
 
 proc forceValue(n: Sexp): string =
   result = emitExpr(n)
@@ -553,6 +1202,12 @@ proc emitDefine(n: Sexp, topLevel: bool): string =
 proc emitExpr(n: Sexp, quoted: bool = false): string =
   if n == nil: return "nil"
   case n.kind
+  of skQuasiquote:
+    raise parseError(n.loc, "quasiquote used outside of macro context")
+  of skUnquote:
+    raise parseError(n.loc, "unquote used outside of quasiquote")
+  of skUnquoteSplicing:
+    raise parseError(n.loc, "unquote-splicing used outside of quasiquote")
   of skSymbol:
     if quoted:
       return quoteStr(n.symbol)
@@ -563,6 +1218,8 @@ proc emitExpr(n: Sexp, quoted: bool = false): string =
     return $n.intVal
   of skFloat:
     return $n.floatVal
+  of skClosure:
+    return "(proc() = nil)"
   of skList:
     if n.list.len == 0:
       return "@[]"
@@ -665,30 +1322,62 @@ proc emitExpr(n: Sexp, quoted: bool = false): string =
           sep = ", "
         return opStr & "(" & args & ")"
 
+proc loadStdlibMacros*(): MacroEnv =
+  result = MacroEnv(bindings: initTable[string, MacroDef]())
+  try:
+    let stdPath = currentSourcePath().parentDir() / "std" / "nilpkg.nil"
+    if fileExists(stdPath):
+      let stdContent = readFile(stdPath)
+      let stdSexps = parseAllSexps(stdContent)
+      let stdMacros = collectMacros(stdSexps)
+      for k, v in stdMacros.bindings:
+        result.bindings[k] = v
+  except:
+    discard
+
+proc mergeMacroEnvs*(a, b: MacroEnv): MacroEnv =
+  result = MacroEnv(bindings: initTable[string, MacroDef]())
+  for k, v in a.bindings:
+    result.bindings[k] = v
+  for k, v in b.bindings:
+    result.bindings[k] = v
+
 proc lispToNim*(code: string): string =
   let sexps = parseAllSexps(code)
   if sexps.len == 0:
     return ""
-  var output = "import std/nil\n\n"
+  let stdMacros = loadStdlibMacros()
+  let fileMacros = collectMacros(sexps)
+  let macros = mergeMacroEnvs(stdMacros, fileMacros)
+  var output = "import std/nilpkg\n\n"
   for i, sexp in sexps:
-    if sexp.kind == skList and sexp.list.len > 0 and
-       sexp.list[0].kind == skSymbol and sexp.list[0].symbol == "define":
-      output.add emitDefine(sexp, true) & "\n"
+    if isDefmacro(sexp):
+      continue
+    let expanded = expandMacros(sexp, macros)
+    if expanded.kind == skList and expanded.list.len > 0 and
+       expanded.list[0].kind == skSymbol and expanded.list[0].symbol == "define":
+      output.add emitDefine(expanded, true) & "\n"
     else:
-      output.add "discard " & forceValue(sexp) & "\n"
+      output.add "discard " & forceValue(expanded) & "\n"
   return output
 
 proc transpileNoStdlib*(code: string): string =
   let sexps = parseAllSexps(code)
   if sexps.len == 0:
     return ""
+  let stdMacros = loadStdlibMacros()
+  let fileMacros = collectMacros(sexps)
+  let macros = mergeMacroEnvs(stdMacros, fileMacros)
   var output = ""
   for i, sexp in sexps:
-    if sexp.kind == skList and sexp.list.len > 0 and
-       sexp.list[0].kind == skSymbol and sexp.list[0].symbol == "define":
-      output.add emitDefine(sexp, true) & "\n"
+    if isDefmacro(sexp):
+      continue
+    let expanded = expandMacros(sexp, macros)
+    if expanded.kind == skList and expanded.list.len > 0 and
+       expanded.list[0].kind == skSymbol and expanded.list[0].symbol == "define":
+      output.add emitDefine(expanded, true) & "\n"
     else:
-      output.add "discard " & forceValue(sexp) & "\n"
+      output.add "discard " & forceValue(expanded) & "\n"
   return runtimeHelpers & "\n" & output
 
 macro lisp*(body: string): untyped =
@@ -697,24 +1386,34 @@ macro lisp*(body: string): untyped =
     if sexps.len == 0:
       result = newStmtList()
     else:
+      let stdMacros = loadStdlibMacros()
+      let fileMacros = collectMacros(sexps)
+      let macros = mergeMacroEnvs(stdMacros, fileMacros)
       var stmts = newStmtList()
       stmts.add parseStmt(runtimeHelpers)
       for j in 0..<sexps.len - 1:
         let s = sexps[j]
-        if s.kind == skList and s.list.len > 0 and
-           s.list[0].kind == skSymbol and s.list[0].symbol == "define":
-          let src = emitDefine(s, true)
+        if isDefmacro(s):
+          continue
+        let expanded = expandMacros(s, macros)
+        if expanded.kind == skList and expanded.list.len > 0 and
+           expanded.list[0].kind == skSymbol and expanded.list[0].symbol == "define":
+          let src = emitDefine(expanded, true)
           stmts.add parseStmt(src)
         else:
-          let src = emitExpr(s)
+          let src = emitExpr(expanded)
           stmts.add parseStmt("discard " & src)
       let lastSexp = sexps[sexps.len - 1]
-      if lastSexp.kind == skList and lastSexp.list.len > 0 and
-         lastSexp.list[0].kind == skSymbol and lastSexp.list[0].symbol == "define":
-        let src = emitDefine(lastSexp, true)
+      if isDefmacro(lastSexp):
+        discard
+      elif lastSexp.kind == skList and lastSexp.list.len > 0 and
+          lastSexp.list[0].kind == skSymbol and lastSexp.list[0].symbol == "define":
+        let expanded = expandMacros(lastSexp, macros)
+        let src = emitDefine(expanded, true)
         stmts.add parseStmt(src)
       else:
-        let lastSrc = emitExpr(lastSexp)
+        let expanded = expandMacros(lastSexp, macros)
+        let lastSrc = emitExpr(expanded)
         stmts.add parseStmt(lastSrc)
       result = stmts
   except ValueError as e:

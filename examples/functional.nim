@@ -1,4 +1,4 @@
-import std/nil
+import std/nilpkg
 
 discard (echo("squares:", block:
     var r: seq[type(@[1, 2, 3, 4, 5][0])] = @[]

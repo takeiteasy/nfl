@@ -1,4 +1,4 @@
-import std/nil
+import std/nilpkg
 
 discard (echo("Hello, World!"); 0)
 discard (echo("Welcome to nil - a Lisp transpiled to Nim"); 0)

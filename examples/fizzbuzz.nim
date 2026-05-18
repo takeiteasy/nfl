@@ -1,4 +1,4 @@
-import std/nil
+import std/nilpkg
 
 proc fizzbuzz(n: auto): auto =
   (if ((n mod 15) == 0): "FizzBuzz" elif ((n mod 3) == 0): "Fizz" elif ((n mod 5) == 0): "Buzz" else: $(n))
