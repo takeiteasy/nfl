@@ -492,26 +492,26 @@ Deferred tasks:
 
 ### Milestone 5: Bootstrap Stdlib
 
-Status: partially completed. `std/core.nimp` is autoloaded by default, a CLI opt-out exists, the first macro library is implemented, and initial sequence helpers are available. Broader stdlib tests and higher-order sequence helpers remain deferred.
+Status: partially completed. `std/core.nimp` is autoloaded by default, a CLI opt-out exists, the first macro library is implemented, core sequence helpers are available, and Nimp-authored stdlib tests are in place. Numeric helper decisions remain deferred.
 
 Deliverables:
 
 1. [x] `std/core.nimp` loaded by default or by explicit prelude import. Implemented as default autoload with `autoloadCore = false` and CLI `--no-core` opt-outs.
 2. [x] Core macro library: `define-proc`, `when`, `unless`, `cond`, `and`, `or`, `let*`, threading macros.
-3. [ ] Core sequence helpers: `first`, `rest`, `empty?`, `append`, `map`, `filter`, `foldl`, `foldr`. `first`, `rest`, `empty?`, and `append` are implemented; higher-order helpers remain deferred.
+3. [x] Core sequence helpers: `first`, `rest`, `empty?`, `append`, `map`, `filter`, `foldl`, `foldr`.
 4. [ ] Numeric convenience wrappers if needed.
-5. [ ] Stdlib tests written in Nimp.
+5. [x] Stdlib tests written in Nimp.
 
 Definition of done:
 
 1. [x] Most language convenience lives in `std/core.nimp`, not Nim compiler code.
-2. [ ] Stdlib tests compile through the same NimNode backend as user programs.
+2. [x] Stdlib tests compile through the same NimNode backend as user programs.
 3. [x] No generated stdlib Nim file is checked in unless a freshness test enforces it.
 
 Deferred tasks:
 
 1. [x] Implement initial runtime sequence helpers once the surface spelling for names such as `empty?` and direct Nim interop for indexing/slicing are settled. Current indexing forms are `(at xs i)` and `(slice xs start stop)`.
-2. [ ] Add Nimp-authored stdlib tests under a dedicated stdlib test layer instead of only Nim tests that exercise autoloaded macros.
+2. [x] Add Nimp-authored stdlib tests under a dedicated stdlib test layer instead of only Nim tests that exercise autoloaded macros.
 3. [ ] Decide whether numeric wrappers are needed or whether direct Nim operator/proc calls are sufficient for the initial stdlib.
 4. [ ] Add an explicit prelude import form only if a concrete need appears; default autoload with `--no-core` is the current behavior.
 

@@ -6,8 +6,11 @@ import ./lower
 import ./macroenv
 import ./nimbackend
 import ./reader
+import ./runtime
 import ./stdlib
 import ./syntax
+
+export runtime
 
 proc readExpandedModule(source, file: string; autoloadCore: bool): seq[Syntax] =
   let env = newMacroEnv()

@@ -52,6 +52,18 @@
 (defmacro append (left right)
   `(& ,left ,right))
 
+(defmacro map (items op)
+  `(nimpSeqMap ,items ,op))
+
+(defmacro filter (items pred)
+  `(nimpSeqFilter ,items ,pred))
+
+(defmacro foldl (items initial op)
+  `(nimpSeqFoldl ,items ,initial ,op))
+
+(defmacro foldr (items initial op)
+  `(nimpSeqFoldr ,items ,initial ,op))
+
 (defmacro -> (value . forms)
   (if (nil? forms)
       value

@@ -16,5 +16,6 @@ task test, "Run tests":
   exec "nim c --path:src -r tests/expand/test_expand.nim"
   exec "nim c --path:src -r tests/compile/test_lower.nim"
   exec "nim c --path:src -r tests/compile/test_backend.nim"
+  exec "nim c --path:src -r tests/stdlib/test_stdlib.nim"
   exec "nim c --path:src src/nimp/cli.nim"
   exec "nim c --path:src -r tests/cli/test_cli.nim"
