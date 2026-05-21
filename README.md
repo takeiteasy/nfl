@@ -1,10 +1,12 @@
-# nil
+# Nimp
 
-Nim Implementation of Lisp using Nim macros. `Nil` code is written in s-expressions and compiled to Nim at compile-time.
+Nimp is a Lisp-inspired processor for Nim. Nimp code is written in s-expressions and will compile to Nim AST through Nim macros.
+
+The project was formerly named `nil` ("Nim Implementation of Lisp"), but v2 is renamed because `nil` is a Nim keyword and is awkward as a package/module name.
 
 ## LICENSE
 ```
-Nim Implementation of Lisp
+Nimp
 
 Copyright (C) 2025 George Watson
 
