@@ -410,7 +410,7 @@ Definition of done:
 
 ### Milestone 2: NimNode Backend MVP
 
-Status: MVP completed. Some semantic polish is deferred below.
+Status: MVP completed. Minimal lowering and mutability validation are complete; remaining semantic polish is deferred below.
 
 Deliverables:
 
@@ -432,8 +432,8 @@ Definition of done:
 Deferred tasks:
 
 1. [ ] Attach `.nimp` source line information to emitted Nim nodes where the Nim macros API allows it.
-2. [ ] Add a proper semantic lowering pass before the backend grows much larger.
-3. [ ] Enforce that `set!` only mutates bindings introduced by `var`.
+2. [x] Add a proper semantic lowering pass before the backend grows much larger. Current implementation is a minimal validation/normalization boundary in `lower.nim`; it preserves syntax shape for the backend.
+3. [x] Enforce that `set!` only mutates bindings introduced by `var`.
 4. [ ] Decide and implement target-type handling for `nil` beyond directly emitting Nim `nil`.
 5. [ ] Add backend support for quoted syntax only after the macro/quote design is implemented.
 6. [ ] Add field/method host interop syntax in the interop milestone.

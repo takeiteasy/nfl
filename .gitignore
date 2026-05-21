@@ -6,6 +6,7 @@ nil_bin
 /tests/test_lisp
 /tests/reader/test_reader
 /tests/compile/test_backend
+/tests/compile/test_lower
 /tests/cli/test_cli
 /src/nimp/cli
 /examples/*
