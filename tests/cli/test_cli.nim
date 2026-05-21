@@ -16,7 +16,7 @@ proc writeTempNimp(dirName, fileName, source: string): string =
   result = dir / fileName
   writeFile(result, source)
 
-let cliExe = getCurrentDir() / "src" / "nimp" / "cli"
+let cliExe = getCurrentDir() / "src" / "nimp" / "nimp"
 
 suite "nimp cli":
   test "checks example file":
@@ -34,6 +34,30 @@ suite "nimp cli":
     let (output, exitCode) = runCommand(cliExe, @["run", file])
     check exitCode == 0
     check output.contains("space path ok")
+
+  test "compile writes binary next to input":
+    let file = writeTempNimp("nimp cli compile output", "compiled.nimp", "(echo \"compiled ok\")\n")
+    let outputExe = changeFileExt(file, ExeExt)
+    if fileExists(outputExe):
+      removeFile(outputExe)
+
+    let (_, compileExit) = runCommand(cliExe, @["compile", file])
+    check compileExit == 0
+    check fileExists(outputExe)
+
+    let (output, runExit) = runCommand(outputExe, @[])
+    check runExit == 0
+    check output.contains("compiled ok")
+
+  test "compile handles output paths with spaces":
+    let file = writeTempNimp("nimp cli compile path with spaces", "hello world.nimp", "(echo \"compiled space path ok\")\n")
+    let outputExe = changeFileExt(file, ExeExt)
+    if fileExists(outputExe):
+      removeFile(outputExe)
+
+    let (_, compileExit) = runCommand(cliExe, @["compile", file])
+    check compileExit == 0
+    check fileExists(outputExe)
 
   test "can disable core autoload":
     let file = writeTempNimp("nimp cli no core", "no core.nimp", "(when true (echo \"loaded\"))\n")

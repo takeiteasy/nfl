@@ -25,6 +25,9 @@ proc repoSrcPath(): string =
   else:
     ""
 
+proc defaultOutputPath(input: string): string =
+  changeFileExt(input, ExeExt)
+
 proc runNim(args: seq[string]): int =
   let nimExe = findExe("nim")
   if nimExe.len == 0:
@@ -71,7 +74,9 @@ proc main(): int =
   var nimArgs: seq[string] = @[]
   case command
   of "run": nimArgs.add @["c", "-r"]
-  of "compile": nimArgs.add "c"
+  of "compile":
+    nimArgs.add "c"
+    nimArgs.add "--out:" & defaultOutputPath(input)
   of "check": nimArgs.add "check"
   else: discard
 
@@ -81,6 +86,10 @@ proc main(): int =
   nimArgs.add wrapper
 
   result = runNim(nimArgs)
+  if result == 0:
+    removeDir(tempDir)
+  else:
+    stderr.writeLine "nimp: preserved temporary build directory: " & tempDir
 
 when isMainModule:
   quit main()

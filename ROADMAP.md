@@ -345,7 +345,7 @@ Do not move a stdlib feature into the compiler just because it is convenient. Mo
 
 ## Proposed Repository Layout
 
-The restart lives in `src/nimp`. The v1 `nil` proof of concept lives under `legacy/` on `master` and remains available unchanged on the `old` branch.
+The restart lives in `src/nimp`. The v1 `nil` proof of concept was removed from this branch after the rewrite direction was established; use historical git revisions if v1 reference material is needed.
 
 ```text
 src/
@@ -357,9 +357,9 @@ src/
     macroenv.nim        # Compile-time macro environment
     lower.nim           # Syntax to core/lowered IR
     nimbackend.nim      # IR to NimNode
-    runtime.nim         # Tiny runtime helpers such as truthy
+    runtime.nim         # Tiny runtime helpers
     compiler.nim        # Public compile APIs and macros
-nimp.nim                # CLI
+    cli.nim             # CLI implementation, installed as `nimp`
 std/
   core.nimp             # Minimal Nimp stdlib loaded by default
   syntax.nimp           # Macro-time syntax helpers
@@ -371,7 +371,7 @@ tests/
 examples/
 ```
 
-The existing `lisp.nim` remains legacy reference code during the restart, but new code must not depend on its string emitter.
+No legacy string emitter is retained in-tree; new implementation work must continue to use the v2 reader, expander, lowering, and NimNode backend path.
 
 ## Milestones
 
@@ -382,7 +382,7 @@ Deliverables:
 1. Decide syntax names for `fn`, `do`, `def`, `defmacro`, `let`, `var`, and `set!`.
 2. Decide runtime `nil` and truthiness semantics.
 3. Decide whether runtime lists are Nim `seq`, cons cells, or both.
-4. Decide whether v2 lives in `src/nimp` while v1 remains as legacy.
+4. Decide whether v2 lives in `src/nimp` while v1 remains as legacy. Answered: v2 lives in `src/nimp`; v1 legacy code has been removed from this branch.
 5. Write one page of language semantics before implementation grows.
 
 Definition of done:
@@ -440,7 +440,7 @@ Deferred tasks:
 
 ### Milestone 3: CLI Wrapper
 
-Status: MVP completed. Basic `.nimp` diagnostics now work for reader, lowering, macro, and backend/type errors; packaging and compile-output polish are deferred below.
+Status: completed. Basic `.nimp` diagnostics work for reader, lowering, macro, and backend/type errors. Nimble metadata installs a user-facing `nimp` executable, `compile` writes stable outputs next to input files, successful commands clean temporary wrapper directories, and failed commands preserve the wrapper path for debugging.
 
 Deliverables:
 
@@ -459,10 +459,10 @@ Definition of done:
 Deferred tasks:
 
 1. [x] Improve generated Nim diagnostics so backend/type errors consistently point at `.nimp` source locations, not only the temporary wrapper.
-2. [ ] Add Nimble installation metadata for a user-facing `nimp` executable.
-3. [ ] Choose stable output paths for `nimp compile` instead of leaving binaries in the temporary wrapper directory.
-4. [ ] Clean up temporary wrapper directories after successful commands, while preserving enough information for debugging failures.
-5. [ ] Add explicit CLI tests for compile output behavior. `.nimp` error reporting tests are in place for reader, lowering, macro, and Nim type errors.
+2. [x] Add Nimble installation metadata for a user-facing `nimp` executable.
+3. [x] Choose stable output paths for `nimp compile` instead of leaving binaries in the temporary wrapper directory. Current behavior writes beside the input path with the `.nimp` extension removed.
+4. [x] Clean up temporary wrapper directories after successful commands, while preserving enough information for debugging failures.
+5. [x] Add explicit CLI tests for compile output behavior. `.nimp` error reporting tests are in place for reader, lowering, macro, and Nim type errors.
 
 ### Milestone 4: Macro System MVP
 
@@ -620,7 +620,7 @@ Stdlib tests:
 
 ## Compatibility Strategy
 
-Do not promise v1 compatibility initially.
+Do not promise v1 compatibility. The v1 implementation has been removed from the active tree, and compatibility should only be added later for specific, justified cases.
 
 Useful things to keep from v1:
 
