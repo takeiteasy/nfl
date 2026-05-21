@@ -13,6 +13,14 @@ proc expandOne(source: string): Syntax =
   check forms.len == 1
   forms[0]
 
+proc expectExpandError(source, messagePart: string) =
+  try:
+    discard expandOne(source)
+    fail()
+  except CompilerError as err:
+    check err.diagnostic.span.file == "expand-test.nimp"
+    check err.diagnostic.message.contains(messagePart)
+
 suite "macro expansion":
   test "expands fixed parameter macro":
     let sx = expandOne """
@@ -64,3 +72,27 @@ suite "macro expansion":
       check err.diagnostic.span.file == "expand-test.nimp"
       check err.diagnostic.message.contains("error expanding macro nope")
       check err.diagnostic.message.contains("bad macro")
+
+  test "rejects fixed parameter macro with too few arguments":
+    expectExpandError("""
+(defmacro pair (x y) `(list ,x ,y))
+(pair 1)
+""", "pair expects 2 arguments, got 1")
+
+  test "rejects fixed parameter macro with too many arguments":
+    expectExpandError("""
+(defmacro pair (x y) `(list ,x ,y))
+(pair 1 2 3)
+""", "pair expects 2 arguments, got 3")
+
+  test "rejects rest parameter macro with too few required arguments":
+    expectExpandError("""
+(defmacro when (test . body) `(if ,test (begin ,@body) nil))
+(when)
+""", "when expects at least 1 arguments, got 0")
+
+  test "rejects macro-time builtin with bad arity":
+    expectExpandError("""
+(defmacro bad () (first))
+(bad)
+""", "first expects 1 arguments, got 0")

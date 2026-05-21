@@ -47,6 +47,8 @@ nimpModule """
 (define shouted (toUpperAscii "nimp"))
 (define shoutedAgain (greet "macro"))
 (define shoutedByMethod (shout "method"))
+(+ 1)
+(begin (+ 1 2) nil)
 """, "module-test.nimp"
 
 suite "nimp module backend":

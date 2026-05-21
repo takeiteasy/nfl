@@ -1,3 +1,10 @@
+template nimpStmt*(body: untyped) =
+  when compiles(block:
+    discard body):
+    discard body
+  else:
+    body
+
 proc nimpSeqMap*[T, U](items: openArray[T]; op: proc(item: T): U {.nimcall.}): seq[U] =
   for item in items:
     result.add op(item)

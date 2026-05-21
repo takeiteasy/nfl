@@ -3,6 +3,7 @@ import std/os
 import std/strutils
 
 import ./diagnostics
+import ./runtime
 import ./syntax
 
 proc isSymbol(sx: Syntax; name: string): bool =
@@ -300,7 +301,7 @@ proc emitStmt*(sx: Syntax): NimNode =
       return emitImport(sx)
     if sx.items[0].isSymbol("proc"):
       return emitProc(sx)
-  emitExpr(sx)
+  newCall(bindSym"nimpStmt", emitExpr(sx)).attachLineInfo(sx)
 
 proc emitModule*(forms: seq[Syntax]): NimNode =
   result = newStmtList()

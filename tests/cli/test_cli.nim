@@ -97,3 +97,29 @@ suite "nimp cli":
     check exitCode != 0
     check output.contains(file & "(3, 12)")
     check output.contains("type mismatch")
+
+  test "unknown symbols point at nimp source":
+    let file = writeTempNimp("nimp cli unknown symbol diagnostic", "unknown symbol.nimp", "(define x missingSymbol)\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["check", file])
+    check exitCode != 0
+    check output.contains(file & "(1,")
+    check output.contains("undeclared identifier")
+    check output.contains("missingSymbol")
+
+  test "nimp arity errors point at nimp source":
+    let file = writeTempNimp("nimp cli nimp arity diagnostic", "if arity.nimp", "(if true 1)\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["check", file])
+    check exitCode != 0
+    check output.contains(file & ":1:1")
+    check output.contains("if expects 3 arguments, got 2")
+
+  test "nim call arity errors point at nimp source":
+    let file = writeTempNimp("nimp cli nim arity diagnostic", "nim arity.nimp", "(+)\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["check", file])
+    check exitCode != 0
+    check output.contains(file & "(1, 2)")
+    check output.contains("type mismatch")
+    check output.contains("`+`()")

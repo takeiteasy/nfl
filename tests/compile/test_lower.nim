@@ -28,3 +28,15 @@ suite "lowering validation":
 
   test "rejects set! for lambda parameters":
     expectLowerError("(lambda ((x int)) (set! x 2))", "immutable binding")
+
+  test "rejects if with too few arguments":
+    expectLowerError("(if true 1)", "if expects 3 arguments, got 2")
+
+  test "rejects set! with too few arguments":
+    expectLowerError("(set! x)", "set! expects 2 arguments, got 1")
+
+  test "rejects at with too few arguments":
+    expectLowerError("(at xs)", "at expects 2 arguments, got 1")
+
+  test "rejects slice with too few arguments":
+    expectLowerError("(slice xs 0)", "slice expects 3 arguments, got 2")
