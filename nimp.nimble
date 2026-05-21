@@ -13,6 +13,7 @@ requires "nim >= 2.2.4"
 
 task test, "Run tests":
   exec "nim c --path:src -r tests/reader/test_reader.nim"
+  exec "nim c --path:src -r tests/expand/test_expand.nim"
   exec "nim c --path:src -r tests/compile/test_lower.nim"
   exec "nim c --path:src -r tests/compile/test_backend.nim"
   exec "nim c --path:src src/nimp/cli.nim"

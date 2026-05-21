@@ -54,3 +54,95 @@ proc newList*(items: seq[Syntax]; span: Span): Syntax =
 
 proc newVector*(items: seq[Syntax]; span: Span): Syntax =
   Syntax(kind: sxVector, span: span, items: items)
+
+proc copySyntax*(sx: Syntax): Syntax =
+  case sx.kind
+  of sxNil:
+    newNil(sx.span)
+  of sxBool:
+    newBool(sx.boolVal, sx.span)
+  of sxInt:
+    newInt(sx.intVal, sx.span)
+  of sxFloat:
+    newFloat(sx.floatVal, sx.span)
+  of sxString:
+    newString(sx.strVal, sx.span)
+  of sxSymbol:
+    newSymbol(sx.sym, sx.span)
+  of sxList:
+    var items: seq[Syntax] = @[]
+    for item in sx.items:
+      items.add item.copySyntax()
+    newList(items, sx.span)
+  of sxVector:
+    var items: seq[Syntax] = @[]
+    for item in sx.items:
+      items.add item.copySyntax()
+    newVector(items, sx.span)
+
+proc withSpan*(sx: Syntax; span: Span): Syntax =
+  result = sx.copySyntax()
+  result.span = span
+
+proc isSymbol*(sx: Syntax; name: string): bool =
+  sx.kind == sxSymbol and sx.sym == name
+
+proc sameSyntax*(a, b: Syntax): bool =
+  if a.kind != b.kind:
+    return false
+  case a.kind
+  of sxNil:
+    true
+  of sxBool:
+    a.boolVal == b.boolVal
+  of sxInt:
+    a.intVal == b.intVal
+  of sxFloat:
+    a.floatVal == b.floatVal
+  of sxString:
+    a.strVal == b.strVal
+  of sxSymbol:
+    a.sym == b.sym
+  of sxList, sxVector:
+    if a.items.len != b.items.len:
+      return false
+    for i in 0 ..< a.items.len:
+      if not sameSyntax(a.items[i], b.items[i]):
+        return false
+    true
+
+proc renderSyntax*(sx: Syntax): string =
+  case sx.kind
+  of sxNil:
+    result = "nil"
+  of sxBool:
+    result = if sx.boolVal: "true" else: "false"
+  of sxInt:
+    result = $sx.intVal
+  of sxFloat:
+    result = $sx.floatVal
+  of sxString:
+    result = "\""
+    for c in sx.strVal:
+      case c
+      of '\\': result.add "\\\\"
+      of '"': result.add "\\\""
+      of '\n': result.add "\\n"
+      of '\r': result.add "\\r"
+      of '\t': result.add "\\t"
+      else: result.add c
+    result.add '"'
+  of sxSymbol:
+    result = sx.sym
+  of sxList:
+    result = "("
+    for i, item in sx.items:
+      if i > 0: result.add " "
+      result.add item.renderSyntax()
+    result.add ")"
+  of sxVector:
+    result = "["
+    for i, item in sx.items:
+      if i > 0: result.add " "
+      result.add item.renderSyntax()
+    result.add "]"

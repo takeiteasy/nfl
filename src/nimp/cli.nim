@@ -16,7 +16,7 @@ proc nimStringLit(s: string): string =
   result.add '"'
 
 proc usage() =
-  stderr.writeLine "usage: nimp <run|compile|check> file.nimp"
+  stderr.writeLine "usage: nimp <run|compile|check> [--no-core] file.nimp"
 
 proc repoSrcPath(): string =
   let candidate = getCurrentDir() / "src"
@@ -36,7 +36,7 @@ proc runNim(args: seq[string]): int =
 
 proc main(): int =
   let args = commandLineParams()
-  if args.len != 2:
+  if args.len < 2 or args.len > 3:
     usage()
     return 2
 
@@ -45,9 +45,20 @@ proc main(): int =
     usage()
     return 2
 
-  let input = absolutePath(args[1])
+  var autoloadCore = true
+  var inputArg = ""
+  if args.len == 3:
+    if args[1] != "--no-core":
+      usage()
+      return 2
+    autoloadCore = false
+    inputArg = args[2]
+  else:
+    inputArg = args[1]
+
+  let input = absolutePath(inputArg)
   if not fileExists(input):
-    stderr.writeLine "nimp: file not found: " & args[1]
+    stderr.writeLine "nimp: file not found: " & inputArg
     return 1
 
   let tempDir = getTempDir() / ("nimp-" & $getCurrentProcessId() & "-" & $epochTime())
@@ -55,7 +66,7 @@ proc main(): int =
   let wrapper = tempDir / "wrapper.nim"
   writeFile(wrapper,
     "import nimp/compiler\n" &
-    "nimpModule(staticRead(" & nimStringLit(input) & "), " & nimStringLit(input) & ")\n")
+    "nimpModule(staticRead(" & nimStringLit(input) & "), " & nimStringLit(input) & ", autoloadCore = " & $autoloadCore & ")\n")
 
   var nimArgs: seq[string] = @[]
   case command

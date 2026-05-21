@@ -431,7 +431,7 @@ Definition of done:
 
 Deferred tasks:
 
-1. [ ] Attach `.nimp` source line information to emitted Nim nodes where the Nim macros API allows it.
+1. [x] Attach `.nimp` source line information to emitted Nim nodes where the Nim macros API allows it.
 2. [x] Add a proper semantic lowering pass before the backend grows much larger. Current implementation is a minimal validation/normalization boundary in `lower.nim`; it preserves syntax shape for the backend.
 3. [x] Enforce that `set!` only mutates bindings introduced by `var`.
 4. [ ] Decide and implement target-type handling for `nil` beyond directly emitting Nim `nil`.
@@ -440,7 +440,7 @@ Deferred tasks:
 
 ### Milestone 3: CLI Wrapper
 
-Status: MVP completed. Packaging and diagnostics polish are deferred below.
+Status: MVP completed. Basic `.nimp` diagnostics now work for reader, lowering, macro, and backend/type errors; packaging and compile-output polish are deferred below.
 
 Deliverables:
 
@@ -454,74 +454,103 @@ Definition of done:
 
 1. [x] The CLI and inline macro use the same compiler code path.
 2. [x] The CLI does not use a separate string transpiler as the authoritative backend.
-3. [ ] CLI errors point at `.nimp` source locations where possible.
+3. [x] CLI errors point at `.nimp` source locations where possible.
 
 Deferred tasks:
 
-1. [ ] Improve generated Nim diagnostics so backend/type errors consistently point at `.nimp` source locations, not only the temporary wrapper.
+1. [x] Improve generated Nim diagnostics so backend/type errors consistently point at `.nimp` source locations, not only the temporary wrapper.
 2. [ ] Add Nimble installation metadata for a user-facing `nimp` executable.
 3. [ ] Choose stable output paths for `nimp compile` instead of leaving binaries in the temporary wrapper directory.
 4. [ ] Clean up temporary wrapper directories after successful commands, while preserving enough information for debugging failures.
-5. [ ] Add explicit CLI tests for compile output behavior and `.nimp` error reporting.
+5. [ ] Add explicit CLI tests for compile output behavior. `.nimp` error reporting tests are in place for reader, lowering, macro, and Nim type errors.
 
 ### Milestone 4: Macro System MVP
 
+Status: MVP completed. Macro expansion, ordinary `defmacro`, rest parameters, quasiquote, `gensym`, diagnostics, and expansion tests are in place; deeper hygiene and runtime quoted syntax remain deferred.
+
 Deliverables:
 
-1. `quote` and `quasiquote` syntax expansion.
-2. `defmacro` with ordinary fixed parameters.
-3. Rest parameters for macros.
-4. `gensym`.
-5. Macro expansion tests that inspect expanded syntax.
-6. A macro-time syntax helper prelude.
+1. [x] `quote` and `quasiquote` syntax expansion.
+2. [x] `defmacro` with ordinary fixed parameters.
+3. [x] Rest parameters for macros.
+4. [x] `gensym`.
+5. [x] Macro expansion tests that inspect expanded syntax.
+6. [x] A macro-time syntax helper prelude.
 
 Definition of done:
 
-1. `when`, `unless`, `cond`, `and`, and `or` can be implemented as Nimp macros.
-2. Macro expansion does not generate Nim strings.
-3. Macro errors report the macro call site and useful expansion context.
+1. [x] `when`, `unless`, `cond`, `and`, and `or` can be implemented as Nimp macros.
+2. [x] Macro expansion does not generate Nim strings.
+3. [x] Macro errors report the macro call site and useful expansion context.
+
+Deferred tasks:
+
+1. [ ] Add deeper hygienic macro metadata beyond stable `gensym` names.
+2. [ ] Decide and implement runtime/backend behavior for quoted syntax outside macro expansion.
+3. [ ] Add more negative expansion tests for invalid `unquote`, invalid `unquote-splicing`, malformed macro parameter lists, and expansion recursion limits.
+4. [ ] Consider a user-facing macro expansion viewer or debug printer once the CLI grows diagnostics tooling.
 
 ### Milestone 5: Bootstrap Stdlib
 
+Status: partially completed. `std/core.nimp` is autoloaded by default, a CLI opt-out exists, the first macro library is implemented, and initial sequence helpers are available. Broader stdlib tests and higher-order sequence helpers remain deferred.
+
 Deliverables:
 
-1. `std/core.nimp` loaded by default or by explicit prelude import.
-2. Core macro library: `define-proc`, `when`, `unless`, `cond`, `and`, `or`, `let*`, threading macros.
-3. Core sequence helpers: `first`, `rest`, `empty?`, `append`, `map`, `filter`, `foldl`, `foldr`.
-4. Numeric convenience wrappers if needed.
-5. Stdlib tests written in Nimp.
+1. [x] `std/core.nimp` loaded by default or by explicit prelude import. Implemented as default autoload with `autoloadCore = false` and CLI `--no-core` opt-outs.
+2. [x] Core macro library: `define-proc`, `when`, `unless`, `cond`, `and`, `or`, `let*`, threading macros.
+3. [ ] Core sequence helpers: `first`, `rest`, `empty?`, `append`, `map`, `filter`, `foldl`, `foldr`. `first`, `rest`, `empty?`, and `append` are implemented; higher-order helpers remain deferred.
+4. [ ] Numeric convenience wrappers if needed.
+5. [ ] Stdlib tests written in Nimp.
 
 Definition of done:
 
-1. Most language convenience lives in `std/core.nimp`, not Nim compiler code.
-2. Stdlib tests compile through the same NimNode backend as user programs.
-3. No generated stdlib Nim file is checked in unless a freshness test enforces it.
+1. [x] Most language convenience lives in `std/core.nimp`, not Nim compiler code.
+2. [ ] Stdlib tests compile through the same NimNode backend as user programs.
+3. [x] No generated stdlib Nim file is checked in unless a freshness test enforces it.
+
+Deferred tasks:
+
+1. [x] Implement initial runtime sequence helpers once the surface spelling for names such as `empty?` and direct Nim interop for indexing/slicing are settled. Current indexing forms are `(at xs i)` and `(slice xs start stop)`.
+2. [ ] Add Nimp-authored stdlib tests under a dedicated stdlib test layer instead of only Nim tests that exercise autoloaded macros.
+3. [ ] Decide whether numeric wrappers are needed or whether direct Nim operator/proc calls are sufficient for the initial stdlib.
+4. [ ] Add an explicit prelude import form only if a concrete need appears; default autoload with `--no-core` is the current behavior.
 
 ### Milestone 6: Interop Polish
 
+Status: partially completed. Import syntax already exists; field/method access, dotted symbols, indexing/slicing, typed top-level proc definitions, and direct Nim-callable procs have initial support. Stable examples and broader interop coverage remain deferred.
+
 Deliverables:
 
-1. Stable import syntax.
-2. Stable field/method access syntax.
-3. Type annotation syntax for parameters, return types, and local declarations.
-4. Generic Nim proc calls where Nim can infer types.
+1. [x] Stable import syntax.
+2. [x] Stable field/method access syntax. Supports both `(. value field)` / `(. value method arg...)` and dotted symbols such as `value.field` / `(value.method arg...)`.
+3. [ ] Type annotation syntax for parameters, return types, and local declarations. Parameter annotations and `define-proc` return annotations are supported; local declaration annotations remain deferred.
+4. [x] Generic Nim proc calls where Nim can infer types.
 5. Escape hatch for advanced Nim interop only if needed.
 
 Definition of done:
 
 1. A Nimp file can use at least three Nim stdlib modules directly.
-2. A Nimp file can define a Nim-callable proc with typed parameters.
-3. A Nim file can call a proc defined in Nimp.
+2. [x] A Nimp file can define a Nim-callable proc with typed parameters.
+3. [x] A Nim file can call a proc defined in Nimp.
 4. Interop examples are small and documented.
+
+Deferred tasks:
+
+1. [ ] Add local declaration type annotations.
+2. [ ] Add documented interop examples using multiple Nim stdlib modules.
+3. [ ] Decide whether advanced interop needs an explicit escape hatch.
+4. [ ] Revisit indexing surface if escaped identifiers are added later; `[]` cannot currently be a symbol because square brackets are vector delimiters.
 
 ### Milestone 7: Stability And Diagnostics
 
+Status: partially completed. Source-line preservation and first CLI diagnostics coverage are in place; broader negative coverage and example/std tests remain deferred.
+
 Deliverables:
 
-1. Negative tests for parse errors, macro errors, type errors, unknown symbols, bad arity, and mutation errors.
+1. [ ] Negative tests for parse errors, macro errors, type errors, unknown symbols, bad arity, and mutation errors. Parse, macro, type, and mutation coverage exists; unknown symbol and bad arity coverage still needs to be rounded out.
 2. Golden expansion tests for macros.
 3. Compile/run tests for examples.
-4. Source-line preservation in generated Nim nodes where possible.
+4. [x] Source-line preservation in generated Nim nodes where possible.
 5. No repeated helper redefinition warnings.
 
 Definition of done:

@@ -117,6 +117,33 @@ proc lowerLambda(ctx: var LowerContext; sx: Syntax) =
   lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
   ctx.popScope()
 
+proc procBodyStart(sx: Syntax): int =
+  result = 3
+  if sx.items.len > 3 and sx.items[3].kind == sxList and sx.items[3].items.len == 2 and sx.items[3].items[0].isSymbol(":"):
+    let returnType = sx.items[3].items[1]
+    if returnType.kind != sxSymbol:
+      raiseCompilerError(returnType.span, "proc return type must be a symbol")
+    result = 4
+
+proc lowerProc(ctx: var LowerContext; sx: Syntax) =
+  if sx.items.len < 4:
+    raiseCompilerError(sx.span, "proc expects name, parameters, and body")
+  let name = sx.items[1]
+  if name.kind != sxSymbol:
+    raiseCompilerError(name.span, "proc name must be a symbol")
+  let params = sx.items[2]
+  if params.kind != sxList:
+    raiseCompilerError(params.span, "proc parameters must be a list")
+  let bodyStart = procBodyStart(sx)
+  if bodyStart > sx.items.high:
+    raiseCompilerError(sx.span, "proc expects body expression")
+  ctx.pushScope()
+  for param in params.items:
+    lowerParam(ctx, param)
+  lowerBody(ctx, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
+  ctx.popScope()
+  declare(ctx, name, bkImmutable)
+
 proc lowerDefine(ctx: var LowerContext; sx: Syntax) =
   expectArity(sx, "define", sx.items.len - 1, 2)
   let name = sx.items[1]
@@ -132,6 +159,25 @@ proc lowerImport(sx: Syntax) =
     raiseCompilerError(module.span, "import expects a module symbol")
   if module.sym.len == 0 or module.sym[0] == '/' or module.sym[^1] == '/' or module.sym.contains("//"):
     raiseCompilerError(module.span, "invalid import path")
+
+proc lowerDot(ctx: var LowerContext; sx: Syntax) =
+  if sx.items.len < 3:
+    raiseCompilerError(sx.span, ". expects object and field or method name")
+  if sx.items[2].kind != sxSymbol:
+    raiseCompilerError(sx.items[2].span, ". field or method name must be a symbol")
+  lowerExpr(ctx, sx.items[1])
+  for i in 3 ..< sx.items.len:
+    lowerExpr(ctx, sx.items[i])
+
+proc lowerAt(ctx: var LowerContext; sx: Syntax) =
+  expectArity(sx, "at", sx.items.len - 1, 2)
+  for i in 1 ..< sx.items.len:
+    lowerExpr(ctx, sx.items[i])
+
+proc lowerSlice(ctx: var LowerContext; sx: Syntax) =
+  expectArity(sx, "slice", sx.items.len - 1, 3)
+  for i in 1 ..< sx.items.len:
+    lowerExpr(ctx, sx.items[i])
 
 proc lowerCall(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len == 0:
@@ -163,6 +209,14 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerSet(ctx, sx)
     elif sx.items[0].isSymbol("lambda"):
       lowerLambda(ctx, sx)
+    elif sx.items[0].isSymbol("proc"):
+      raiseCompilerError(sx.span, "proc is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("."):
+      lowerDot(ctx, sx)
+    elif sx.items[0].isSymbol("at"):
+      lowerAt(ctx, sx)
+    elif sx.items[0].isSymbol("slice"):
+      lowerSlice(ctx, sx)
     elif sx.items[0].isSymbol("define"):
       raiseCompilerError(sx.span, "define is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
@@ -179,6 +233,9 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
       return
     if sx.items[0].isSymbol("import"):
       lowerImport(sx)
+      return
+    if sx.items[0].isSymbol("proc"):
+      lowerProc(ctx, sx)
       return
   lowerExpr(ctx, sx)
 

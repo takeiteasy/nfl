@@ -1,0 +1,74 @@
+(defmacro when (test . body)
+  `(if ,test (begin ,@body) nil))
+
+(defmacro unless (test . body)
+  `(if ,test nil (begin ,@body)))
+
+(defmacro and (. args)
+  (if (nil? args)
+      true
+      (if (nil? (rest args))
+          (first args)
+          `(if ,(first args) (and ,@(rest args)) false))))
+
+(defmacro or (. args)
+  (if (nil? args)
+      false
+      (if (nil? (rest args))
+          (first args)
+          (let ((value (gensym "or")))
+            `(let ((,value ,(first args)))
+               (if ,value ,value (or ,@(rest args))))))))
+
+(defmacro cond (. clauses)
+  (if (nil? clauses)
+      nil
+      (let ((clause (first clauses)))
+        (if (symbol? clause)
+            (macro-error "cond clause must be a list")
+            (if (nil? (rest clause))
+                (macro-error "cond clause expects test and body")
+                (if (nil? (rest clauses))
+                    `(if ,(first clause) (begin ,@(rest clause)) nil)
+                    `(if ,(first clause) (begin ,@(rest clause)) (cond ,@(rest clauses)))))))))
+
+(defmacro let* (bindings . body)
+  (if (nil? bindings)
+      `(begin ,@body)
+      `(let (,(first bindings)) (let* ,(rest bindings) ,@body))))
+
+(defmacro define-proc (name params . body)
+  `(proc ,name ,params ,@body))
+
+(defmacro first (items)
+  `(at ,items 0))
+
+(defmacro rest (items)
+  `(slice ,items 1 (- (. ,items len) 1)))
+
+(defmacro empty? (items)
+  `(== (. ,items len) 0))
+
+(defmacro append (left right)
+  `(& ,left ,right))
+
+(defmacro -> (value . forms)
+  (if (nil? forms)
+      value
+      (let ((form (first forms)))
+        (if (list? form)
+            `(-> (,(first form) ,value ,@(rest form)) ,@(rest forms))
+            `(-> (,form ,value) ,@(rest forms))))))
+
+(defmacro ->> (value . forms)
+  (if (nil? forms)
+      value
+      (let ((form (first forms)))
+        (if (list? form)
+            `(->> (,(first form) ,@(rest form) ,value) ,@(rest forms))
+            `(->> (,form ,value) ,@(rest forms))))))
+
+(defmacro as-> (value name . forms)
+  (if (nil? forms)
+      value
+      `(let ((,name ,value)) (as-> ,(first forms) ,name ,@(rest forms)))))

@@ -19,11 +19,43 @@ suite "nimp backend":
     let inc = nimpExpr"(lambda ((x int)) (+ x 1))"
     check inc(2) == 3
 
+  test "autoloaded core macros":
+    check nimpExpr"(and true true)" == true
+    check nimpExpr"(or false true)" == true
+
+  test "autoload can be disabled for expressions":
+    check compiles(nimpExpr("(+ 1 2)", autoloadCore = false))
+
+  test "field and indexing interop":
+    check nimpExpr"(let ((xs [10 20 30])) (. xs len))" == 3
+    check nimpExpr"(let ((xs [10 20 30])) xs.len)" == 3
+    check nimpExpr"(let ((xs [10 20 30])) (at xs 1))" == 20
+
+  test "autoloaded sequence helper macros":
+    check nimpExpr"(let ((xs [10 20 30])) (first xs))" == 10
+    check nimpExpr"(let ((xs [10 20 30])) (first (rest xs)))" == 20
+    check nimpExpr"(let ((xs [10 20 30])) (empty? xs))" == false
+    check nimpExpr"(let ((xs (@ [10 20])) (ys (@ [30 40]))) (at (append xs ys) 2))" == 30
+
 nimpModule """
 (import std/strutils)
+(define-proc greet ((name string))
+  (toUpperAscii name))
+(define-proc shout ((name string)) (: string)
+  (name.toUpperAscii))
+(when true nil)
 (define shouted (toUpperAscii "nimp"))
+(define shoutedAgain (greet "macro"))
+(define shoutedByMethod (shout "method"))
 """, "module-test.nimp"
 
 suite "nimp module backend":
   test "import and define":
     check shouted == "NIMP"
+
+  test "define-proc macro":
+    check shoutedAgain == "MACRO"
+
+  test "typed define-proc and dotted method call":
+    check shout("nim") == "NIM"
+    check shoutedByMethod == "METHOD"
