@@ -392,54 +392,77 @@ Definition of done:
 
 ### Milestone 1: Reader And Syntax Objects
 
+Status: completed.
+
 Deliverables:
 
-1. New syntax object model with source spans.
-2. Reader for literals, lists, vectors, quote forms, and comments.
-3. Structured diagnostic type with file, line, column, and message.
-4. Unit tests for valid syntax.
-5. Unit tests for malformed syntax.
+1. [x] New syntax object model with source spans.
+2. [x] Reader for literals, lists, vectors, quote forms, and comments.
+3. [x] Structured diagnostic type with file, line, column, and message.
+4. [x] Unit tests for valid syntax.
+5. [x] Unit tests for malformed syntax.
 
 Definition of done:
 
-1. Reader tests do not invoke the Nim compiler.
-2. Every parsed node has a source span.
-3. Unterminated strings, unbalanced delimiters, and invalid quote forms produce clear errors.
+1. [x] Reader tests do not invoke the Nim compiler.
+2. [x] Every parsed node has a source span.
+3. [x] Unterminated strings, unbalanced delimiters, and invalid quote forms produce clear errors.
 
 ### Milestone 2: NimNode Backend MVP
 
+Status: MVP completed. Some semantic polish is deferred below.
+
 Deliverables:
 
-1. A `nimpExpr` Nim macro that accepts a static string and returns `NimNode`.
-2. Emission for literals, symbols, calls, `if`, `begin`, `let`, `var`, `set!`, `lambda`, and `define`.
-3. Basic Nim operator calls.
-4. Basic imports.
-5. Runtime helper module for `truthy` if that design is chosen.
+1. [x] A `nimpExpr` Nim macro that accepts a static string and returns `NimNode`.
+2. [x] Emission for literals, symbols, calls, `if`, `begin`, `let`, `var`, `set!`, `lambda`, and `define`.
+3. [x] Basic Nim operator calls.
+4. [x] Basic imports.
+5. [x] Runtime helper module for `truthy` if that design is chosen. Not needed for the MVP because conditions currently lower to Nim expressions directly.
 
 Definition of done:
 
-1. Inline examples compile without `parseStmt` or generated source strings.
-2. `(+ 1 2)` works.
-3. `(if true 1 2)` works.
-4. `(let ((x 1)) (+ x 2))` works.
-5. `(lambda ((x int)) (+ x 1))` works.
-6. `(import std/strutils)` plus a direct Nim call works.
+1. [x] Inline examples compile without `parseStmt` or generated source strings.
+2. [x] `(+ 1 2)` works.
+3. [x] `(if true 1 2)` works.
+4. [x] `(let ((x 1)) (+ x 2))` works.
+5. [x] `(lambda ((x int)) (+ x 1))` works.
+6. [x] `(import std/strutils)` plus a direct Nim call works.
+
+Deferred tasks:
+
+1. [ ] Attach `.nimp` source line information to emitted Nim nodes where the Nim macros API allows it.
+2. [ ] Add a proper semantic lowering pass before the backend grows much larger.
+3. [ ] Enforce that `set!` only mutates bindings introduced by `var`.
+4. [ ] Decide and implement target-type handling for `nil` beyond directly emitting Nim `nil`.
+5. [ ] Add backend support for quoted syntax only after the macro/quote design is implemented.
+6. [ ] Add field/method host interop syntax in the interop milestone.
 
 ### Milestone 3: CLI Wrapper
 
+Status: MVP completed. Packaging and diagnostics polish are deferred below.
+
 Deliverables:
 
-1. `nimp run file.nimp`.
-2. `nimp compile file.nimp`.
-3. `nimp check file.nimp`.
-4. Temporary wrapper generation using the compile-time `nimpModule(staticRead(...))` path.
-5. Correct shell/path handling for spaces and special characters.
+1. [x] `nimp run file.nimp`.
+2. [x] `nimp compile file.nimp`.
+3. [x] `nimp check file.nimp`.
+4. [x] Temporary wrapper generation using the compile-time `nimpModule(staticRead(...))` path.
+5. [x] Correct shell/path handling for spaces and special characters.
 
 Definition of done:
 
-1. The CLI and inline macro use the same compiler code path.
-2. The CLI does not use a separate string transpiler as the authoritative backend.
-3. CLI errors point at `.nimp` source locations where possible.
+1. [x] The CLI and inline macro use the same compiler code path.
+2. [x] The CLI does not use a separate string transpiler as the authoritative backend.
+3. [ ] CLI errors point at `.nimp` source locations where possible.
+
+Deferred tasks:
+
+1. [ ] Improve generated Nim diagnostics so backend/type errors consistently point at `.nimp` source locations, not only the temporary wrapper.
+2. [ ] Add Nimble installation metadata for a user-facing `nimp` executable.
+3. [ ] Choose stable output paths for `nimp compile` instead of leaving binaries in the temporary wrapper directory.
+4. [ ] Clean up temporary wrapper directories after successful commands, while preserving enough information for debugging failures.
+5. [ ] Add explicit CLI tests for compile output behavior and `.nimp` error reporting.
 
 ### Milestone 4: Macro System MVP
 

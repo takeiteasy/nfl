@@ -1,0 +1,7 @@
+(import std/strutils)
+
+(define greet
+  (lambda ((name string))
+    (echo (toUpperAscii name))))
+
+(greet "nimp")
