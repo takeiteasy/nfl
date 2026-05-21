@@ -41,6 +41,18 @@ suite "macro expansion":
     check rendered.contains("tmp__gensym1")
     check rendered.contains("tmp__gensym2")
 
+  test "macro-time truthiness matches runtime truthiness":
+    let sx = expandOne """
+(defmacro truthy-empty-values ()
+  (list
+    (if nil 'nil-false 'nil-true)
+    (if false 'false-true 'false-false)
+    (if '() 'empty-list-true 'empty-list-false)
+    (if '[] 'empty-vector-true 'empty-vector-false)))
+(truthy-empty-values)
+"""
+    check sx.renderSyntax() == "(nil-true false-false empty-list-true empty-vector-true)"
+
   test "macro errors include call site context":
     try:
       discard expandOne """

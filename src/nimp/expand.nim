@@ -20,8 +20,6 @@ proc truthy(sx: Syntax): bool =
   case sx.kind
   of sxNil:
     false
-  of sxList, sxVector:
-    sx.items.len != 0
   of sxBool:
     sx.boolVal
   else:

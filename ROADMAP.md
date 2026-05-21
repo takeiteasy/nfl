@@ -234,6 +234,8 @@ Decision:
 
 This keeps condition semantics close to Nim while preserving `nil` as the only non-boolean falsey value.
 
+Macro-time conditionals follow the same truthiness rule over syntax values: only syntax `nil` and syntax `false` are falsey. Empty syntax lists and vectors are truthy. Macro code that needs to test for an empty rest argument list should use the macro-time structural predicate `nil?`, not rely on conditional truthiness.
+
 ### Surface Names
 
 Decision:
@@ -434,9 +436,9 @@ Deferred tasks:
 1. [x] Attach `.nimp` source line information to emitted Nim nodes where the Nim macros API allows it.
 2. [x] Add a proper semantic lowering pass before the backend grows much larger. Current implementation is a minimal validation/normalization boundary in `lower.nim`; it preserves syntax shape for the backend.
 3. [x] Enforce that `set!` only mutates bindings introduced by `var`.
-4. [ ] Decide and implement target-type handling for `nil` beyond directly emitting Nim `nil`.
+4. [x] Decide target-type handling for `nil`. Current M7 baseline emits Nim `nil` with `.nimp` line information and lets Nim reject invalid target contexts; richer Nimp-side type diagnostics are deferred until there is a concrete need.
 5. [ ] Add backend support for quoted syntax only after the macro/quote design is implemented.
-6. [ ] Add field/method host interop syntax in the interop milestone.
+6. [x] Add field/method host interop syntax in the interop milestone.
 
 ### Milestone 3: CLI Wrapper
 
@@ -463,10 +465,11 @@ Deferred tasks:
 3. [x] Choose stable output paths for `nimp compile` instead of leaving binaries in the temporary wrapper directory. Current behavior writes beside the input path with the `.nimp` extension removed.
 4. [x] Clean up temporary wrapper directories after successful commands, while preserving enough information for debugging failures.
 5. [x] Add explicit CLI tests for compile output behavior. `.nimp` error reporting tests are in place for reader, lowering, macro, and Nim type errors.
+6. [x] Document that `.nimp` files enter through the `nimp` CLI or `nimpModule(staticRead(...))`, not by passing `.nimp` files directly to `nim c`.
 
 ### Milestone 4: Macro System MVP
 
-Status: MVP completed. Macro expansion, ordinary `defmacro`, rest parameters, quasiquote, `gensym`, diagnostics, and expansion tests are in place; deeper hygiene and runtime quoted syntax remain deferred.
+Status: MVP completed. Macro expansion, ordinary `defmacro`, rest parameters, quasiquote, `gensym`, diagnostics, macro-time truthiness, and expansion tests are in place; deeper hygiene and runtime quoted syntax are deferred to later milestones.
 
 Deliverables:
 
@@ -485,21 +488,21 @@ Definition of done:
 
 Deferred tasks:
 
-1. [ ] Add deeper hygienic macro metadata beyond stable `gensym` names.
-2. [ ] Decide and implement runtime/backend behavior for quoted syntax outside macro expansion.
+1. [ ] Add deeper hygienic macro metadata beyond stable `gensym` names. Deferred to Milestone 8 unless a concrete collision bug appears.
+2. [ ] Decide and implement runtime/backend behavior for quoted syntax outside macro expansion. Runtime quoted syntax remains unimplemented until Nimp has a clear runtime representation for syntax data.
 3. [ ] Add more negative expansion tests for invalid `unquote`, invalid `unquote-splicing`, malformed macro parameter lists, and expansion recursion limits.
-4. [ ] Consider a user-facing macro expansion viewer or debug printer once the CLI grows diagnostics tooling.
+4. [ ] Consider a user-facing macro expansion viewer or debug printer once the CLI grows diagnostics tooling. Deferred to Milestone 8 tooling.
 
 ### Milestone 5: Bootstrap Stdlib
 
-Status: partially completed. `std/core.nimp` is autoloaded by default, a CLI opt-out exists, the first macro library is implemented, core sequence helpers are available, and Nimp-authored stdlib tests are in place. Numeric helper decisions remain deferred.
+Status: mostly completed. `std/core.nimp` is autoloaded by default, a CLI opt-out exists, the first macro library is implemented, core sequence helpers are available, and Nimp-authored stdlib tests are in place. Numeric wrappers are not needed for the initial stdlib; direct Nim operator/proc calls are the baseline.
 
 Deliverables:
 
 1. [x] `std/core.nimp` loaded by default or by explicit prelude import. Implemented as default autoload with `autoloadCore = false` and CLI `--no-core` opt-outs.
 2. [x] Core macro library: `define-proc`, `when`, `unless`, `cond`, `and`, `or`, `let*`, threading macros.
 3. [x] Core sequence helpers: `first`, `rest`, `empty?`, `append`, `map`, `filter`, `foldl`, `foldr`.
-4. [ ] Numeric convenience wrappers if needed.
+4. [x] Numeric convenience wrappers if needed. Decision: not needed initially; use direct Nim operators and procs.
 5. [x] Stdlib tests written in Nimp.
 
 Definition of done:
@@ -512,12 +515,12 @@ Deferred tasks:
 
 1. [x] Implement initial runtime sequence helpers once the surface spelling for names such as `empty?` and direct Nim interop for indexing/slicing are settled. Current indexing forms are `(at xs i)` and `(slice xs start stop)`.
 2. [x] Add Nimp-authored stdlib tests under a dedicated stdlib test layer instead of only Nim tests that exercise autoloaded macros.
-3. [ ] Decide whether numeric wrappers are needed or whether direct Nim operator/proc calls are sufficient for the initial stdlib.
+3. [x] Decide whether numeric wrappers are needed or whether direct Nim operator/proc calls are sufficient for the initial stdlib. Direct calls are sufficient.
 4. [ ] Add an explicit prelude import form only if a concrete need appears; default autoload with `--no-core` is the current behavior.
 
 ### Milestone 6: Interop Polish
 
-Status: partially completed. Import syntax already exists; field/method access, dotted symbols, indexing/slicing, typed top-level proc definitions, and direct Nim-callable procs have initial support. Stable examples and broader interop coverage remain deferred.
+Status: partially completed. Import syntax already exists; field/method access, dotted symbols, indexing/slicing, typed top-level proc definitions, and direct Nim-callable procs have initial support. No advanced escape hatch is needed initially. Stable examples and broader interop coverage remain deferred.
 
 Deliverables:
 
@@ -525,7 +528,7 @@ Deliverables:
 2. [x] Stable field/method access syntax. Supports both `(. value field)` / `(. value method arg...)` and dotted symbols such as `value.field` / `(value.method arg...)`.
 3. [ ] Type annotation syntax for parameters, return types, and local declarations. Parameter annotations and `define-proc` return annotations are supported; local declaration annotations remain deferred.
 4. [x] Generic Nim proc calls where Nim can infer types.
-5. Escape hatch for advanced Nim interop only if needed.
+5. [x] Escape hatch for advanced Nim interop only if needed. Decision: do not add one before a real interop gap appears.
 
 Definition of done:
 
@@ -538,7 +541,7 @@ Deferred tasks:
 
 1. [ ] Add local declaration type annotations.
 2. [ ] Add documented interop examples using multiple Nim stdlib modules.
-3. [ ] Decide whether advanced interop needs an explicit escape hatch.
+3. [x] Decide whether advanced interop needs an explicit escape hatch. Current answer: no explicit escape hatch before M7.
 4. [ ] Revisit indexing surface if escaped identifiers are added later; `[]` cannot currently be a symbol because square brackets are vector delimiters.
 
 ### Milestone 7: Stability And Diagnostics
@@ -574,6 +577,7 @@ Candidate features:
 7. Macro expansion viewer.
 8. Language server basics.
 9. Package layout conventions.
+10. Deeper Nim compiler integration for direct `nim c file.nimp` workflows, if Nim exposes a robust hook for non-Nim project source files.
 
 ## Testing Strategy
 
@@ -639,14 +643,14 @@ Things to leave behind:
 
 ## Open Questions
 
-These should be answered before Milestone 2 grows too large. Milestone 0 answered questions 1, 2, 3, 7, and 8.
+These early architecture questions are now answered for the M7 baseline. Reopen them only with a concrete implementation pressure or user-facing problem.
 
 1. Answered: runtime lists are Nim `seq[T]`.
 2. Answered: only `nil` and `false` are falsey; empty sequences are truthy.
 3. Answered: `nil` lowers to Nim `nil` only where the target type can accept it; otherwise it is a compile-time error.
-4. Should the default prelude be automatic or explicitly imported?
-5. Should `defmacro` be available in ordinary files by default, or only in compile-time modules?
-6. What host field/method access syntax feels best for Nim?
+4. Answered: the default prelude is automatic through `std/core.nimp`, with `autoloadCore = false` and CLI `--no-core` opt-outs.
+5. Answered: `defmacro` is available in ordinary files by default, visible after its definition in file order.
+6. Answered: canonical field/method access uses `(. value field)` and `(. value method arg...)`; dotted symbols such as `value.field` and `(value.method arg...)` are supported as ergonomic syntax.
 7. Answered: the language uses `lambda` and `define`, without initial `fn`/`def` aliases.
 8. Answered: mutation is explicit with `var`; `let` remains immutable.
 
