@@ -3,6 +3,10 @@ import std/os
 import std/osproc
 import std/times
 
+import ./compiler
+import ./diagnostics
+import ./syntax
+
 proc nimStringLit(s: string): string =
   result = "\""
   for c in s:
@@ -16,7 +20,7 @@ proc nimStringLit(s: string): string =
   result.add '"'
 
 proc usage() =
-  stderr.writeLine "usage: nimp <run|compile|check> [--no-core] file.nimp"
+  stderr.writeLine "usage: nimp <run|compile|check|macroexpand> [--no-core] file.nimp"
 
 proc repoSrcPath(): string =
   let candidate = getCurrentDir() / "src"
@@ -44,7 +48,7 @@ proc main(): int =
     return 2
 
   let command = args[0]
-  if command notin ["run", "compile", "check"]:
+  if command notin ["run", "compile", "check", "macroexpand"]:
     usage()
     return 2
 
@@ -63,6 +67,18 @@ proc main(): int =
   if not fileExists(input):
     stderr.writeLine "nimp: file not found: " & inputArg
     return 1
+
+  if command == "macroexpand":
+    try:
+      for form in expandSource(readFile(input), input, autoloadCore):
+        stdout.writeLine form.renderSyntax()
+      return 0
+    except ReaderError as err:
+      stderr.writeLine $err.diagnostic
+      return 1
+    except CompilerError as err:
+      stderr.writeLine $err.diagnostic
+      return 1
 
   let tempDir = getTempDir() / ("nimp-" & $getCurrentProcessId() & "-" & $epochTime())
   createDir(tempDir)

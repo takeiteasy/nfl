@@ -1,0 +1,3 @@
+(define quoted '(alpha [1 beta] (gamma nil)))
+
+(echo quoted.kind)

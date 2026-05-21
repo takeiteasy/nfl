@@ -66,6 +66,28 @@ suite "nimp cli":
     let (_, exitCode) = runCommand(cliExe, @["check", "--no-core", file])
     check exitCode != 0
 
+  test "macroexpand expands with core autoload":
+    let file = writeTempNimp("nimp cli macroexpand", "expand core.nimp", "(when true (echo \"loaded\"))\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["macroexpand", file])
+    check exitCode == 0
+    check output.strip() == "(if true (begin (echo \"loaded\")) nil)"
+
+  test "macroexpand can disable core autoload":
+    let file = writeTempNimp("nimp cli macroexpand no core", "expand no core.nimp", "(when true (echo \"loaded\"))\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["macroexpand", "--no-core", file])
+    check exitCode == 0
+    check output.strip() == "(when true (echo \"loaded\"))"
+
+  test "macroexpand omits consumed defmacro forms":
+    let file = writeTempNimp("nimp cli macroexpand defmacro", "local macro.nimp", "\n(defmacro id (x) x)\n(id (+ 1 2))\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["macroexpand", file])
+    check exitCode == 0
+    check output.strip() == "(+ 1 2)"
+    check not output.contains("defmacro")
+
   test "reader errors point at nimp source":
     let file = writeTempNimp("nimp cli reader diagnostic", "reader error.nimp", "\n(define x \"unterminated\n")
 

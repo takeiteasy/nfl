@@ -37,6 +37,41 @@ suite "nimp backend":
     check nimpExpr"(let ((xs [10 20 30])) (empty? xs))" == false
     check nimpExpr"(let ((xs (@ [10 20])) (ys (@ [30 40]))) (at (append xs ys) 2))" == 30
 
+  test "runtime quote returns public datum scalars":
+    let nilDatum = nimpExpr"'nil"
+    check nilDatum.kind == ndNil
+
+    let boolDatum = nimpExpr"'false"
+    check boolDatum.kind == ndBool
+    check boolDatum.boolVal == false
+
+    let intDatum = nimpExpr"'42"
+    check intDatum.kind == ndInt
+    check intDatum.intVal == 42
+
+    let stringDatum = nimpExpr("'\"hello\"")
+    check stringDatum.kind == ndString
+    check stringDatum.strVal == "hello"
+
+    let symbolDatum = nimpExpr"'alpha"
+    check symbolDatum.kind == ndSymbol
+    check symbolDatum.sym == "alpha"
+
+  test "runtime quote preserves nested list and vector structure":
+    let datum = nimpExpr"'(alpha [1 beta] (gamma nil))"
+    check datum.kind == ndList
+    check datum.items.len == 3
+    check datum.items[0].kind == ndSymbol
+    check datum.items[0].sym == "alpha"
+    check datum.items[1].kind == ndVector
+    check datum.items[1].items[0].kind == ndInt
+    check datum.items[1].items[0].intVal == 1
+    check datum.items[1].items[1].kind == ndSymbol
+    check datum.items[1].items[1].sym == "beta"
+    check datum.items[2].kind == ndList
+    check datum.items[2].items[0].sym == "gamma"
+    check datum.items[2].items[1].kind == ndNil
+
 nimpModule """
 (import std/strutils)
 (defmacro hygienic ()

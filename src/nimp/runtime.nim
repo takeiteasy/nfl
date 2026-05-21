@@ -1,3 +1,48 @@
+type
+  NimpDatumKind* = enum
+    ndNil, ndBool, ndInt, ndFloat, ndString, ndSymbol, ndList, ndVector
+
+  NimpDatum* = ref object
+    case kind*: NimpDatumKind
+    of ndNil:
+      discard
+    of ndBool:
+      boolVal*: bool
+    of ndInt:
+      intVal*: BiggestInt
+    of ndFloat:
+      floatVal*: BiggestFloat
+    of ndString:
+      strVal*: string
+    of ndSymbol:
+      sym*: string
+    of ndList, ndVector:
+      items*: seq[NimpDatum]
+
+proc nimpNilDatum*(): NimpDatum =
+  NimpDatum(kind: ndNil)
+
+proc nimpBoolDatum*(value: bool): NimpDatum =
+  NimpDatum(kind: ndBool, boolVal: value)
+
+proc nimpIntDatum*(value: BiggestInt): NimpDatum =
+  NimpDatum(kind: ndInt, intVal: value)
+
+proc nimpFloatDatum*(value: BiggestFloat): NimpDatum =
+  NimpDatum(kind: ndFloat, floatVal: value)
+
+proc nimpStringDatum*(value: string): NimpDatum =
+  NimpDatum(kind: ndString, strVal: value)
+
+proc nimpSymbolDatum*(value: string): NimpDatum =
+  NimpDatum(kind: ndSymbol, sym: value)
+
+proc nimpListDatum*(items: varargs[NimpDatum]): NimpDatum =
+  NimpDatum(kind: ndList, items: @items)
+
+proc nimpVectorDatum*(items: varargs[NimpDatum]): NimpDatum =
+  NimpDatum(kind: ndVector, items: @items)
+
 template nimpStmt*(body: untyped) =
   when compiles(block:
     discard body):

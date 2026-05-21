@@ -233,6 +233,33 @@ proc emitSlice(ctx: var EmitContext; sx: Syntax): NimNode =
   result = nnkBracketExpr.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
   result.add nnkInfix.newTree(ident(".."), ctx.emitExpr(sx.items[2]), ctx.emitExpr(sx.items[3])).attachLineInfo(sx)
 
+proc emitQuotedDatum(sx: Syntax): NimNode =
+  case sx.kind
+  of sxNil:
+    result = newCall(bindSym"nimpNilDatum").attachLineInfo(sx)
+  of sxBool:
+    result = newCall(bindSym"nimpBoolDatum", newLit(sx.boolVal)).attachLineInfo(sx)
+  of sxInt:
+    result = newCall(bindSym"nimpIntDatum", newLit(sx.intVal)).attachLineInfo(sx)
+  of sxFloat:
+    result = newCall(bindSym"nimpFloatDatum", newLit(sx.floatVal)).attachLineInfo(sx)
+  of sxString:
+    result = newCall(bindSym"nimpStringDatum", newLit(sx.strVal)).attachLineInfo(sx)
+  of sxSymbol:
+    result = newCall(bindSym"nimpSymbolDatum", newLit(sx.sym)).attachLineInfo(sx)
+  of sxList:
+    result = newCall(bindSym"nimpListDatum").attachLineInfo(sx)
+    for item in sx.items:
+      result.add emitQuotedDatum(item)
+  of sxVector:
+    result = newCall(bindSym"nimpVectorDatum").attachLineInfo(sx)
+    for item in sx.items:
+      result.add emitQuotedDatum(item)
+
+proc emitQuote(sx: Syntax): NimNode =
+  expectArity(sx, "quote", sx.items.len - 1, 1)
+  emitQuotedDatum(sx.items[1])
+
 proc emitCall(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len == 0:
     raiseCompilerError(sx.span, "empty list is not callable")
@@ -288,7 +315,9 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
     elif sx.items[0].isSymbol("import"):
       raiseCompilerError(sx.span, "import is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("quote"):
-      raiseCompilerError(sx.span, "quote is not implemented yet")
+      emitQuote(sx)
+    elif sx.items[0].isSymbol("quasiquote"):
+      raiseCompilerError(sx.span, "runtime quasiquote is not implemented yet")
     else:
       ctx.emitCall(sx)
 

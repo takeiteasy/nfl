@@ -40,3 +40,10 @@ suite "lowering validation":
 
   test "rejects slice with too few arguments":
     expectLowerError("(slice xs 0)", "slice expects 3 arguments, got 2")
+
+  test "rejects quote with wrong arity":
+    expectLowerError("(quote)", "quote expects 1 arguments, got 0")
+    expectLowerError("(quote a b)", "quote expects 1 arguments, got 2")
+
+  test "rejects runtime quasiquote":
+    expectLowerError("`(a b)", "runtime quasiquote is not implemented yet")

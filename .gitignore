@@ -5,10 +5,13 @@ nimble.paths
 nil_bin
 /tests/test_lisp
 /tests/reader/test_reader
+/tests/expand/test_expand
 /tests/compile/test_backend
 /tests/compile/test_lower
 /tests/cli/test_cli
+/tests/stdlib/test_stdlib
 /src/nimp/cli
+/src/nimp/nimp
 /examples/*
 !/examples/*.lisp
 !/examples/*.nim

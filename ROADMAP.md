@@ -437,7 +437,7 @@ Deferred tasks:
 2. [x] Add a proper semantic lowering pass before the backend grows much larger. Current implementation is a minimal validation/normalization boundary in `lower.nim`; it preserves syntax shape for the backend.
 3. [x] Enforce that `set!` only mutates bindings introduced by `var`.
 4. [x] Decide target-type handling for `nil`. Current M7 baseline emits Nim `nil` with `.nimp` line information and lets Nim reject invalid target contexts; richer Nimp-side type diagnostics are deferred until there is a concrete need.
-5. [ ] Add backend support for quoted syntax only after the macro/quote design is implemented.
+5. [x] Add backend support for quoted syntax only after the macro/quote design is implemented.
 6. [x] Add field/method host interop syntax in the interop milestone.
 
 ### Milestone 3: CLI Wrapper
@@ -489,9 +489,9 @@ Definition of done:
 Deferred tasks:
 
 1. [x] Add deeper hygienic macro metadata beyond stable `gensym` names.
-2. [ ] Decide and implement runtime/backend behavior for quoted syntax outside macro expansion. Runtime quoted syntax remains unimplemented until Nimp has a clear runtime representation for syntax data.
+2. [x] Implement runtime `quote` as public datum values, separate from compiler `Syntax`. Runtime quoted values should preserve literal structure and symbol names, but not spans or hygiene metadata. Keep runtime quasiquote/unquote deferred until there is a concrete use case.
 3. [x] Add more negative expansion tests for invalid `unquote`, invalid `unquote-splicing`, malformed macro parameter lists, and expansion recursion limits.
-4. [ ] Consider a user-facing macro expansion viewer or debug printer once the CLI grows diagnostics tooling. Deferred to Milestone 8 tooling.
+4. [x] Add a simple `macroexpand` CLI command that reads a `.nimp` file, runs reader and macro expansion with normal core autoload behavior, and prints expanded Nimp syntax using the existing syntax renderer. Support `--no-core`; defer richer interactive viewers/debug printers until diagnostics tooling grows.
 
 ### Milestone 5: Bootstrap Stdlib
 

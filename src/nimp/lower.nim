@@ -187,6 +187,9 @@ proc lowerSlice(ctx: var LowerContext; sx: Syntax) =
   for i in 1 ..< sx.items.len:
     lowerExpr(ctx, sx.items[i])
 
+proc lowerQuote(sx: Syntax) =
+  expectArity(sx, "quote", sx.items.len - 1, 1)
+
 proc lowerCall(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len == 0:
     raiseCompilerError(sx.span, "empty list is not callable")
@@ -230,7 +233,9 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
     elif sx.items[0].isSymbol("import"):
       raiseCompilerError(sx.span, "import is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("quote"):
-      raiseCompilerError(sx.span, "quote is not implemented yet")
+      lowerQuote(sx)
+    elif sx.items[0].isSymbol("quasiquote"):
+      raiseCompilerError(sx.span, "runtime quasiquote is not implemented yet")
     else:
       lowerCall(ctx, sx)
 
