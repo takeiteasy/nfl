@@ -49,6 +49,21 @@ suite "macro expansion":
     check rendered.contains("tmp__gensym1")
     check rendered.contains("tmp__gensym2")
 
+  test "gensym identity cannot be forged by matching printed name":
+    let sx = expandOne """
+(defmacro collision ()
+  (let ((a (gensym "tmp")))
+    `(list ,a tmp__gensym1)))
+(collision)
+"""
+    check sx.renderSyntax() == "(list tmp__gensym1 tmp__gensym1)"
+    check sx.items[1].kind == sxSymbol
+    check sx.items[2].kind == sxSymbol
+    check sx.items[1].sym == sx.items[2].sym
+    check sx.items[1].hygieneId != 0
+    check sx.items[2].hygieneId == 0
+    check not sx.items[1].sameSyntax(sx.items[2])
+
   test "macro-time truthiness matches runtime truthiness":
     let sx = expandOne """
 (defmacro truthy-empty-values ()
@@ -96,3 +111,39 @@ suite "macro expansion":
 (defmacro bad () (first))
 (bad)
 """, "first expects 1 arguments, got 0")
+
+  test "rejects unquote outside quasiquote":
+    expectExpandError(",x", "unquote is only valid inside quasiquote")
+
+  test "rejects unquote-splicing outside quasiquote":
+    expectExpandError(",@xs", "unquote-splicing is only valid inside quasiquote")
+
+  test "rejects malformed unquote":
+    expectExpandError("""
+(defmacro bad () `(unquote a b))
+(bad)
+""", "unquote expects 1 arguments, got 2")
+
+  test "rejects malformed unquote-splicing":
+    expectExpandError("""
+(defmacro bad () `(a (unquote-splicing (list 'x) (list 'y))))
+(bad)
+""", "unquote-splicing expects 1 arguments, got 2")
+
+  test "rejects duplicate macro parameters":
+    expectExpandError("""
+(defmacro bad (x x) x)
+(bad 1 2)
+""", "duplicate macro parameter: x")
+
+  test "rejects duplicate macro rest parameter":
+    expectExpandError("""
+(defmacro bad (x . x) x)
+(bad 1 2)
+""", "duplicate macro parameter: x")
+
+  test "rejects expansion recursion limit":
+    expectExpandError("""
+(defmacro loop () `(loop))
+(loop)
+""", "macro expansion depth exceeded")

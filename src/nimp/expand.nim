@@ -44,6 +44,7 @@ proc parseMacroParams(params: Syntax): tuple[names: seq[string], rest: string] =
     raiseCompilerError(params.span, "macro parameters must be a list")
 
   var sawRest = false
+  var seen = initTable[string, bool]()
   for i, item in params.items:
     if item.kind != sxSymbol:
       raiseCompilerError(item.span, "macro parameter must be a symbol")
@@ -52,9 +53,18 @@ proc parseMacroParams(params: Syntax): tuple[names: seq[string], rest: string] =
         raiseCompilerError(item.span, "invalid macro rest parameter")
       sawRest = true
     elif sawRest:
+      if seen.hasKey(item.sym):
+        raiseCompilerError(item.span, "duplicate macro parameter: " & item.sym)
       result.rest = item.sym
+      seen[item.sym] = true
     else:
+      if seen.hasKey(item.sym):
+        raiseCompilerError(item.span, "duplicate macro parameter: " & item.sym)
       result.names.add item.sym
+      seen[item.sym] = true
+
+  if sawRest and result.rest.len == 0:
+    raiseCompilerError(params.items[^1].span, "invalid macro rest parameter")
 
 proc parseDefmacro(sx: Syntax): MacroDef =
   if sx.items.len < 4:
@@ -85,7 +95,8 @@ proc evalQuasiquote(env: MacroEnv; scope: var EvalScope; sx: Syntax; allowSplice
 
 proc evalQuasiquoteItems(env: MacroEnv; scope: var EvalScope; items: openArray[Syntax]; owner: Syntax): seq[Syntax] =
   for item in items:
-    if item.kind == sxList and item.items.len == 2 and item.items[0].isSymbol("unquote-splicing"):
+    if item.kind == sxList and item.items.len > 0 and item.items[0].isSymbol("unquote-splicing"):
+      expectArity(item, "unquote-splicing", item.items.len - 1, 1)
       let splice = evalMacroExpr(env, scope, item.items[1])
       if splice.kind != sxList and splice.kind != sxVector:
         raiseCompilerError(item.span, "unquote-splicing expects a list or vector")
@@ -95,12 +106,15 @@ proc evalQuasiquoteItems(env: MacroEnv; scope: var EvalScope; items: openArray[S
       result.add evalQuasiquote(env, scope, item, true)
 
 proc evalQuasiquote(env: MacroEnv; scope: var EvalScope; sx: Syntax; allowSplice: bool): Syntax =
-  if sx.kind == sxList and sx.items.len == 2 and sx.items[0].isSymbol("unquote"):
-    return evalMacroExpr(env, scope, sx.items[1])
-  if sx.kind == sxList and sx.items.len == 2 and sx.items[0].isSymbol("unquote-splicing"):
-    if not allowSplice:
-      raiseCompilerError(sx.span, "unquote-splicing is only valid inside a quasiquoted list or vector")
-    raiseCompilerError(sx.span, "unquote-splicing is only valid as a list or vector element")
+  if sx.kind == sxList and sx.items.len > 0:
+    if sx.items[0].isSymbol("unquote"):
+      expectArity(sx, "unquote", sx.items.len - 1, 1)
+      return evalMacroExpr(env, scope, sx.items[1])
+    if sx.items[0].isSymbol("unquote-splicing"):
+      expectArity(sx, "unquote-splicing", sx.items.len - 1, 1)
+      if not allowSplice:
+        raiseCompilerError(sx.span, "unquote-splicing is only valid inside a quasiquoted list or vector")
+      raiseCompilerError(sx.span, "unquote-splicing is only valid as a list or vector element")
   case sx.kind
   of sxList:
     newList(evalQuasiquoteItems(env, scope, sx.items, sx), sx.span)
@@ -250,6 +264,10 @@ proc expandList(env: MacroEnv; sx: Syntax; depth: int): Syntax =
   let head = sx.items[0]
   if head.isSymbol("quote"):
     return sx.copySyntax()
+  if head.isSymbol("unquote"):
+    raiseCompilerError(sx.span, "unquote is only valid inside quasiquote")
+  if head.isSymbol("unquote-splicing"):
+    raiseCompilerError(sx.span, "unquote-splicing is only valid inside quasiquote")
   if head.isSymbol("defmacro"):
     raiseCompilerError(sx.span, "defmacro is only allowed at statement/module scope")
   if head.kind == sxSymbol and env.hasMacro(head.sym):

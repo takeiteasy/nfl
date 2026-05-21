@@ -1,0 +1,7 @@
+(defmacro hygienic-sum ()
+  (let ((tmp (gensym "tmp")))
+    `(let ((,tmp 1)
+           (tmp__gensym1 2))
+       (+ ,tmp tmp__gensym1))))
+
+(echo (hygienic-sum))

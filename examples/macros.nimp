@@ -1,0 +1,15 @@
+(defmacro log-when (label test . body)
+  `(when ,test
+     (echo ,label)
+     ,@body))
+
+(log-when "macro branch selected" true
+  (echo "body form one")
+  (echo "body form two"))
+
+(echo (and true true true))
+(echo (or false false true))
+
+(cond
+  (false (echo "not selected"))
+  (true (echo "cond selected")))

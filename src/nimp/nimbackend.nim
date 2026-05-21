@@ -1,10 +1,14 @@
 import std/macros
 import std/os
 import std/strutils
+import std/tables
 
 import ./diagnostics
 import ./runtime
 import ./syntax
+
+type EmitContext = object
+  hygienicSymbols: Table[int, NimNode]
 
 proc isSymbol(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
@@ -16,17 +20,21 @@ proc expectArity(sx: Syntax; name: string; actual, expected: int) =
   if actual != expected:
     raiseCompilerError(sx.span, name & " expects " & $expected & " arguments, got " & $actual)
 
-proc emitExpr*(sx: Syntax): NimNode
-proc emitStmt*(sx: Syntax): NimNode
+proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode
+proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode
 
 proc attachLineInfo(node: NimNode; sx: Syntax): NimNode =
   result = node
   if sx.span.file.len > 0 and sx.span.file[0] != '<' and fileExists(sx.span.file):
     result.setLineInfo(sx.span.file, sx.span.line, sx.span.col)
 
-proc identForSymbol(sx: Syntax): NimNode =
+proc identForSymbol(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, "expected symbol")
+  if sx.hygieneId != 0:
+    if not ctx.hygienicSymbols.hasKey(sx.hygieneId):
+      ctx.hygienicSymbols[sx.hygieneId] = genSym(nskLet, sx.sym)
+    return ctx.hygienicSymbols[sx.hygieneId].copyNimTree().attachLineInfo(sx)
   ident(sx.sym).attachLineInfo(sx)
 
 proc emitDottedSymbol(sx: Syntax): NimNode =
@@ -39,13 +47,13 @@ proc emitDottedSymbol(sx: Syntax): NimNode =
   for part in parts[1 .. ^1]:
     result = nnkDotExpr.newTree(result, ident(part)).attachLineInfo(sx)
 
-proc emitSymbolRef(sx: Syntax): NimNode =
+proc emitSymbolRef(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, "expected symbol")
-  if sx.sym.contains('.') and sx.sym != ".":
+  if sx.hygieneId == 0 and sx.sym.contains('.') and sx.sym != ".":
     emitDottedSymbol(sx)
   else:
-    identForSymbol(sx)
+    ctx.identForSymbol(sx)
 
 proc identForTypeSymbol(sx: Syntax): NimNode =
   if sx.kind != sxSymbol:
@@ -65,17 +73,17 @@ proc emitModulePath(sx: Syntax): NimNode =
   for part in parts[1 .. ^1]:
     result = nnkInfix.newTree(ident("/"), result, ident(part)).attachLineInfo(sx)
 
-proc emitBodyExpr(items: openArray[Syntax]; owner: Syntax): NimNode =
+proc emitBodyExpr(ctx: var EmitContext; items: openArray[Syntax]; owner: Syntax): NimNode =
   if items.len == 0:
     raiseCompilerError(owner.span, "expected body expression")
   if items.len == 1:
-    return emitExpr(items[0])
+    return ctx.emitExpr(items[0])
   result = newStmtList()
   for i, item in items:
     if i == items.high:
-      result.add emitExpr(item)
+      result.add ctx.emitExpr(item)
     else:
-      result.add emitStmt(item)
+      result.add ctx.emitStmt(item)
 
 proc emitBlockExpr(stmts: seq[NimNode]; body: NimNode): NimNode =
   var list = newStmtList()
@@ -84,7 +92,7 @@ proc emitBlockExpr(stmts: seq[NimNode]; body: NimNode): NimNode =
   list.add body
   nnkBlockStmt.newTree(newEmptyNode(), list)
 
-proc emitLetLike(sx: Syntax; mutable: bool): NimNode =
+proc emitLetLike(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
   if sx.items.len < 3:
     raiseCompilerError(sx.span, formName(sx.items[0]) & " expects bindings and body")
   let bindings = sx.items[1]
@@ -98,41 +106,41 @@ proc emitLetLike(sx: Syntax; mutable: bool): NimNode =
     let name = binding.items[0]
     if name.kind != sxSymbol:
       raiseCompilerError(name.span, "binding name must be a symbol")
-    section.add nnkIdentDefs.newTree(identForSymbol(name), newEmptyNode(), emitExpr(binding.items[1])).attachLineInfo(binding)
+    section.add nnkIdentDefs.newTree(ctx.identForSymbol(name), newEmptyNode(), ctx.emitExpr(binding.items[1])).attachLineInfo(binding)
 
-  emitBlockExpr(@[section.attachLineInfo(sx)], emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)).attachLineInfo(sx)
+  emitBlockExpr(@[section.attachLineInfo(sx)], ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)).attachLineInfo(sx)
 
-proc emitIf(sx: Syntax): NimNode =
+proc emitIf(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "if", sx.items.len - 1, 3)
   nnkIfExpr.newTree(
-    nnkElifExpr.newTree(emitExpr(sx.items[1]), emitExpr(sx.items[2])),
-    nnkElseExpr.newTree(emitExpr(sx.items[3]))
+    nnkElifExpr.newTree(ctx.emitExpr(sx.items[1]), ctx.emitExpr(sx.items[2])),
+    nnkElseExpr.newTree(ctx.emitExpr(sx.items[3]))
   ).attachLineInfo(sx)
 
-proc emitIfStmt(sx: Syntax): NimNode =
+proc emitIfStmt(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "if", sx.items.len - 1, 3)
   nnkIfStmt.newTree(
-    nnkElifBranch.newTree(emitExpr(sx.items[1]), emitStmt(sx.items[2])),
-    nnkElse.newTree(emitStmt(sx.items[3]))
+    nnkElifBranch.newTree(ctx.emitExpr(sx.items[1]), ctx.emitStmt(sx.items[2])),
+    nnkElse.newTree(ctx.emitStmt(sx.items[3]))
   ).attachLineInfo(sx)
 
-proc emitBegin(sx: Syntax): NimNode =
+proc emitBegin(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len == 1:
     raiseCompilerError(sx.span, "begin expects at least one expression")
-  emitBlockExpr(@[], emitBodyExpr(sx.items.toOpenArray(1, sx.items.high), sx)).attachLineInfo(sx)
+  emitBlockExpr(@[], ctx.emitBodyExpr(sx.items.toOpenArray(1, sx.items.high), sx)).attachLineInfo(sx)
 
-proc emitSet(sx: Syntax): NimNode =
+proc emitSet(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "set!", sx.items.len - 1, 2)
-  nnkAsgn.newTree(identForSymbol(sx.items[1]), emitExpr(sx.items[2])).attachLineInfo(sx)
+  nnkAsgn.newTree(ctx.identForSymbol(sx.items[1]), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)
 
-proc emitParam(param: Syntax): NimNode =
+proc emitParam(ctx: var EmitContext; param: Syntax): NimNode =
   if param.kind == sxSymbol:
-    return nnkIdentDefs.newTree(identForSymbol(param), newEmptyNode(), newEmptyNode()).attachLineInfo(param)
+    return nnkIdentDefs.newTree(ctx.identForSymbol(param), newEmptyNode(), newEmptyNode()).attachLineInfo(param)
   if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and param.items[1].kind == sxSymbol:
-    return nnkIdentDefs.newTree(identForSymbol(param.items[0]), identForTypeSymbol(param.items[1]), newEmptyNode()).attachLineInfo(param)
+    return nnkIdentDefs.newTree(ctx.identForSymbol(param.items[0]), identForTypeSymbol(param.items[1]), newEmptyNode()).attachLineInfo(param)
   raiseCompilerError(param.span, "lambda parameter must be a symbol or (name type)")
 
-proc emitLambda(sx: Syntax): NimNode =
+proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len < 3:
     raiseCompilerError(sx.span, "lambda expects parameters and body")
   let params = sx.items[1]
@@ -140,7 +148,7 @@ proc emitLambda(sx: Syntax): NimNode =
     raiseCompilerError(params.span, "lambda parameters must be a list")
   var formalParams = nnkFormalParams.newTree(ident("auto"))
   for param in params.items:
-    formalParams.add emitParam(param)
+    formalParams.add ctx.emitParam(param)
   nnkLambda.newTree(
     newEmptyNode(),
     newEmptyNode(),
@@ -148,7 +156,7 @@ proc emitLambda(sx: Syntax): NimNode =
     formalParams,
     newEmptyNode(),
     newEmptyNode(),
-    emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)
+    ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)
   ).attachLineInfo(sx)
 
 proc procBodyStart(sx: Syntax): int =
@@ -156,7 +164,7 @@ proc procBodyStart(sx: Syntax): int =
   if sx.items.len > 3 and sx.items[3].kind == sxList and sx.items[3].items.len == 2 and sx.items[3].items[0].isSymbol(":"):
     result = 4
 
-proc emitProc(sx: Syntax): NimNode =
+proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len < 4:
     raiseCompilerError(sx.span, "proc expects name, parameters, and body")
   let name = sx.items[1]
@@ -179,61 +187,61 @@ proc emitProc(sx: Syntax): NimNode =
 
   var formalParams = nnkFormalParams.newTree(returnType)
   for param in params.items:
-    formalParams.add emitParam(param)
+    formalParams.add ctx.emitParam(param)
 
   nnkProcDef.newTree(
-    identForSymbol(name),
+    ctx.identForSymbol(name),
     newEmptyNode(),
     newEmptyNode(),
     formalParams,
     newEmptyNode(),
     newEmptyNode(),
-    emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
+    ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ).attachLineInfo(sx)
 
-proc emitDefine(sx: Syntax): NimNode =
+proc emitDefine(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "define", sx.items.len - 1, 2)
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "define name must be a symbol")
-  nnkLetSection.newTree(nnkIdentDefs.newTree(identForSymbol(name), newEmptyNode(), emitExpr(sx.items[2])).attachLineInfo(sx)).attachLineInfo(sx)
+  nnkLetSection.newTree(nnkIdentDefs.newTree(ctx.identForSymbol(name), newEmptyNode(), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)).attachLineInfo(sx)
 
 proc emitImport(sx: Syntax): NimNode =
   expectArity(sx, "import", sx.items.len - 1, 1)
   nnkImportStmt.newTree(emitModulePath(sx.items[1])).attachLineInfo(sx)
 
-proc emitDot(sx: Syntax): NimNode =
+proc emitDot(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len < 3:
     raiseCompilerError(sx.span, ". expects object and field or method name")
   let name = sx.items[2]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, ". field or method name must be a symbol")
-  let dot = nnkDotExpr.newTree(emitExpr(sx.items[1]), identForSymbol(name)).attachLineInfo(sx)
+  let dot = nnkDotExpr.newTree(ctx.emitExpr(sx.items[1]), ctx.identForSymbol(name)).attachLineInfo(sx)
   if sx.items.len == 3:
     return dot
   result = newCall(dot).attachLineInfo(sx)
   for i in 3 ..< sx.items.len:
-    result.add emitExpr(sx.items[i])
+    result.add ctx.emitExpr(sx.items[i])
 
-proc emitAt(sx: Syntax): NimNode =
+proc emitAt(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "at", sx.items.len - 1, 2)
-  result = nnkBracketExpr.newTree(emitExpr(sx.items[1])).attachLineInfo(sx)
-  result.add emitExpr(sx.items[2])
+  result = nnkBracketExpr.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
+  result.add ctx.emitExpr(sx.items[2])
 
-proc emitSlice(sx: Syntax): NimNode =
+proc emitSlice(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "slice", sx.items.len - 1, 3)
-  result = nnkBracketExpr.newTree(emitExpr(sx.items[1])).attachLineInfo(sx)
-  result.add nnkInfix.newTree(ident(".."), emitExpr(sx.items[2]), emitExpr(sx.items[3])).attachLineInfo(sx)
+  result = nnkBracketExpr.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
+  result.add nnkInfix.newTree(ident(".."), ctx.emitExpr(sx.items[2]), ctx.emitExpr(sx.items[3])).attachLineInfo(sx)
 
-proc emitCall(sx: Syntax): NimNode =
+proc emitCall(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len == 0:
     raiseCompilerError(sx.span, "empty list is not callable")
-  var call = newCall(emitSymbolRef(sx.items[0])).attachLineInfo(sx)
+  var call = newCall(ctx.emitSymbolRef(sx.items[0])).attachLineInfo(sx)
   for i in 1 ..< sx.items.len:
-    call.add emitExpr(sx.items[i])
+    call.add ctx.emitExpr(sx.items[i])
   call
 
-proc emitExpr*(sx: Syntax): NimNode =
+proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
   case sx.kind
   of sxNil:
     newNilLit().attachLineInfo(sx)
@@ -246,33 +254,33 @@ proc emitExpr*(sx: Syntax): NimNode =
   of sxString:
     newLit(sx.strVal).attachLineInfo(sx)
   of sxSymbol:
-    emitSymbolRef(sx)
+    ctx.emitSymbolRef(sx)
   of sxVector:
     var bracket = nnkBracket.newTree()
     for item in sx.items:
-      bracket.add emitExpr(item)
+      bracket.add ctx.emitExpr(item)
     bracket.attachLineInfo(sx)
   of sxList:
     if sx.items.len == 0:
       raiseCompilerError(sx.span, "empty list is not an expression")
     if sx.items[0].isSymbol("if"):
-      emitIf(sx)
+      ctx.emitIf(sx)
     elif sx.items[0].isSymbol("begin"):
-      emitBegin(sx)
+      ctx.emitBegin(sx)
     elif sx.items[0].isSymbol("let"):
-      emitLetLike(sx, false)
+      ctx.emitLetLike(sx, false)
     elif sx.items[0].isSymbol("var"):
-      emitLetLike(sx, true)
+      ctx.emitLetLike(sx, true)
     elif sx.items[0].isSymbol("set!"):
-      emitSet(sx)
+      ctx.emitSet(sx)
     elif sx.items[0].isSymbol("lambda"):
-      emitLambda(sx)
+      ctx.emitLambda(sx)
     elif sx.items[0].isSymbol("."):
-      emitDot(sx)
+      ctx.emitDot(sx)
     elif sx.items[0].isSymbol("at"):
-      emitAt(sx)
+      ctx.emitAt(sx)
     elif sx.items[0].isSymbol("slice"):
-      emitSlice(sx)
+      ctx.emitSlice(sx)
     elif sx.items[0].isSymbol("define"):
       raiseCompilerError(sx.span, "define is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("proc"):
@@ -282,28 +290,37 @@ proc emitExpr*(sx: Syntax): NimNode =
     elif sx.items[0].isSymbol("quote"):
       raiseCompilerError(sx.span, "quote is not implemented yet")
     else:
-      emitCall(sx)
+      ctx.emitCall(sx)
 
-proc emitStmt*(sx: Syntax): NimNode =
+proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.kind == sxNil:
     return newStmtList()
   if sx.kind == sxList and sx.items.len > 0:
     if sx.items[0].isSymbol("if"):
-      return emitIfStmt(sx)
+      return ctx.emitIfStmt(sx)
     if sx.items[0].isSymbol("begin"):
       result = newStmtList()
       for i in 1 ..< sx.items.len:
-        result.add emitStmt(sx.items[i])
+        result.add ctx.emitStmt(sx.items[i])
       return
     if sx.items[0].isSymbol("define"):
-      return emitDefine(sx)
+      return ctx.emitDefine(sx)
     if sx.items[0].isSymbol("import"):
       return emitImport(sx)
     if sx.items[0].isSymbol("proc"):
-      return emitProc(sx)
-  newCall(bindSym"nimpStmt", emitExpr(sx)).attachLineInfo(sx)
+      return ctx.emitProc(sx)
+  newCall(bindSym"nimpStmt", ctx.emitExpr(sx)).attachLineInfo(sx)
+
+proc emitExpr*(sx: Syntax): NimNode =
+  var ctx = EmitContext(hygienicSymbols: initTable[int, NimNode]())
+  ctx.emitExpr(sx)
+
+proc emitStmt*(sx: Syntax): NimNode =
+  var ctx = EmitContext(hygienicSymbols: initTable[int, NimNode]())
+  ctx.emitStmt(sx)
 
 proc emitModule*(forms: seq[Syntax]): NimNode =
+  var ctx = EmitContext(hygienicSymbols: initTable[int, NimNode]())
   result = newStmtList()
   for form in forms:
-    result.add emitStmt(form)
+    result.add ctx.emitStmt(form)

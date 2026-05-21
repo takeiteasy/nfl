@@ -32,4 +32,4 @@ proc defineMacro*(env: MacroEnv; def: MacroDef) =
 proc gensym*(env: MacroEnv; hint: string; span: Span): Syntax =
   inc env.gensymCounter
   let prefix = if hint.len == 0: "g" else: hint
-  newSymbol(prefix & "__gensym" & $env.gensymCounter, span)
+  newSymbol(prefix & "__gensym" & $env.gensymCounter, span, env.gensymCounter)

@@ -1,0 +1,10 @@
+(import std/strutils)
+
+(define-proc shout ((name string)) (: string)
+  (name.toUpperAscii))
+
+(define names (@ ["nimp" "macro" "nim"]))
+
+(echo (shout "hello"))
+(echo (. names len))
+(echo (at names 1))

@@ -19,9 +19,10 @@ proc writeTempNimp(dirName, fileName, source: string): string =
 let cliExe = getCurrentDir() / "src" / "nimp" / "nimp"
 
 suite "nimp cli":
-  test "checks example file":
-    let (_, exitCode) = runCommand(cliExe, @["check", "examples/simple.nimp"])
-    check exitCode == 0
+  test "checks example files":
+    for file in walkFiles("examples/*.nimp"):
+      let (_, exitCode) = runCommand(cliExe, @["check", file])
+      check exitCode == 0
 
   test "runs example file":
     let (output, exitCode) = runCommand(cliExe, @["run", "examples/simple.nimp"])

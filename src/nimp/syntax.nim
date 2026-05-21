@@ -22,6 +22,7 @@ type
       strVal*: string
     of sxSymbol:
       sym*: string
+      hygieneId*: int
     of sxList, sxVector:
       items*: seq[Syntax]
 
@@ -46,8 +47,8 @@ proc newFloat*(value: BiggestFloat; span: Span): Syntax =
 proc newString*(value: string; span: Span): Syntax =
   Syntax(kind: sxString, span: span, strVal: value)
 
-proc newSymbol*(value: string; span: Span): Syntax =
-  Syntax(kind: sxSymbol, span: span, sym: value)
+proc newSymbol*(value: string; span: Span; hygieneId = 0): Syntax =
+  Syntax(kind: sxSymbol, span: span, sym: value, hygieneId: hygieneId)
 
 proc newList*(items: seq[Syntax]; span: Span): Syntax =
   Syntax(kind: sxList, span: span, items: items)
@@ -68,7 +69,7 @@ proc copySyntax*(sx: Syntax): Syntax =
   of sxString:
     newString(sx.strVal, sx.span)
   of sxSymbol:
-    newSymbol(sx.sym, sx.span)
+    newSymbol(sx.sym, sx.span, sx.hygieneId)
   of sxList:
     var items: seq[Syntax] = @[]
     for item in sx.items:
@@ -102,7 +103,7 @@ proc sameSyntax*(a, b: Syntax): bool =
   of sxString:
     a.strVal == b.strVal
   of sxSymbol:
-    a.sym == b.sym
+    a.sym == b.sym and a.hygieneId == b.hygieneId
   of sxList, sxVector:
     if a.items.len != b.items.len:
       return false

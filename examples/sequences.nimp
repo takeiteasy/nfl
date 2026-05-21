@@ -1,0 +1,14 @@
+(define nums (@ [1 2 3 4]))
+
+(define doubled
+  (map nums (lambda ((x int64)) (* x 2))))
+
+(define small
+  (filter nums (lambda ((x int64)) (< x 4))))
+
+(define total
+  (foldl nums 0 (lambda ((acc int64) (x int64)) (+ acc x))))
+
+(echo (first doubled))
+(echo (first (rest small)))
+(echo total)

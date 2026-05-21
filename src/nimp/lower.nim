@@ -18,6 +18,12 @@ proc isSymbol(sx: Syntax; name: string): bool =
 proc formName(sx: Syntax): string =
   if sx.kind == sxSymbol: sx.sym else: "form"
 
+proc symbolKey(sx: Syntax): string =
+  if sx.hygieneId == 0:
+    sx.sym
+  else:
+    sx.sym & "\0" & $sx.hygieneId
+
 proc expectArity(sx: Syntax; name: string; actual, expected: int) =
   if actual != expected:
     raiseCompilerError(sx.span, name & " expects " & $expected & " arguments, got " & $actual)
@@ -34,14 +40,16 @@ proc declare(ctx: var LowerContext; name: Syntax; kind: BindingKind) =
   if ctx.scopes.len == 0:
     ctx.pushScope()
   var scope = addr ctx.scopes[^1]
-  if scope[].hasKey(name.sym):
+  let key = name.symbolKey()
+  if scope[].hasKey(key):
     raiseCompilerError(name.span, "duplicate binding: " & name.sym)
-  scope[][name.sym] = kind
+  scope[][key] = kind
 
-proc lookup(ctx: LowerContext; name: string): Option[BindingKind] =
+proc lookup(ctx: LowerContext; name: Syntax): Option[BindingKind] =
+  let key = name.symbolKey()
   for i in countdown(ctx.scopes.high, 0):
-    if ctx.scopes[i].hasKey(name):
-      return some(ctx.scopes[i][name])
+    if ctx.scopes[i].hasKey(key):
+      return some(ctx.scopes[i][key])
   none(BindingKind)
 
 proc lowerExpr(ctx: var LowerContext; sx: Syntax)
@@ -90,7 +98,7 @@ proc lowerSet(ctx: var LowerContext; sx: Syntax) =
   let target = sx.items[1]
   if target.kind != sxSymbol:
     raiseCompilerError(target.span, "set! target must be a symbol")
-  let binding = ctx.lookup(target.sym)
+  let binding = ctx.lookup(target)
   if binding.isNone:
     raiseCompilerError(target.span, "set! target is not a mutable local: " & target.sym)
   if binding.get() != bkMutable:

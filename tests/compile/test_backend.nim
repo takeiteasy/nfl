@@ -39,6 +39,10 @@ suite "nimp backend":
 
 nimpModule """
 (import std/strutils)
+(defmacro hygienic ()
+  (let ((tmp (gensym "tmp")))
+    `(let ((,tmp 1) (tmp__gensym1 2))
+       (+ ,tmp tmp__gensym1))))
 (define-proc greet ((name string))
   (toUpperAscii name))
 (define-proc shout ((name string)) (: string)
@@ -47,6 +51,7 @@ nimpModule """
 (define shouted (toUpperAscii "nimp"))
 (define shoutedAgain (greet "macro"))
 (define shoutedByMethod (shout "method"))
+(define hygienicResult (hygienic))
 (+ 1)
 (begin (+ 1 2) nil)
 """, "module-test.nimp"
@@ -61,3 +66,6 @@ suite "nimp module backend":
   test "typed define-proc and dotted method call":
     check shout("nim") == "NIM"
     check shoutedByMethod == "METHOD"
+
+  test "gensym bindings do not collide with matching source names":
+    check hygienicResult == 3

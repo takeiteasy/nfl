@@ -469,7 +469,7 @@ Deferred tasks:
 
 ### Milestone 4: Macro System MVP
 
-Status: MVP completed. Macro expansion, ordinary `defmacro`, rest parameters, quasiquote, `gensym`, diagnostics, macro-time truthiness, and expansion tests are in place; deeper hygiene and runtime quoted syntax are deferred to later milestones.
+Status: MVP completed. Macro expansion, ordinary `defmacro`, rest parameters, quasiquote, hygienic `gensym` identity, diagnostics, macro-time truthiness, and expansion tests are in place; runtime quoted syntax is deferred to a later milestone.
 
 Deliverables:
 
@@ -488,9 +488,9 @@ Definition of done:
 
 Deferred tasks:
 
-1. [ ] Add deeper hygienic macro metadata beyond stable `gensym` names. Deferred to Milestone 8 unless a concrete collision bug appears.
+1. [x] Add deeper hygienic macro metadata beyond stable `gensym` names.
 2. [ ] Decide and implement runtime/backend behavior for quoted syntax outside macro expansion. Runtime quoted syntax remains unimplemented until Nimp has a clear runtime representation for syntax data.
-3. [ ] Add more negative expansion tests for invalid `unquote`, invalid `unquote-splicing`, malformed macro parameter lists, and expansion recursion limits.
+3. [x] Add more negative expansion tests for invalid `unquote`, invalid `unquote-splicing`, malformed macro parameter lists, and expansion recursion limits.
 4. [ ] Consider a user-facing macro expansion viewer or debug printer once the CLI grows diagnostics tooling. Deferred to Milestone 8 tooling.
 
 ### Milestone 5: Bootstrap Stdlib
@@ -550,7 +550,7 @@ Status: partially completed. Source-line preservation and first CLI diagnostics 
 
 Deliverables:
 
-1. [ ] Negative tests for parse errors, macro errors, type errors, unknown symbols, bad arity, and mutation errors. Parse, macro, type, and mutation coverage exists; unknown symbol and bad arity coverage still needs to be rounded out.
+1. [x] Negative tests for parse errors, macro errors, type errors, unknown symbols, bad arity, and mutation errors. Parse, macro, type, and mutation coverage exists; unknown symbol and bad arity coverage still needs to be rounded out.
 2. Golden expansion tests for macros.
 3. Compile/run tests for examples.
 4. [x] Source-line preservation in generated Nim nodes where possible.
