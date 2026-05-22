@@ -4,6 +4,8 @@ Nimp is a Lisp-inspired processor for Nim. Nimp code is written in s-expressions
 
 The project was formerly named `nil` ("Nim Implementation of Lisp"), but v2 is renamed because `nil` is a Nim keyword and is awkward as a package/module name.
 
+See [PROGRESS.md](./PROGRESS.md) for a summary of progress before this roadmap (if needed).
+
 ## Usage
 
 Compile, run, or check `.nimp` files with the Nimp CLI:
