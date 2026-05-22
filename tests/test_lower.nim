@@ -56,6 +56,56 @@ suite "lowering validation":
   test "rejects slice with too few arguments":
     expectLowerError("(slice xs 0)", "slice expects 3 arguments, got 2")
 
+  test "allows object construction":
+    discard lowerExpr(readOne("(new Person (name \"Ada\") (age 36))", "lower-test.nimp"))
+
+  test "rejects malformed object construction":
+    expectLowerError("(new)", "new expects a type and field initializers")
+    expectLowerError("(new 1 (name \"Ada\"))", "new type must be a type symbol")
+    expectLowerError("(new Person name)", "new field initializer must be (name value)")
+    expectLowerError("(new Person (name))", "new field initializer must be (name value)")
+    expectLowerError("(new Person (1 \"Ada\"))", "new field name must be a symbol")
+    expectLowerError("(new Person (name* \"Ada\"))", "new field name cannot use export markers")
+    expectLowerError("(new Person (.name \"Ada\"))", "invalid new field name")
+    expectLowerError("(new Person (name \"Ada\") (name \"Grace\"))", "duplicate new field: name")
+
+  test "new duplicate field diagnostics use field source location":
+    try:
+      discard lowerExpr(readOne("""
+(new Person
+  (name "Ada")
+  (name "Grace"))
+""", "lower-test.nimp"))
+      fail()
+    except CompilerError as err:
+      check err.diagnostic.span.file == "lower-test.nimp"
+      check err.diagnostic.span.line == 3
+      check err.diagnostic.message.contains("duplicate new field: name")
+
+  test "allows named arguments in ordinary calls":
+    discard lowerExpr(readOne("(makePerson (: name \"Ada\") (: age 36))", "lower-test.nimp"))
+
+  test "rejects malformed named arguments":
+    expectLowerError("(: name \"Ada\")", "named argument marker is only allowed in call argument position")
+    expectLowerError("(makePerson (: name))", "named argument must be (: name value)")
+    expectLowerError("(makePerson (: 1 \"Ada\"))", "named argument name must be a symbol")
+    expectLowerError("(makePerson (: name* \"Ada\"))", "named argument name cannot use export markers")
+    expectLowerError("(makePerson (: .name \"Ada\"))", "invalid named argument name")
+    expectLowerError("(makePerson (: name \"Ada\") (: name \"Grace\"))", "duplicate named argument: name")
+
+  test "named argument duplicate diagnostics use argument source location":
+    try:
+      discard lowerExpr(readOne("""
+(makePerson
+  (: name "Ada")
+  (: name "Grace"))
+""", "lower-test.nimp"))
+      fail()
+    except CompilerError as err:
+      check err.diagnostic.span.file == "lower-test.nimp"
+      check err.diagnostic.span.line == 3
+      check err.diagnostic.message.contains("duplicate named argument: name")
+
   test "rejects quote with wrong arity":
     expectLowerError("(quote)", "quote expects 1 arguments, got 0")
     expectLowerError("(quote a b)", "quote expects 1 arguments, got 2")

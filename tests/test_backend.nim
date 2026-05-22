@@ -2,6 +2,16 @@ import std/unittest
 
 import nimp/compiler
 
+type ImportedPerson = object
+  name: string
+  age: int
+
+proc importedPersonAge(p: ImportedPerson): int =
+  p.age
+
+proc describePerson(name: string; age: int): string =
+  name & ":" & $age
+
 suite "nimp backend":
   test "operator call":
     check nimpExpr"(+ 1 2)" == 3
@@ -37,6 +47,12 @@ suite "nimp backend":
     check nimpExpr"(let ((xs [10 20 30])) xs.len)" == 3
     check nimpExpr"(let ((xs [10 20 30])) (at xs 1))" == 20
     check nimpExpr"(let ((xs [10 20 30])) (|[]| xs 1))" == 20
+
+  test "constructs imported Nim objects":
+    check nimpExpr("""(let ((p (new ImportedPerson (name "Ada") (age 36)))) (importedPersonAge p))""") == 36
+
+  test "passes Nim named arguments to ordinary calls":
+    check nimpExpr("""(describePerson (: age 36) (: name "Ada"))""") == "Ada:36"
 
   test "autoloaded sequence helper macros":
     check nimpExpr"(let ((xs [10 20 30])) (first xs))" == 10
@@ -105,9 +121,16 @@ nimpModule """
   (+ x 1))
 (proc personAge ((p Person)) (: int)
   (. p age))
+(proc personNamedAge ((p Person) (expected int)) (: bool)
+  (== (. p age) expected))
 (define counted (incCount 2))
 (define defaultPerson (default Person))
 (define defaultAge (personAge defaultPerson))
+(define ada (new Person (name "Ada") (age 36)))
+(define adaName (. ada name))
+(define adaAge (personAge ada))
+(define adaHasExpectedAge (personNamedAge ada 36))
+(define adaHasExpectedNamedAge (personNamedAge (: expected 36) (: p ada)))
 (define favoriteMood happy)
 (+ 1)
 (block (+ 1 2) nil)
@@ -132,6 +155,10 @@ suite "nimp module backend":
 
   test "object type definition":
     check defaultAge == 0
+    check adaName == "Ada"
+    check adaAge == 36
+    check adaHasExpectedAge == true
+    check adaHasExpectedNamedAge == true
 
   test "enum type definition":
     check favoriteMood == happy

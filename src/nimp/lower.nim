@@ -54,6 +54,10 @@ proc lookup(ctx: LowerContext; name: Syntax): Option[BindingKind] =
 
 proc lowerExpr(ctx: var LowerContext; sx: Syntax)
 proc lowerStmt(ctx: var LowerContext; sx: Syntax)
+proc validateTypeReference(sx: Syntax; what: string)
+
+proc isNamedArg(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol(":")
 
 proc bindingName(binding: Syntax): Syntax =
   if binding.kind != sxList or binding.items.len != 2:
@@ -177,14 +181,36 @@ proc lowerImport(sx: Syntax) =
   if module.sym.len == 0 or module.sym[0] == '/' or module.sym[^1] == '/' or module.sym.contains("//"):
     raiseCompilerError(module.span, "invalid import path")
 
+proc validateFieldName(name: Syntax; what: string): string =
+  if name.kind != sxSymbol:
+    raiseCompilerError(name.span, what & " must be a symbol")
+  if name.sym.contains("*"):
+    raiseCompilerError(name.span, what & " cannot use export markers")
+  if name.sym.len == 0 or name.sym[0] == '.' or name.sym[^1] == '.' or name.sym.contains(".."):
+    raiseCompilerError(name.span, "invalid " & what & ": " & name.sym)
+  name.sym
+
+proc lowerNamedArg(ctx: var LowerContext; sx: Syntax; seen: var Table[string, bool]) =
+  if sx.items.len != 3:
+    raiseCompilerError(sx.span, "named argument must be (: name value)")
+  let key = validateFieldName(sx.items[1], "named argument name")
+  if seen.hasKey(key):
+    raiseCompilerError(sx.items[1].span, "duplicate named argument: " & key)
+  seen[key] = true
+  lowerExpr(ctx, sx.items[2])
+
 proc lowerDot(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len < 3:
     raiseCompilerError(sx.span, ". expects object and field or method name")
   if sx.items[2].kind != sxSymbol:
     raiseCompilerError(sx.items[2].span, ". field or method name must be a symbol")
   lowerExpr(ctx, sx.items[1])
+  var seenNamedArgs = initTable[string, bool]()
   for i in 3 ..< sx.items.len:
-    lowerExpr(ctx, sx.items[i])
+    if sx.items[i].isNamedArg():
+      lowerNamedArg(ctx, sx.items[i], seenNamedArgs)
+    else:
+      lowerExpr(ctx, sx.items[i])
 
 proc lowerAt(ctx: var LowerContext; sx: Syntax) =
   expectArity(sx, "at", sx.items.len - 1, 2)
@@ -195,6 +221,20 @@ proc lowerSlice(ctx: var LowerContext; sx: Syntax) =
   expectArity(sx, "slice", sx.items.len - 1, 3)
   for i in 1 ..< sx.items.len:
     lowerExpr(ctx, sx.items[i])
+
+proc lowerNew(ctx: var LowerContext; sx: Syntax) =
+  if sx.items.len < 2:
+    raiseCompilerError(sx.span, "new expects a type and field initializers")
+  validateTypeReference(sx.items[1], "new type")
+  var seen = initTable[string, bool]()
+  for field in sx.items.toOpenArray(2, sx.items.high):
+    if field.kind != sxList or field.items.len != 2:
+      raiseCompilerError(field.span, "new field initializer must be (name value)")
+    let key = validateFieldName(field.items[0], "new field name")
+    if seen.hasKey(key):
+      raiseCompilerError(field.items[0].span, "duplicate new field: " & key)
+    seen[key] = true
+    lowerExpr(ctx, field.items[1])
 
 proc lowerQuote(sx: Syntax) =
   expectArity(sx, "quote", sx.items.len - 1, 1)
@@ -279,8 +319,12 @@ proc lowerCall(ctx: var LowerContext; sx: Syntax) =
     raiseCompilerError(sx.span, "empty list is not callable")
   if sx.items[0].kind != sxSymbol:
     raiseCompilerError(sx.items[0].span, "call target must be a symbol")
+  var seenNamedArgs = initTable[string, bool]()
   for i in 1 ..< sx.items.len:
-    lowerExpr(ctx, sx.items[i])
+    if sx.items[i].isNamedArg():
+      lowerNamedArg(ctx, sx.items[i], seenNamedArgs)
+    else:
+      lowerExpr(ctx, sx.items[i])
 
 proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
   case sx.kind
@@ -314,6 +358,10 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerAt(ctx, sx)
     elif sx.items[0].isSymbol("slice"):
       lowerSlice(ctx, sx)
+    elif sx.items[0].isSymbol("new"):
+      lowerNew(ctx, sx)
+    elif sx.items[0].isSymbol(":"):
+      raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
     elif sx.items[0].isSymbol("define"):
       raiseCompilerError(sx.span, "define is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):

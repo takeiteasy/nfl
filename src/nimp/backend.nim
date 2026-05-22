@@ -22,6 +22,10 @@ proc expectArity(sx: Syntax; name: string; actual, expected: int) =
 
 proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode
 proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode
+proc emitNamedArg(ctx: var EmitContext; sx: Syntax): NimNode
+
+proc isNamedArg(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol(":")
 
 proc attachLineInfo(node: NimNode; sx: Syntax): NimNode =
   result = node
@@ -280,7 +284,10 @@ proc emitDot(ctx: var EmitContext; sx: Syntax): NimNode =
     return dot
   result = newCall(dot).attachLineInfo(sx)
   for i in 3 ..< sx.items.len:
-    result.add ctx.emitExpr(sx.items[i])
+    if sx.items[i].isNamedArg():
+      result.add ctx.emitNamedArg(sx.items[i])
+    else:
+      result.add ctx.emitExpr(sx.items[i])
 
 proc emitAt(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "at", sx.items.len - 1, 2)
@@ -291,6 +298,30 @@ proc emitSlice(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "slice", sx.items.len - 1, 3)
   result = nnkBracketExpr.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
   result.add nnkInfix.newTree(ident(".."), ctx.emitExpr(sx.items[2]), ctx.emitExpr(sx.items[3])).attachLineInfo(sx)
+
+proc identForFieldSymbol(sx: Syntax): NimNode =
+  if sx.kind != sxSymbol:
+    raiseCompilerError(sx.span, "new field name must be a symbol")
+  ident(sx.sym).attachLineInfo(sx)
+
+proc emitNamedArg(ctx: var EmitContext; sx: Syntax): NimNode =
+  if sx.items.len != 3:
+    raiseCompilerError(sx.span, "named argument must be (: name value)")
+  if sx.items[1].kind != sxSymbol:
+    raiseCompilerError(sx.items[1].span, "named argument name must be a symbol")
+  nnkExprEqExpr.newTree(ctx.identForSymbol(sx.items[1]), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)
+
+proc emitNew(ctx: var EmitContext; sx: Syntax): NimNode =
+  if sx.items.len < 2:
+    raiseCompilerError(sx.span, "new expects a type and field initializers")
+  result = nnkObjConstr.newTree(emitTypeReference(sx.items[1])).attachLineInfo(sx)
+  for field in sx.items.toOpenArray(2, sx.items.high):
+    if field.kind != sxList or field.items.len != 2:
+      raiseCompilerError(field.span, "new field initializer must be (name value)")
+    result.add nnkExprColonExpr.newTree(
+      identForFieldSymbol(field.items[0]),
+      ctx.emitExpr(field.items[1])
+    ).attachLineInfo(field)
 
 proc emitQuotedDatum(sx: Syntax): NimNode =
   case sx.kind
@@ -324,7 +355,10 @@ proc emitCall(ctx: var EmitContext; sx: Syntax): NimNode =
     raiseCompilerError(sx.span, "empty list is not callable")
   var call = newCall(ctx.emitSymbolRef(sx.items[0])).attachLineInfo(sx)
   for i in 1 ..< sx.items.len:
-    call.add ctx.emitExpr(sx.items[i])
+    if sx.items[i].isNamedArg():
+      call.add ctx.emitNamedArg(sx.items[i])
+    else:
+      call.add ctx.emitExpr(sx.items[i])
   call
 
 proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
@@ -367,6 +401,10 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitAt(sx)
     elif sx.items[0].isSymbol("slice"):
       ctx.emitSlice(sx)
+    elif sx.items[0].isSymbol("new"):
+      ctx.emitNew(sx)
+    elif sx.items[0].isSymbol(":"):
+      raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
     elif sx.items[0].isSymbol("define"):
       raiseCompilerError(sx.span, "define is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("proc"):

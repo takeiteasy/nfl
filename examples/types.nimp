@@ -6,6 +6,9 @@
 (proc personAge ((p Person)) (: int)
   (. p age))
 
-(define nobody (default Person))
+(define ada (new Person
+  (name "Ada")
+  (age 36)))
 
-(echo "default person age: " (personAge nobody))
+(echo "person age: " (personAge ada))
+(echo "person age by named call: " (personAge (: p ada)))

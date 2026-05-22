@@ -6,7 +6,7 @@ Milestone 8 should turn Nimp from a stable core into a language that can define
 normal Nim-facing APIs. The highest-value work is the missing declaration and
 control-flow surface around Nim interop.
 
-### 1. Type Declarations
+### 1. Type Declarations **Partial**
 
 Add a Nimp wrapper for Nim `type` sections.
 
@@ -63,6 +63,8 @@ Definition of done:
 - [x] A Nim file can import/use a type emitted from Nimp.
 - [x] `nimble test` covers success and failure paths.
 
+### Deferred tasks
+
 Implemented initial forms: aliases, objects, and enums. Tuple, distinct, and
 ref object syntax is reserved and currently produces explicit "not implemented
 yet" diagnostics. Export markers are supported narrowly for type declarations
@@ -70,17 +72,11 @@ and object fields so Nim modules can import Nimp-emitted types. Enum values use
 Nim's normal behavior: exporting the enum type exports its values. General
 exported procs/definitions remain part of the export-marker milestone.
 
-### 2. Named Arguments And Object Construction
+### 2. Named Arguments And Object Construction **Partial**
 
 Object declarations are only useful if values can be constructed ergonomically.
 
-Candidate syntax:
-
-```lisp
-(Person (name: "Ada") (age: 36))
-```
-
-or:
+Chosen object construction syntax:
 
 ```lisp
 (new Person
@@ -90,20 +86,23 @@ or:
 
 Tasks:
 
-- [ ] Decide whether named arguments are represented as `name:` symbols, field
+- [x] Decide whether named arguments are represented as `name:` symbols, field
       pairs, or a dedicated construction form.
-- [ ] Support Nim named arguments for ordinary calls if the chosen syntax
+- [x] Support Nim named arguments for ordinary calls if the chosen syntax
       generalizes cleanly.
-- [ ] Support object construction for Nimp-defined and imported Nim object
+- [x] Support object construction for Nimp-defined and imported Nim object
       types.
-- [ ] Add diagnostics for malformed named arguments and duplicate fields.
-- [ ] Add tests that construct an object, read fields, and pass the object to a
+- [x] Add diagnostics for malformed named arguments and duplicate fields.
+- [x] Add tests that construct an object, read fields, and pass the object to a
       typed proc.
 
 Definition of done:
 
-- [ ] A Nimp-defined object can be constructed and used without writing Nim code.
-- [ ] Named argument source locations point back to the `.nimp` file on errors.
+- [x] A Nimp-defined object can be constructed and used without writing Nim code.
+- [x] Named argument source locations point back to the `.nimp` file on errors.
+
+Ordinary calls use `(: name value)` for named arguments, which avoids the
+ambiguity between a named argument and a positional nested call expression.
 
 ### 3. Export Marker And Visibility
 
