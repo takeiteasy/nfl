@@ -7,20 +7,20 @@
 (define appendedValues (append nums (@ [5 6])))
 
 (define mappedValues
-  (map nums (lambda ((x int64)) (* x 2))))
+  (map nums (do ((x int64)) (* x 2))))
 
 (define mappedWithCapture
   (let ((offset 10))
-    (map nums (lambda ((x int64)) (+ x offset)))))
+    (map nums (do ((x int64)) (+ x offset)))))
 
 (define filteredValues
-  (filter nums (lambda ((x int64)) (< x 4))))
+  (filter nums (do ((x int64)) (< x 4))))
 
 (define foldedLeft
-  (foldl nums 0 (lambda ((acc int64) (x int64)) (- acc x))))
+  (foldl nums 0 (do ((acc int64) (x int64)) (- acc x))))
 
 (define foldedRight
-  (foldr nums 0 (lambda ((x int64) (acc int64)) (- x acc))))
+  (foldr nums 0 (do ((x int64) (acc int64)) (- x acc))))
 
 (define mappedStrings
-  (map words (lambda ((s string)) (. s len))))
+  (map words (do ((s string)) (. s len))))

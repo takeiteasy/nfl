@@ -37,9 +37,9 @@ Nim AST directly with `macros`.
 
 ## Current Surface Commitments
 
-- Function literals: `lambda`
-- Sequential execution: `begin`
-- Top-level immutable definitions: `define`
+- Function literals: `do`
+- Sequential execution: `block`
+- Top-level definitions: `define`
 - Compile-time macros: `defmacro`
 - Immutable locals: `let`
 - Mutable locals: `var`
@@ -51,4 +51,4 @@ Nim AST directly with `macros`.
 - Indexing/slicing: `(at xs i)`, `(slice xs start stop)`, and escaped Nim
   operators such as `(|[]| xs i)`
 
-Do not add `fn`, `do`, or `def` aliases unless explicitly requested.
+Do not add `fn`, `lambda`, or `def` aliases unless explicitly requested.

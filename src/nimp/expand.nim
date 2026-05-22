@@ -230,7 +230,7 @@ proc evalMacroExpr(env: MacroEnv; scope: var EvalScope; sx: Syntax): Syntax =
       if evalMacroExpr(env, scope, sx.items[1]).truthy:
         return evalMacroExpr(env, scope, sx.items[2])
       return evalMacroExpr(env, scope, sx.items[3])
-    if head.isSymbol("begin"):
+    if head.isSymbol("block"):
       return evalBody(env, scope, sx.items.toOpenArray(1, sx.items.high), sx)
     if head.isSymbol("let"):
       if sx.items.len < 3:

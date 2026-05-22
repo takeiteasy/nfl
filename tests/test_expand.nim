@@ -40,10 +40,10 @@ suite "macro expansion":
   test "expands rest parameter macro with quasiquote splicing":
     let sx = expandOne """
 (defmacro when (test . body)
-  `(if ,test (begin ,@body) nil))
+  `(if ,test (block ,@body) nil))
 (when true (echo "yes") 3)
 """
-    check sx.renderSyntax() == "(if true (begin (echo \"yes\") 3) nil)"
+    check sx.renderSyntax() == "(if true (block (echo \"yes\") 3) nil)"
 
   test "gensym generates distinct symbols":
     let sx = expandOne """
@@ -110,7 +110,7 @@ suite "macro expansion":
 
   test "rejects rest parameter macro with too few required arguments":
     expectExpandError("""
-(defmacro when (test . body) `(if ,test (begin ,@body) nil))
+(defmacro when (test . body) `(if ,test (block ,@body) nil))
 (when)
 """, "when expects at least 1 arguments, got 0")
 

@@ -41,8 +41,8 @@ suite "lowering validation":
   test "rejects malformed typed bindings":
     expectLowerError("(let (((x 1) 2)) x)", "binding name must be a symbol or (name type)")
 
-  test "rejects set! for lambda parameters":
-    expectLowerError("(lambda ((x int)) (set! x 2))", "immutable binding")
+  test "rejects set! for do parameters":
+    expectLowerError("(do ((x int)) (set! x 2))", "immutable binding")
 
   test "rejects if with too few arguments":
     expectLowerError("(if true 1)", "if expects 3 arguments, got 2")

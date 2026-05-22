@@ -99,7 +99,7 @@ proc lowerIf(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerBegin(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len == 1:
-    raiseCompilerError(sx.span, "begin expects at least one expression")
+    raiseCompilerError(sx.span, "block expects at least one expression")
   lowerBody(ctx, sx.items.toOpenArray(1, sx.items.high), sx)
 
 proc lowerSet(ctx: var LowerContext; sx: Syntax) =
@@ -120,14 +120,14 @@ proc lowerParam(ctx: var LowerContext; param: Syntax) =
   elif param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and param.items[1].kind == sxSymbol:
     declare(ctx, param.items[0], bkImmutable)
   else:
-    raiseCompilerError(param.span, "lambda parameter must be a symbol or (name type)")
+    raiseCompilerError(param.span, "do parameter must be a symbol or (name type)")
 
 proc lowerLambda(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len < 3:
-    raiseCompilerError(sx.span, "lambda expects parameters and body")
+    raiseCompilerError(sx.span, "do expects parameters and body")
   let params = sx.items[1]
   if params.kind != sxList:
-    raiseCompilerError(params.span, "lambda parameters must be a list")
+    raiseCompilerError(params.span, "do parameters must be a list")
   ctx.pushScope()
   for param in params.items:
     lowerParam(ctx, param)
@@ -294,7 +294,7 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       raiseCompilerError(sx.span, "empty list is not an expression")
     if sx.items[0].isSymbol("if"):
       lowerIf(ctx, sx)
-    elif sx.items[0].isSymbol("begin"):
+    elif sx.items[0].isSymbol("block"):
       lowerBegin(ctx, sx)
     elif sx.items[0].isSymbol("let"):
       lowerLetLike(ctx, sx, false)
@@ -302,7 +302,7 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerLetLike(ctx, sx, true)
     elif sx.items[0].isSymbol("set!"):
       lowerSet(ctx, sx)
-    elif sx.items[0].isSymbol("lambda"):
+    elif sx.items[0].isSymbol("do"):
       lowerLambda(ctx, sx)
     elif sx.items[0].isSymbol("proc"):
       raiseCompilerError(sx.span, "proc is only allowed at statement/module scope")

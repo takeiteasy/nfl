@@ -83,7 +83,7 @@ suite "nimp cli":
 
     let (output, exitCode) = runCommand(cliExe, @["macroexpand", file])
     check exitCode == 0
-    check output.strip() == "(if true (begin (echo \"loaded\")) nil)"
+    check output.strip() == "(if true (block (echo \"loaded\")) nil)"
 
   test "macroexpand can disable core autoload":
     let file = writeTempNimp("nimp cli macroexpand no core", "expand no core.nimp", "(when true (echo \"loaded\"))\n")

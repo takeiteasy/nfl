@@ -326,7 +326,7 @@ Tasks:
 - [ ] Decide whether Nimp guarantees self-tail recursion optimization or only
       offers it behind an explicit pragma/form.
 - [ ] Detect direct self-tail calls in `proc` bodies.
-- [ ] Prove the call is in tail position across `if`, `begin`, `case`, and
+- [ ] Prove the call is in tail position across `if`, `block`, `case`, and
       other expression forms that can return a value.
 - [ ] Rewrite eligible procs to Nim loops with mutable parameter temporaries.
 - [ ] Preserve source locations enough that errors in the rewritten body still
@@ -462,7 +462,7 @@ Targets:
 
 - `let`
 - `var`
-- `lambda`
+- `do`
 - `proc` parameters if it can map cleanly to Nim
 - macro parameters
 

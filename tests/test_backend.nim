@@ -21,8 +21,8 @@ suite "nimp backend":
   test "typed var and set expression":
     check nimpExpr"(var (((x int) 1)) (set! x (+ x 2)) x)" == 3
 
-  test "lambda expression":
-    let inc = nimpExpr"(lambda ((x int)) (+ x 1))"
+  test "do expression":
+    let inc = nimpExpr"(do ((x int)) (+ x 1))"
     check inc(2) == 3
 
   test "autoloaded core macros":
@@ -110,7 +110,7 @@ nimpModule """
 (define defaultAge (personAge defaultPerson))
 (define favoriteMood happy)
 (+ 1)
-(begin (+ 1 2) nil)
+(block (+ 1 2) nil)
 """, "module-test.nimp"
 
 suite "nimp module backend":

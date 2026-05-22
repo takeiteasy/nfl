@@ -1,8 +1,8 @@
 (defmacro when (test . body)
-  `(if ,test (begin ,@body) nil))
+  `(if ,test (block ,@body) nil))
 
 (defmacro unless (test . body)
-  `(if ,test nil (begin ,@body)))
+  `(if ,test nil (block ,@body)))
 
 (defmacro and (. args)
   (if (nil? args)
@@ -29,12 +29,12 @@
             (if (nil? (rest clause))
                 (macro-error "cond clause expects test and body")
                 (if (nil? (rest clauses))
-                    `(if ,(first clause) (begin ,@(rest clause)) nil)
-                    `(if ,(first clause) (begin ,@(rest clause)) (cond ,@(rest clauses)))))))))
+                    `(if ,(first clause) (block ,@(rest clause)) nil)
+                    `(if ,(first clause) (block ,@(rest clause)) (cond ,@(rest clauses)))))))))
 
 (defmacro let* (bindings . body)
   (if (nil? bindings)
-      `(begin ,@body)
+      `(block ,@body)
       `(let (,(first bindings)) (let* ,(rest bindings) ,@body))))
 
 (defmacro first (items)

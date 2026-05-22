@@ -150,7 +150,7 @@ proc emitIfStmt(ctx: var EmitContext; sx: Syntax): NimNode =
 
 proc emitBegin(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len == 1:
-    raiseCompilerError(sx.span, "begin expects at least one expression")
+    raiseCompilerError(sx.span, "block expects at least one expression")
   emitBlockExpr(@[], ctx.emitBodyExpr(sx.items.toOpenArray(1, sx.items.high), sx)).attachLineInfo(sx)
 
 proc emitSet(ctx: var EmitContext; sx: Syntax): NimNode =
@@ -162,14 +162,14 @@ proc emitParam(ctx: var EmitContext; param: Syntax): NimNode =
     return nnkIdentDefs.newTree(ctx.identForSymbol(param), newEmptyNode(), newEmptyNode()).attachLineInfo(param)
   if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and param.items[1].kind == sxSymbol:
     return nnkIdentDefs.newTree(ctx.identForSymbol(param.items[0]), identForTypeSymbol(param.items[1]), newEmptyNode()).attachLineInfo(param)
-  raiseCompilerError(param.span, "lambda parameter must be a symbol or (name type)")
+  raiseCompilerError(param.span, "do parameter must be a symbol or (name type)")
 
 proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len < 3:
-    raiseCompilerError(sx.span, "lambda expects parameters and body")
+    raiseCompilerError(sx.span, "do expects parameters and body")
   let params = sx.items[1]
   if params.kind != sxList:
-    raiseCompilerError(params.span, "lambda parameters must be a list")
+    raiseCompilerError(params.span, "do parameters must be a list")
   var formalParams = nnkFormalParams.newTree(ident("auto"))
   for param in params.items:
     formalParams.add ctx.emitParam(param)
@@ -351,7 +351,7 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, "empty list is not an expression")
     if sx.items[0].isSymbol("if"):
       ctx.emitIf(sx)
-    elif sx.items[0].isSymbol("begin"):
+    elif sx.items[0].isSymbol("block"):
       ctx.emitBegin(sx)
     elif sx.items[0].isSymbol("let"):
       ctx.emitLetLike(sx, false)
@@ -359,7 +359,7 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitLetLike(sx, true)
     elif sx.items[0].isSymbol("set!"):
       ctx.emitSet(sx)
-    elif sx.items[0].isSymbol("lambda"):
+    elif sx.items[0].isSymbol("do"):
       ctx.emitLambda(sx)
     elif sx.items[0].isSymbol("."):
       ctx.emitDot(sx)
@@ -388,7 +388,7 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.kind == sxList and sx.items.len > 0:
     if sx.items[0].isSymbol("if"):
       return ctx.emitIfStmt(sx)
-    if sx.items[0].isSymbol("begin"):
+    if sx.items[0].isSymbol("block"):
       result = newStmtList()
       for i in 1 ..< sx.items.len:
         result.add ctx.emitStmt(sx.items[i])

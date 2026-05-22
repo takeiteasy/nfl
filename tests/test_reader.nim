@@ -45,7 +45,7 @@ suite "reader valid syntax":
       checkSpans(form)
 
   test "reads lists and vectors":
-    let form = readOne("(define xs [1 2 (lambda (x) x)])", "forms.nimp")
+    let form = readOne("(define xs [1 2 (do (x) x)])", "forms.nimp")
     check form.kind == sxList
     check form.items.len == 3
     check form.items[0].sym == "define"
