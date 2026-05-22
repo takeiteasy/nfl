@@ -1,10 +1,21 @@
 (import std/strutils)
+(import std/os)
+(import std/math)
 
 (define-proc shout ((name string)) (: string)
   (name.toUpperAscii))
 
+(define-proc hypotenuse ((a float) (b float)) (: float)
+  (sqrt (+ (* a a) (* b b))))
+
 (define names (@ ["nimp" "macro" "nim"]))
+(define currentDir (getCurrentDir))
+(define baseName (lastPathPart currentDir))
 
 (echo (shout "hello"))
+(echo (shout baseName))
+(echo (hypotenuse 3.0 4.0))
+(echo
+  (let (((index int) 1))
+    (|[]| names index)))
 (echo (. names len))
-(echo (at names 1))

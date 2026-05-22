@@ -55,6 +55,16 @@ proc lookup(ctx: LowerContext; name: Syntax): Option[BindingKind] =
 proc lowerExpr(ctx: var LowerContext; sx: Syntax)
 proc lowerStmt(ctx: var LowerContext; sx: Syntax)
 
+proc bindingName(binding: Syntax): Syntax =
+  if binding.kind != sxList or binding.items.len != 2:
+    raiseCompilerError(binding.span, "binding must be a pair")
+  let target = binding.items[0]
+  if target.kind == sxSymbol:
+    return target
+  if target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and target.items[1].kind == sxSymbol:
+    return target.items[0]
+  raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
+
 proc lowerBody(ctx: var LowerContext; items: openArray[Syntax]; owner: Syntax) =
   if items.len == 0:
     raiseCompilerError(owner.span, "expected body expression")
@@ -66,14 +76,13 @@ proc lowerBindings(ctx: var LowerContext; bindings: Syntax; mutable: bool) =
     raiseCompilerError(bindings.span, "bindings must be a list")
 
   for binding in bindings.items:
-    if binding.kind != sxList or binding.items.len != 2:
-      raiseCompilerError(binding.span, "binding must be a pair")
+    discard binding.bindingName()
     lowerExpr(ctx, binding.items[1])
 
   ctx.pushScope()
   let kind = if mutable: bkMutable else: bkImmutable
   for binding in bindings.items:
-    declare(ctx, binding.items[0], kind)
+    declare(ctx, binding.bindingName(), kind)
 
 proc lowerLetLike(ctx: var LowerContext; sx: Syntax; mutable: bool) =
   if sx.items.len < 3:

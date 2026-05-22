@@ -37,7 +37,7 @@ proc isWhitespace(c: char): bool =
   c in {' ', '\t', '\r', '\n'}
 
 proc isDelimiter(c: char): bool =
-  c == '\0' or c.isWhitespace or c in {'(', ')', '[', ']', '\'', '`', ',', '"', ';'}
+  c == '\0' or c.isWhitespace or c in {'(', ')', '[', ']', '\'', '`', ',', '"', ';', '|'}
 
 proc skipTrivia(r: var Reader) =
   while not r.atEnd:
@@ -89,6 +89,30 @@ proc readString(r: var Reader): Syntax =
     else:
       value.add c
   raiseReaderError(start, "unterminated string literal")
+
+proc readEscapedSymbol(r: var Reader): Syntax =
+  let start = r.currentSpan
+  discard r.advance()
+  var value = ""
+  while not r.atEnd:
+    let c = r.advance()
+    case c
+    of '|':
+      if value.len == 0:
+        raiseReaderError(start, "escaped symbol cannot be empty")
+      return newSymbol(value, start.withEnd(r.line, r.col))
+    of '\\':
+      if r.atEnd:
+        raiseReaderError(start, "unterminated escaped symbol")
+      let escaped = r.advance()
+      case escaped
+      of '|': value.add '|'
+      of '\\': value.add '\\'
+      else:
+        raiseReaderError(r.currentSpan, "invalid escaped symbol escape: \\" & $escaped)
+    else:
+      value.add c
+  raiseReaderError(start, "unterminated escaped symbol")
 
 proc readDelimited(r: var Reader; closeChar: char; vector: bool; start: Span): Syntax =
   var items: seq[Syntax] = @[]
@@ -164,6 +188,8 @@ proc readForm(r: var Reader): Syntax =
     raiseReaderError(start, "unexpected closing delimiter")
   of '"':
     readString(r)
+  of '|':
+    readEscapedSymbol(r)
   of '\'':
     discard r.advance()
     readQuote(r, "quote", start)

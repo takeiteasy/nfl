@@ -12,8 +12,14 @@ suite "nimp backend":
   test "let expression":
     check nimpExpr"(let ((x 1)) (+ x 2))" == 3
 
+  test "typed let expression":
+    check nimpExpr"(let (((x int) 1)) (+ x 2))" == 3
+
   test "var and set expression":
     check nimpExpr"(var ((x 1)) (set! x (+ x 2)) x)" == 3
+
+  test "typed var and set expression":
+    check nimpExpr"(var (((x int) 1)) (set! x (+ x 2)) x)" == 3
 
   test "lambda expression":
     let inc = nimpExpr"(lambda ((x int)) (+ x 1))"
@@ -30,6 +36,7 @@ suite "nimp backend":
     check nimpExpr"(let ((xs [10 20 30])) (. xs len))" == 3
     check nimpExpr"(let ((xs [10 20 30])) xs.len)" == 3
     check nimpExpr"(let ((xs [10 20 30])) (at xs 1))" == 20
+    check nimpExpr"(let ((xs [10 20 30])) (|[]| xs 1))" == 20
 
   test "autoloaded sequence helper macros":
     check nimpExpr"(let ((xs [10 20 30])) (first xs))" == 10

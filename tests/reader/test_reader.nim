@@ -54,6 +54,21 @@ suite "reader valid syntax":
     check form.items[2].items[2].kind == sxList
     checkSpans(form)
 
+  test "reads escaped symbols":
+    let forms = readAll("|[]| |has space| |has\\|pipe| |has\\\\slash|", "escaped-symbols.nimp")
+    check forms.len == 4
+    check forms[0].kind == sxSymbol
+    check forms[0].sym == "[]"
+    check forms[0].renderSyntax() == "|[]|"
+    check forms[1].sym == "has space"
+    check forms[1].renderSyntax() == "|has space|"
+    check forms[2].sym == "has|pipe"
+    check forms[2].renderSyntax() == "|has\\|pipe|"
+    check forms[3].sym == "has\\slash"
+    check forms[3].renderSyntax() == "has\\slash"
+    for form in forms:
+      checkSpans(form)
+
   test "skips line and block comments":
     let forms = readAll("; ignore me\n1 #| ignore\nme |# 2", "comments.nimp")
     check forms.len == 2
@@ -94,3 +109,8 @@ suite "reader malformed syntax":
 
   test "reports unterminated block comment":
     expectReaderError("#| missing end", "unterminated block comment")
+
+  test "reports malformed escaped symbols":
+    expectReaderError("|", "unterminated escaped symbol")
+    expectReaderError("||", "escaped symbol cannot be empty")
+    expectReaderError("|bad\\n|", "invalid escaped symbol escape")

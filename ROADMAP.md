@@ -516,33 +516,33 @@ Deferred tasks:
 1. [x] Implement initial runtime sequence helpers once the surface spelling for names such as `empty?` and direct Nim interop for indexing/slicing are settled. Current indexing forms are `(at xs i)` and `(slice xs start stop)`.
 2. [x] Add Nimp-authored stdlib tests under a dedicated stdlib test layer instead of only Nim tests that exercise autoloaded macros.
 3. [x] Decide whether numeric wrappers are needed or whether direct Nim operator/proc calls are sufficient for the initial stdlib. Direct calls are sufficient.
-4. [ ] Add an explicit prelude import form only if a concrete need appears; default autoload with `--no-core` is the current behavior.
+4. [x] Add an explicit prelude import form only if a concrete need appears; default autoload with `--no-core` is the current behavior. Decision: no explicit prelude import form is needed before M7.
 
 ### Milestone 6: Interop Polish
 
-Status: partially completed. Import syntax already exists; field/method access, dotted symbols, indexing/slicing, typed top-level proc definitions, and direct Nim-callable procs have initial support. No advanced escape hatch is needed initially. Stable examples and broader interop coverage remain deferred.
+Status: completed for the current milestone. Import syntax exists; field/method access, dotted symbols, indexing/slicing, typed top-level proc definitions, typed local declarations, and direct Nim-callable procs have initial support. No advanced escape hatch is needed initially, and the interop example covers multiple Nim stdlib modules.
 
 Deliverables:
 
 1. [x] Stable import syntax.
 2. [x] Stable field/method access syntax. Supports both `(. value field)` / `(. value method arg...)` and dotted symbols such as `value.field` / `(value.method arg...)`.
-3. [ ] Type annotation syntax for parameters, return types, and local declarations. Parameter annotations and `define-proc` return annotations are supported; local declaration annotations remain deferred.
+3. [x] Type annotation syntax for parameters, return types, and local declarations. Parameters use `(name Type)`, `define-proc` returns use `(: Type)`, and local `let`/`var` bindings use `((name Type) value)`.
 4. [x] Generic Nim proc calls where Nim can infer types.
 5. [x] Escape hatch for advanced Nim interop only if needed. Decision: do not add one before a real interop gap appears.
 
 Definition of done:
 
-1. A Nimp file can use at least three Nim stdlib modules directly.
+1. [x] A Nimp file can use at least three Nim stdlib modules directly.
 2. [x] A Nimp file can define a Nim-callable proc with typed parameters.
 3. [x] A Nim file can call a proc defined in Nimp.
-4. Interop examples are small and documented.
+4. [x] Interop examples are small and documented.
 
 Deferred tasks:
 
-1. [ ] Add local declaration type annotations.
-2. [ ] Add documented interop examples using multiple Nim stdlib modules.
+1. [x] Add local declaration type annotations.
+2. [x] Add documented interop examples using multiple Nim stdlib modules.
 3. [x] Decide whether advanced interop needs an explicit escape hatch. Current answer: no explicit escape hatch before M7.
-4. [ ] Revisit indexing surface if escaped identifiers are added later; `[]` cannot currently be a symbol because square brackets are vector delimiters.
+4. [x] Revisit indexing surface if escaped identifiers are added later. Escaped symbols use vertical bars, so direct Nim indexing can be written as `(|[]| xs i)` while the convenience forms remain `(at xs i)` and `(slice xs start stop)`.
 
 ### Milestone 7: Stability And Diagnostics
 

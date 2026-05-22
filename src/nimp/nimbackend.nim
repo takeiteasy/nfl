@@ -92,6 +92,17 @@ proc emitBlockExpr(stmts: seq[NimNode]; body: NimNode): NimNode =
   list.add body
   nnkBlockStmt.newTree(newEmptyNode(), list)
 
+proc emitBindingIdentDefs(ctx: var EmitContext; binding: Syntax): NimNode =
+  if binding.kind != sxList or binding.items.len != 2:
+    raiseCompilerError(binding.span, "binding must be a pair")
+  let target = binding.items[0]
+  let value = ctx.emitExpr(binding.items[1])
+  if target.kind == sxSymbol:
+    return nnkIdentDefs.newTree(ctx.identForSymbol(target), newEmptyNode(), value).attachLineInfo(binding)
+  if target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and target.items[1].kind == sxSymbol:
+    return nnkIdentDefs.newTree(ctx.identForSymbol(target.items[0]), identForTypeSymbol(target.items[1]), value).attachLineInfo(binding)
+  raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
+
 proc emitLetLike(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
   if sx.items.len < 3:
     raiseCompilerError(sx.span, formName(sx.items[0]) & " expects bindings and body")
@@ -101,12 +112,7 @@ proc emitLetLike(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
 
   var section = if mutable: nnkVarSection.newTree() else: nnkLetSection.newTree()
   for binding in bindings.items:
-    if binding.kind != sxList or binding.items.len != 2:
-      raiseCompilerError(binding.span, "binding must be a pair")
-    let name = binding.items[0]
-    if name.kind != sxSymbol:
-      raiseCompilerError(name.span, "binding name must be a symbol")
-    section.add nnkIdentDefs.newTree(ctx.identForSymbol(name), newEmptyNode(), ctx.emitExpr(binding.items[1])).attachLineInfo(binding)
+    section.add ctx.emitBindingIdentDefs(binding)
 
   emitBlockExpr(@[section.attachLineInfo(sx)], ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)).attachLineInfo(sx)
 

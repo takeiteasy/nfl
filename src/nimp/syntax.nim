@@ -112,6 +112,34 @@ proc sameSyntax*(a, b: Syntax): bool =
         return false
     true
 
+proc isRenderDelimiter(c: char): bool =
+  c == '\0' or c in {' ', '\t', '\r', '\n', '(', ')', '[', ']', '\'', '`', ',', '"', ';', '|'}
+
+proc isNumberLikeSymbol(value: string): bool =
+  if value.len == 0:
+    return false
+  if value[0] in {'+', '-'}:
+    return value.len > 1 and value[1] in {'0' .. '9'}
+  value[0] in {'0' .. '9'}
+
+proc renderSymbol(value: string): string =
+  var needsEscape = value.len == 0 or value in ["nil", "true", "false"] or value.isNumberLikeSymbol()
+  for c in value:
+    if c.isRenderDelimiter:
+      needsEscape = true
+      break
+
+  if not needsEscape:
+    return value
+
+  result = "|"
+  for c in value:
+    case c
+    of '|': result.add "\\|"
+    of '\\': result.add "\\\\"
+    else: result.add c
+  result.add "|"
+
 proc renderSyntax*(sx: Syntax): string =
   case sx.kind
   of sxNil:
@@ -134,7 +162,7 @@ proc renderSyntax*(sx: Syntax): string =
       else: result.add c
     result.add '"'
   of sxSymbol:
-    result = sx.sym
+    result = renderSymbol(sx.sym)
   of sxList:
     result = "("
     for i, item in sx.items:

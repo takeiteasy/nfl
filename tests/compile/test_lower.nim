@@ -17,6 +17,10 @@ suite "lowering validation":
   test "allows set! for var bindings":
     discard lowerExpr(readOne("(var ((x 1)) (set! x 2) x)", "lower-test.nimp"))
 
+  test "allows typed let and var bindings":
+    discard lowerExpr(readOne("(let (((x int) 1)) x)", "lower-test.nimp"))
+    discard lowerExpr(readOne("(var (((x int) 1)) (set! x 2) x)", "lower-test.nimp"))
+
   test "rejects set! for let bindings":
     expectLowerError("(let ((x 1)) (set! x 2) x)", "immutable binding")
 
@@ -25,6 +29,9 @@ suite "lowering validation":
 
   test "rejects duplicate bindings":
     expectLowerError("(let ((x 1) (x 2)) x)", "duplicate binding")
+
+  test "rejects malformed typed bindings":
+    expectLowerError("(let (((x 1) 2)) x)", "binding name must be a symbol or (name type)")
 
   test "rejects set! for lambda parameters":
     expectLowerError("(lambda ((x int)) (set! x 2))", "immutable binding")

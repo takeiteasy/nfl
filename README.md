@@ -16,6 +16,10 @@ nimp compile examples/simple.nimp
 
 Do not pass `.nimp` files directly to `nim c`. Nim will parse them as Nim source before Nimp can run. For embedding from Nim, use `nimpModule(staticRead("file.nimp"))` from `nimp/compiler`.
 
+## Interop
+
+Nimp imports Nim modules directly and calls Nim procs without a wrapper layer. See `examples/interop.nimp` for a small program that uses `std/strutils`, `std/os`, and `std/math`, defines Nim-callable procs with typed parameters and return annotations, uses a typed local binding with `((name Type) value)`, and calls escaped Nim symbols such as `|[]|`.
+
 ## LICENSE
 ```
 Nimp
