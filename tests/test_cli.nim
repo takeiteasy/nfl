@@ -16,6 +16,12 @@ proc writeTempNimp(dirName, fileName, source: string): string =
   result = dir / fileName
   writeFile(result, source)
 
+proc writeTempNim(dirName, fileName, source: string): string =
+  let dir = getTempDir() / dirName
+  createDir(dir)
+  result = dir / fileName
+  writeFile(result, source)
+
 let cliExe = getCurrentDir() / "src" / "nimp" / "nimp"
 
 suite "nimp cli":
@@ -24,7 +30,13 @@ suite "nimp cli":
       let (_, exitCode) = runCommand(cliExe, @["check", file])
       check exitCode == 0
 
-  test "runs example file":
+  test "runs example files":
+    for file in walkFiles("examples/*.nimp"):
+      let (output, exitCode) = runCommand(cliExe, @["run", file])
+      check exitCode == 0
+      check not output.contains("Error:")
+
+  test "simple example produces expected output":
     let (output, exitCode) = runCommand(cliExe, @["run", "examples/simple.nimp"])
     check exitCode == 0
     check output.contains("NIMP")
@@ -130,6 +142,15 @@ suite "nimp cli":
     check output.contains("undeclared identifier")
     check output.contains("missingSymbol")
 
+  test "unknown call targets point at nimp source":
+    let file = writeTempNimp("nimp cli unknown call diagnostic", "unknown call.nimp", "(missingProc 1)\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["check", file])
+    check exitCode != 0
+    check output.contains(file & "(1,")
+    check output.contains("undeclared identifier")
+    check output.contains("missingProc")
+
   test "nimp arity errors point at nimp source":
     let file = writeTempNimp("nimp cli nimp arity diagnostic", "if arity.nimp", "(if true 1)\n")
 
@@ -146,3 +167,27 @@ suite "nimp cli":
     check output.contains(file & "(1, 2)")
     check output.contains("type mismatch")
     check output.contains("`+`()")
+
+  test "macro arity errors point at macro call site":
+    let file = writeTempNimp("nimp cli macro arity diagnostic", "macro arity.nimp", "\n(defmacro pair (x y) `(list ,x ,y))\n(pair 1)\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["check", file])
+    check exitCode != 0
+    check output.contains(file & ":3:1")
+    check output.contains("pair expects 2 arguments, got 1")
+
+  test "multiple embedded modules do not emit helper redefinition warnings":
+    let nimExe = findExe("nim")
+    check nimExe.len > 0
+    if nimExe.len > 0:
+      let file = writeTempNim("nimp cli helper warning", "two_modules.nim", """
+import nimp/compiler
+
+nimpModule "(define firstValue (first [1 2]))", "first-module.nimp"
+nimpModule "(define secondValue (first [3 4]))", "second-module.nimp"
+""")
+
+      let (output, exitCode) = runCommand(nimExe, @["check", "--path:src", file])
+      check exitCode == 0
+      check not output.contains("Warning:")
+      check not output.contains("redefinition")

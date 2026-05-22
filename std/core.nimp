@@ -37,9 +37,6 @@
       `(begin ,@body)
       `(let (,(first bindings)) (let* ,(rest bindings) ,@body))))
 
-(defmacro define-proc (name params . body)
-  `(proc ,name ,params ,@body))
-
 (defmacro first (items)
   `(at ,items 0))
 

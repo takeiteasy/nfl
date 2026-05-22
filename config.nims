@@ -5,6 +5,9 @@ when withDir(thisDir(), system.fileExists("nimble.paths")):
 
 import std/strutils
 
+# Nim currently rejects `nim c file.nimp` before config.nims can redirect the
+# project to a generated wrapper. Revisit this if Nim exposes a frontend hook
+# for non-Nim project source files.
 let nimpProjectPath = projectPath()
 if nimpProjectPath.endsWith(".nimp"):
   hint("QuitCalled", false)

@@ -2,7 +2,7 @@ import std/unittest
 
 import nimp/compiler
 
-nimpModule staticRead("sequence_helpers.nimp"), "tests/stdlib/sequence_helpers.nimp"
+nimpModule staticRead("sequence_helpers.nimp"), "tests/sequence_helpers.nimp"
 
 suite "nimp stdlib":
   test "sequence helpers from nimp file":

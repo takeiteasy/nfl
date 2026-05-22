@@ -2,7 +2,7 @@ import std/options
 import std/tables
 
 import ./diagnostics
-import ./macroenv
+import ./macros
 import ./syntax
 
 const maxExpansionDepth = 100

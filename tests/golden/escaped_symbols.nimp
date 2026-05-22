@@ -1,0 +1,3 @@
+(defmacro index-second (items)
+  `(|[]| ,items 1))
+(index-second xs)

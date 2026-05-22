@@ -2,10 +2,10 @@
 (import std/os)
 (import std/math)
 
-(define-proc shout ((name string)) (: string)
+(proc shout ((name string)) (: string)
   (name.toUpperAscii))
 
-(define-proc hypotenuse ((a float) (b float)) (: float)
+(proc hypotenuse ((a float) (b float)) (: float)
   (sqrt (+ (* a a) (* b b))))
 
 (define names (@ ["nimp" "macro" "nim"]))

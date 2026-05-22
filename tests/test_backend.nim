@@ -85,9 +85,9 @@ nimpModule """
   (let ((tmp (gensym "tmp")))
     `(let ((,tmp 1) (tmp__gensym1 2))
        (+ ,tmp tmp__gensym1))))
-(define-proc greet ((name string))
+(proc greet ((name string))
   (toUpperAscii name))
-(define-proc shout ((name string)) (: string)
+(proc shout ((name string)) (: string)
   (name.toUpperAscii))
 (when true nil)
 (define shouted (toUpperAscii "nimp"))
@@ -102,10 +102,10 @@ suite "nimp module backend":
   test "import and define":
     check shouted == "NIMP"
 
-  test "define-proc macro":
+  test "proc definition":
     check shoutedAgain == "MACRO"
 
-  test "typed define-proc and dotted method call":
+  test "typed proc and dotted method call":
     check shout("nim") == "NIM"
     check shoutedByMethod == "METHOD"
 

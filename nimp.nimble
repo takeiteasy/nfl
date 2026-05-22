@@ -16,10 +16,10 @@ namedBin      = {"nimp/cli": "nimp"}.toTable
 requires "nim >= 2.2.4"
 
 task test, "Run tests":
-  exec "nim c --path:src -r tests/reader/test_reader.nim"
-  exec "nim c --path:src -r tests/expand/test_expand.nim"
-  exec "nim c --path:src -r tests/compile/test_lower.nim"
-  exec "nim c --path:src -r tests/compile/test_backend.nim"
-  exec "nim c --path:src -r tests/stdlib/test_stdlib.nim"
+  exec "nim c --path:src -r tests/test_reader.nim"
+  exec "nim c --path:src -r tests/test_expand.nim"
+  exec "nim c --path:src -r tests/test_lower.nim"
+  exec "nim c --path:src -r tests/test_backend.nim"
+  exec "nim c --path:src -r tests/test_stdlib.nim"
   exec "nim c --path:src --out:src/nimp/nimp src/nimp/cli.nim"
-  exec "nim c --path:src -r tests/cli/test_cli.nim"
+  exec "nim c --path:src -r tests/test_cli.nim"

@@ -1,9 +1,11 @@
+import std/os
 import std/strutils
 import std/unittest
 
+import nimp/compiler
 import nimp/diagnostics
 import nimp/expand
-import nimp/macroenv
+import nimp/macros
 import nimp/reader
 import nimp/syntax
 
@@ -20,6 +22,12 @@ proc expectExpandError(source, messagePart: string) =
   except CompilerError as err:
     check err.diagnostic.span.file == "expand-test.nimp"
     check err.diagnostic.message.contains(messagePart)
+
+proc renderForms(forms: seq[Syntax]): string =
+  for form in forms:
+    if result.len > 0:
+      result.add "\n"
+    result.add form.renderSyntax()
 
 suite "macro expansion":
   test "expands fixed parameter macro":
@@ -147,3 +155,11 @@ suite "macro expansion":
 (defmacro loop () `(loop))
 (loop)
 """, "macro expansion depth exceeded")
+
+suite "golden macro expansion":
+  test "core macro fixtures":
+    for sourcePath in ["tests/golden/core_macros.nimp",
+                       "tests/golden/escaped_symbols.nimp"]:
+      let expectedPath = sourcePath.changeFileExt("out")
+      let actual = expandSource(readFile(sourcePath), sourcePath).renderForms()
+      check actual.strip() == readFile(expectedPath).strip()

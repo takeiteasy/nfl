@@ -142,7 +142,7 @@ The macro-time API should start small:
 
 ### Normalized Core Syntax
 
-After macro expansion, lower surface conveniences into a small core. This is where `define-proc`, `when`, `cond`, threading macros, destructuring, and pattern matching should disappear.
+After macro expansion, lower surface conveniences into a small core. This is where `when`, `cond`, threading macros, destructuring, and pattern matching should disappear.
 
 Suggested compiler core forms:
 
@@ -319,29 +319,28 @@ The stdlib should provide convenience and language feel.
 
 Good early stdlib candidates:
 
-1. `define-proc`
-2. `when`
-3. `unless`
-4. `cond`
-5. `and`
-6. `or`
-7. `let*`
-8. `->`
-9. `->>`
-10. `as->`
-11. `list`
-12. `append`
-13. `map`
-14. `filter`
-15. `foldl`
-16. `foldr`
-17. `reduce`
-18. `first`
-19. `rest`
-20. `empty?`
-21. `some?`
-22. `every?`
-23. `identity`
+1. `when`
+2. `unless`
+3. `cond`
+4. `and`
+5. `or`
+6. `let*`
+7. `->`
+8. `->>`
+9. `as->`
+10. `list`
+11. `append`
+12. `map`
+13. `filter`
+14. `foldl`
+15. `foldr`
+16. `reduce`
+17. `first`
+18. `rest`
+19. `empty?`
+20. `some?`
+21. `every?`
+22. `identity`
 
 Do not move a stdlib feature into the compiler just because it is convenient. Move it only if it needs syntax, scope, source locations, host interop, or impossible Nim AST generation.
 
@@ -356,9 +355,9 @@ src/
     reader.nim          # Reader/parser
     diagnostics.nim     # Structured errors
     expand.nim          # Macro expansion
-    macroenv.nim        # Compile-time macro environment
+    macros.nim          # Compile-time macro environment
     lower.nim           # Syntax to core/lowered IR
-    nimbackend.nim      # IR to NimNode
+    backend.nim         # IR to NimNode
     runtime.nim         # Tiny runtime helpers
     compiler.nim        # Public compile APIs and macros
     cli.nim             # CLI implementation, installed as `nimp`
@@ -366,10 +365,12 @@ std/
   core.nimp             # Minimal Nimp stdlib loaded by default
   syntax.nimp           # Macro-time syntax helpers
 tests/
-  reader/
-  expand/
-  compile/
-  cli/
+  test_reader.nim
+  test_expand.nim
+  test_lower.nim
+  test_backend.nim
+  test_cli.nim
+  expand/golden/
 examples/
 ```
 
@@ -488,7 +489,7 @@ Definition of done:
 
 Deferred tasks:
 
-1. [x] Add deeper hygienic macro metadata beyond stable `gensym` names.
+1. [x] Add stable `gensym` identity metadata beyond printable names.
 2. [x] Implement runtime `quote` as public datum values, separate from compiler `Syntax`. Runtime quoted values should preserve literal structure and symbol names, but not spans or hygiene metadata. Keep runtime quasiquote/unquote deferred until there is a concrete use case.
 3. [x] Add more negative expansion tests for invalid `unquote`, invalid `unquote-splicing`, malformed macro parameter lists, and expansion recursion limits.
 4. [x] Add a simple `macroexpand` CLI command that reads a `.nimp` file, runs reader and macro expansion with normal core autoload behavior, and prints expanded Nimp syntax using the existing syntax renderer. Support `--no-core`; defer richer interactive viewers/debug printers until diagnostics tooling grows.
@@ -500,7 +501,7 @@ Status: mostly completed. `std/core.nimp` is autoloaded by default, a CLI opt-ou
 Deliverables:
 
 1. [x] `std/core.nimp` loaded by default or by explicit prelude import. Implemented as default autoload with `autoloadCore = false` and CLI `--no-core` opt-outs.
-2. [x] Core macro library: `define-proc`, `when`, `unless`, `cond`, `and`, `or`, `let*`, threading macros.
+2. [x] Core macro library: `when`, `unless`, `cond`, `and`, `or`, `let*`, threading macros.
 3. [x] Core sequence helpers: `first`, `rest`, `empty?`, `append`, `map`, `filter`, `foldl`, `foldr`.
 4. [x] Numeric convenience wrappers if needed. Decision: not needed initially; use direct Nim operators and procs.
 5. [x] Stdlib tests written in Nimp.
@@ -526,7 +527,7 @@ Deliverables:
 
 1. [x] Stable import syntax.
 2. [x] Stable field/method access syntax. Supports both `(. value field)` / `(. value method arg...)` and dotted symbols such as `value.field` / `(value.method arg...)`.
-3. [x] Type annotation syntax for parameters, return types, and local declarations. Parameters use `(name Type)`, `define-proc` returns use `(: Type)`, and local `let`/`var` bindings use `((name Type) value)`.
+3. [x] Type annotation syntax for parameters, return types, and local declarations. Parameters use `(name Type)`, `proc` returns use `(: Type)`, and local `let`/`var` bindings use `((name Type) value)`.
 4. [x] Generic Nim proc calls where Nim can infer types.
 5. [x] Escape hatch for advanced Nim interop only if needed. Decision: do not add one before a real interop gap appears.
 
@@ -546,21 +547,21 @@ Deferred tasks:
 
 ### Milestone 7: Stability And Diagnostics
 
-Status: partially completed. Source-line preservation and first CLI diagnostics coverage are in place; broader negative coverage and example/std tests remain deferred.
+Status: completed for the current milestone. Source-line preservation, negative CLI diagnostics, golden macro expansion fixtures, example check/run coverage, stdlib tests, and repeated-helper warning coverage are in place.
 
 Deliverables:
 
-1. [x] Negative tests for parse errors, macro errors, type errors, unknown symbols, bad arity, and mutation errors. Parse, macro, type, and mutation coverage exists; unknown symbol and bad arity coverage still needs to be rounded out.
-2. Golden expansion tests for macros.
-3. Compile/run tests for examples.
+1. [x] Negative tests for parse errors, macro errors, type errors, unknown symbols, bad arity, and mutation errors.
+2. [x] Golden expansion tests for macros.
+3. [x] Compile/run tests for examples.
 4. [x] Source-line preservation in generated Nim nodes where possible.
-5. No repeated helper redefinition warnings.
+5. [x] No repeated helper redefinition warnings.
 
 Definition of done:
 
-1. `nimble test` covers reader, expander, backend, CLI, stdlib, and examples.
-2. Common user mistakes produce Nimp-facing diagnostics.
-3. Generated temporary names cannot collide with user names.
+1. [x] `nimble test` covers reader, expander, backend, CLI, stdlib, and examples.
+2. [x] Common user mistakes produce Nimp-facing diagnostics.
+3. [x] Generated temporary names cannot collide with user names.
 
 ### Milestone 8: Serious-Language Features
 
@@ -569,15 +570,16 @@ These should come after the core is stable.
 Candidate features:
 
 1. Hygienic macro metadata beyond basic `gensym`.
+  - Hygiene: current support is hidden hygieneId on symbols in src/nimp/syntax.nim:23, generated by gensym in src/nimp/macros.nim:32, and mapped to Nim genSym in src/nimp/backend.nim:31. That prevents forged name collisions, but it is not full lexical hygiene. “Beyond basic gensym” would mean syntax context/scopes, introduced vs captured identifiers, controlled capture APIs, and preserving that metadata through quote/quasiquote.
 2. Destructuring in `let`, `lambda`, and macro parameters.
 3. Pattern matching.
 4. Module system for Nimp files.
 5. REPL backed by temporary Nim compilation.
+  - REPL via temporary Nim compilation: possible, and the cleaned CLI already has most of the mechanism. Practical first version: keep a session transcript, generate a temp Nim wrapper per input, compile/run it, and preserve previous successful forms. Hard parts are latency, printing expression values consistently, and separating “define/import/proc” forms from value expressions.
 6. Formatter.
 7. Macro expansion viewer.
 8. Language server basics.
 9. Package layout conventions.
-10. Deeper Nim compiler integration for direct `nim c file.nimp` workflows, if Nim exposes a robust hook for non-Nim project source files.
 
 ## Testing Strategy
 

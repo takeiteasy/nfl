@@ -3,8 +3,8 @@ import std/macros
 import ./diagnostics
 import ./expand
 import ./lower
-import ./macroenv
-import ./nimbackend
+import ./macros
+import ./backend
 import ./reader
 import ./runtime
 import ./stdlib

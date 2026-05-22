@@ -1,0 +1,7 @@
+(when true (echo "yes"))
+(unless false (echo "unless"))
+(cond
+  (false (echo "skip"))
+  (true (echo "take")))
+(-> "nimp" toUpperAscii)
+(map [1 2 3] (lambda ((x int64)) (* x 2)))

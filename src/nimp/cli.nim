@@ -7,6 +7,25 @@ import ./compiler
 import ./diagnostics
 import ./syntax
 
+type
+  Command = enum
+    cmdRun = "run"
+    cmdCompile = "compile"
+    cmdCheck = "check"
+    cmdMacroexpand = "macroexpand"
+
+  CliOptions = object
+    command: Command
+    autoloadCore: bool
+    input: string
+    inputDisplay: string
+
+  ParseResult = object
+    ok: bool
+    exitCode: int
+    showUsage: bool
+    options: CliOptions
+
 proc nimStringLit(s: string): string =
   result = "\""
   for c in s:
@@ -22,6 +41,45 @@ proc nimStringLit(s: string): string =
 proc usage() =
   stderr.writeLine "usage: nimp <run|compile|check|macroexpand> [--no-core] file.nimp"
 
+proc parseCommand(value: string): Command =
+  case value
+  of "run": cmdRun
+  of "compile": cmdCompile
+  of "check": cmdCheck
+  of "macroexpand": cmdMacroexpand
+  else:
+    raise newException(ValueError, "unknown command: " & value)
+
+proc parseOptions(args: seq[string]): ParseResult =
+  if args.len == 0:
+    return ParseResult(ok: false, exitCode: 2, showUsage: true)
+  if args[0] in ["-h", "--help"]:
+    return ParseResult(ok: false, exitCode: 0, showUsage: true)
+
+  try:
+    result.options.command = parseCommand(args[0])
+  except ValueError:
+    return ParseResult(ok: false, exitCode: 2, showUsage: true)
+
+  result.options.autoloadCore = true
+  var inputArg = ""
+  if args.len > 1:
+    for arg in args[1..^1]:
+      case arg
+      of "--no-core":
+        result.options.autoloadCore = false
+      else:
+        if inputArg.len != 0:
+          return ParseResult(ok: false, exitCode: 2, showUsage: true)
+        inputArg = arg
+
+  if inputArg.len == 0:
+    return ParseResult(ok: false, exitCode: 2, showUsage: true)
+
+  result.ok = true
+  result.options.inputDisplay = inputArg
+  result.options.input = absolutePath(inputArg)
+
 proc repoSrcPath(): string =
   let candidate = getCurrentDir() / "src"
   if dirExists(candidate / "nimp"):
@@ -32,6 +90,14 @@ proc repoSrcPath(): string =
 proc defaultOutputPath(input: string): string =
   changeFileExt(input, ExeExt)
 
+proc tempBuildDir(): string =
+  getTempDir() / ("nimp-" & $getCurrentProcessId() & "-" & $epochTime())
+
+proc wrapperSource(input: string; autoloadCore: bool): string =
+  "import nimp/compiler\n" &
+    "nimpModule(staticRead(" & nimStringLit(input) & "), " &
+    nimStringLit(input) & ", autoloadCore = " & $autoloadCore & ")\n"
+
 proc runNim(args: seq[string]): int =
   let nimExe = findExe("nim")
   if nimExe.len == 0:
@@ -41,71 +107,65 @@ proc runNim(args: seq[string]): int =
   result = process.waitForExit()
   process.close()
 
-proc main(): int =
-  let args = commandLineParams()
-  if args.len < 2 or args.len > 3:
-    usage()
-    return 2
-
-  let command = args[0]
-  if command notin ["run", "compile", "check", "macroexpand"]:
-    usage()
-    return 2
-
-  var autoloadCore = true
-  var inputArg = ""
-  if args.len == 3:
-    if args[1] != "--no-core":
-      usage()
-      return 2
-    autoloadCore = false
-    inputArg = args[2]
-  else:
-    inputArg = args[1]
-
-  let input = absolutePath(inputArg)
-  if not fileExists(input):
-    stderr.writeLine "nimp: file not found: " & inputArg
-    return 1
-
-  if command == "macroexpand":
-    try:
-      for form in expandSource(readFile(input), input, autoloadCore):
-        stdout.writeLine form.renderSyntax()
-      return 0
-    except ReaderError as err:
-      stderr.writeLine $err.diagnostic
-      return 1
-    except CompilerError as err:
-      stderr.writeLine $err.diagnostic
-      return 1
-
-  let tempDir = getTempDir() / ("nimp-" & $getCurrentProcessId() & "-" & $epochTime())
-  createDir(tempDir)
-  let wrapper = tempDir / "wrapper.nim"
-  writeFile(wrapper,
-    "import nimp/compiler\n" &
-    "nimpModule(staticRead(" & nimStringLit(input) & "), " & nimStringLit(input) & ", autoloadCore = " & $autoloadCore & ")\n")
-
-  var nimArgs: seq[string] = @[]
-  case command
-  of "run": nimArgs.add @["c", "-r"]
-  of "compile":
-    nimArgs.add "c"
-    nimArgs.add "--out:" & defaultOutputPath(input)
-  of "check": nimArgs.add "check"
-  else: discard
+proc nimArgsFor(options: CliOptions; wrapper: string): seq[string] =
+  case options.command
+  of cmdRun:
+    result.add @["c", "-r"]
+  of cmdCompile:
+    result.add "c"
+    result.add "--out:" & defaultOutputPath(options.input)
+  of cmdCheck:
+    result.add "check"
+  of cmdMacroexpand:
+    discard
 
   let srcPath = repoSrcPath()
   if srcPath.len > 0:
-    nimArgs.add "--path:" & srcPath
-  nimArgs.add wrapper
+    result.add "--path:" & srcPath
+  result.add wrapper
 
-  result = runNim(nimArgs)
+proc macroexpand(options: CliOptions): int =
+  try:
+    for form in expandSource(readFile(options.input), options.input, options.autoloadCore):
+      stdout.writeLine form.renderSyntax()
+    0
+  except ReaderError as err:
+    stderr.writeLine $err.diagnostic
+    1
+  except CompilerError as err:
+    stderr.writeLine $err.diagnostic
+    1
+
+proc compileViaNim(options: CliOptions): int =
+  let tempDir = tempBuildDir()
+  createDir(tempDir)
+  let wrapper = tempDir / "wrapper.nim"
+  writeFile(wrapper, wrapperSource(options.input, options.autoloadCore))
+
+  result = runNim(nimArgsFor(options, wrapper))
   if result == 0:
     removeDir(tempDir)
   else:
     stderr.writeLine "nimp: preserved temporary build directory: " & tempDir
+
+proc main(): int =
+  let parsed = parseOptions(commandLineParams())
+  if not parsed.ok:
+    if parsed.showUsage:
+      usage()
+    return parsed.exitCode
+
+  let options = parsed.options
+
+  if not fileExists(options.input):
+    stderr.writeLine "nimp: file not found: " & options.inputDisplay
+    return 1
+
+  case options.command
+  of cmdMacroexpand:
+    macroexpand(options)
+  of cmdRun, cmdCompile, cmdCheck:
+    compileViaNim(options)
 
 when isMainModule:
   quit main()
