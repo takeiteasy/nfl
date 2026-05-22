@@ -45,23 +45,30 @@ Later supported forms:
 
 Tasks:
 
-- [ ] Decide the exact syntax for object, ref object, tuple, enum, distinct,
+- [x] Decide the exact syntax for object, ref object, tuple, enum, distinct,
       and aliases.
-- [ ] Add lowering validation for `type` at module/statement scope.
-- [ ] Emit Nim `nnkTypeSection` / `nnkTypeDef` nodes directly.
-- [ ] Preserve source locations on the type name and field/type nodes where the
+- [x] Add lowering validation for `type` at module/statement scope.
+- [x] Emit Nim `nnkTypeSection` / `nnkTypeDef` nodes directly.
+- [x] Preserve source locations on the type name and field/type nodes where the
       macros API allows it.
-- [ ] Add negative diagnostics for malformed type definitions, duplicate fields
+- [x] Add negative diagnostics for malformed type definitions, duplicate fields
       where practical, and invalid field/type positions.
-- [ ] Add backend tests for aliases, objects, and enums.
-- [ ] Add a focused `.nimp` example for defining and using a Nim object.
+- [x] Add backend tests for aliases, objects, and enums.
+- [x] Add a focused `.nimp` example for defining and using a Nim object.
 
 Definition of done:
 
-- [ ] A Nimp file can define a Nim object type.
-- [ ] A Nimp file can define a Nim enum type.
-- [ ] A Nim file can import/use a type emitted from Nimp.
-- [ ] `nimble test` covers success and failure paths.
+- [x] A Nimp file can define a Nim object type.
+- [x] A Nimp file can define a Nim enum type.
+- [x] A Nim file can import/use a type emitted from Nimp.
+- [x] `nimble test` covers success and failure paths.
+
+Implemented initial forms: aliases, objects, and enums. Tuple, distinct, and
+ref object syntax is reserved and currently produces explicit "not implemented
+yet" diagnostics. Export markers are supported narrowly for type declarations
+and object fields so Nim modules can import Nimp-emitted types. Enum values use
+Nim's normal behavior: exporting the enum type exports its values. General
+exported procs/definitions remain part of the export-marker milestone.
 
 ### 2. Named Arguments And Object Construction
 

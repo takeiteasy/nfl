@@ -199,6 +199,81 @@ proc lowerSlice(ctx: var LowerContext; sx: Syntax) =
 proc lowerQuote(sx: Syntax) =
   expectArity(sx, "quote", sx.items.len - 1, 1)
 
+proc exportedBaseName(name: Syntax): string =
+  if name.kind != sxSymbol:
+    raiseCompilerError(name.span, "type name must be a symbol")
+  result = name.sym
+  if result.endsWith("*"):
+    result = result[0 ..< result.high]
+    if result.len == 0:
+      raiseCompilerError(name.span, "exported name must have a base name")
+  if result.contains("*"):
+    raiseCompilerError(name.span, "export marker is only allowed at the end of a name")
+
+proc validateTypeReference(sx: Syntax; what: string) =
+  if sx.kind != sxSymbol:
+    raiseCompilerError(sx.span, what & " must be a type symbol")
+  if sx.sym.contains("*"):
+    raiseCompilerError(sx.span, "type references cannot use export markers")
+  if sx.sym.len == 0 or sx.sym[0] == '.' or sx.sym[^1] == '.' or sx.sym.contains(".."):
+    raiseCompilerError(sx.span, "invalid type symbol: " & sx.sym)
+
+proc lowerObjectType(sx: Syntax) =
+  if sx.items.len == 1:
+    raiseCompilerError(sx.span, "object type expects fields")
+  var seen = initTable[string, bool]()
+  for field in sx.items.toOpenArray(1, sx.items.high):
+    if field.kind != sxList or field.items.len != 2:
+      raiseCompilerError(field.span, "object field must be (name Type)")
+    let name = field.items[0]
+    if name.kind != sxSymbol:
+      raiseCompilerError(name.span, "object field name must be a symbol")
+    let key = name.exportedBaseName()
+    if seen.hasKey(key):
+      raiseCompilerError(name.span, "duplicate object field: " & key)
+    seen[key] = true
+    validateTypeReference(field.items[1], "object field type")
+
+proc lowerEnumType(sx: Syntax) =
+  if sx.items.len == 1:
+    raiseCompilerError(sx.span, "enum type expects values")
+  var seen = initTable[string, bool]()
+  for value in sx.items.toOpenArray(1, sx.items.high):
+    if value.kind != sxSymbol:
+      raiseCompilerError(value.span, "enum value must be a symbol")
+    if value.sym.endsWith("*"):
+      raiseCompilerError(value.span, "enum values cannot use export markers; export the enum type instead")
+    let key = value.sym
+    if seen.hasKey(key):
+      raiseCompilerError(value.span, "duplicate enum value: " & key)
+    seen[key] = true
+
+proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
+  expectArity(sx, "type", sx.items.len - 1, 2)
+  let name = sx.items[1]
+  if name.kind != sxSymbol:
+    raiseCompilerError(name.span, "type name must be a symbol")
+  let declaredName = newSymbol(name.exportedBaseName(), name.span)
+  let body = sx.items[2]
+  if body.kind == sxSymbol:
+    validateTypeReference(body, "type alias target")
+  elif body.kind == sxList and body.items.len > 0:
+    if body.items[0].isSymbol("object"):
+      lowerObjectType(body)
+    elif body.items[0].isSymbol("enum"):
+      lowerEnumType(body)
+    elif body.items[0].isSymbol("tuple"):
+      raiseCompilerError(body.span, "tuple type declarations are not implemented yet")
+    elif body.items[0].isSymbol("distinct"):
+      raiseCompilerError(body.span, "distinct type declarations are not implemented yet")
+    elif body.items[0].isSymbol("ref"):
+      raiseCompilerError(body.span, "ref object type declarations are not implemented yet")
+    else:
+      raiseCompilerError(body.items[0].span, "unknown type declaration form: " & formName(body.items[0]))
+  else:
+    raiseCompilerError(body.span, "type body must be an alias target or type form")
+  declare(ctx, declaredName, bkImmutable)
+
 proc lowerCall(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len == 0:
     raiseCompilerError(sx.span, "empty list is not callable")
@@ -231,6 +306,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerLambda(ctx, sx)
     elif sx.items[0].isSymbol("proc"):
       raiseCompilerError(sx.span, "proc is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("type"):
+      raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("."):
       lowerDot(ctx, sx)
     elif sx.items[0].isSymbol("at"):
@@ -258,6 +335,9 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
       return
     if sx.items[0].isSymbol("proc"):
       lowerProc(ctx, sx)
+      return
+    if sx.items[0].isSymbol("type"):
+      lowerTypeDecl(ctx, sx)
       return
   lowerExpr(ctx, sx)
 

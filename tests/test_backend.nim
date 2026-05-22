@@ -94,6 +94,21 @@ nimpModule """
 (define shoutedAgain (greet "macro"))
 (define shoutedByMethod (shout "method"))
 (define hygienicResult (hygienic))
+(type Count int)
+(type Person
+  (object
+    (name string)
+    (age int)))
+(type Mood
+  (enum happy sad))
+(proc incCount ((x Count)) (: Count)
+  (+ x 1))
+(proc personAge ((p Person)) (: int)
+  (. p age))
+(define counted (incCount 2))
+(define defaultPerson (default Person))
+(define defaultAge (personAge defaultPerson))
+(define favoriteMood happy)
 (+ 1)
 (begin (+ 1 2) nil)
 """, "module-test.nimp"
@@ -111,3 +126,12 @@ suite "nimp module backend":
 
   test "gensym bindings do not collide with matching source names":
     check hygienicResult == 3
+
+  test "type alias definition":
+    check counted == 3
+
+  test "object type definition":
+    check defaultAge == 0
+
+  test "enum type definition":
+    check favoriteMood == happy

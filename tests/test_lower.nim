@@ -13,6 +13,14 @@ proc expectLowerError(source, messagePart: string) =
     check err.diagnostic.span.file == "lower-test.nimp"
     check err.diagnostic.message.contains(messagePart)
 
+proc expectLowerModuleError(source, messagePart: string) =
+  try:
+    discard lowerModule(readAll(source, "lower-test.nimp"))
+    fail()
+  except CompilerError as err:
+    check err.diagnostic.span.file == "lower-test.nimp"
+    check err.diagnostic.message.contains(messagePart)
+
 suite "lowering validation":
   test "allows set! for var bindings":
     discard lowerExpr(readOne("(var ((x 1)) (set! x 2) x)", "lower-test.nimp"))
@@ -54,3 +62,35 @@ suite "lowering validation":
 
   test "rejects runtime quasiquote":
     expectLowerError("`(a b)", "runtime quasiquote is not implemented yet")
+
+  test "allows type declarations at statement scope":
+    discard lowerModule(readAll("(type Count int)\n(type Person (object (name string)))\n(type Mood (enum happy sad))\n", "lower-test.nimp"))
+
+  test "rejects type declarations in expression position":
+    expectLowerError("(let ((x (type Count int))) x)", "type is only allowed at statement/module scope")
+
+  test "rejects malformed type declarations":
+    expectLowerModuleError("(type)", "type expects 2 arguments, got 0")
+    expectLowerModuleError("(type 1 int)", "type name must be a symbol")
+    expectLowerModuleError("(type Count 1)", "type body must be an alias target or type form")
+    expectLowerModuleError("(type Count int*)", "type references cannot use export markers")
+    expectLowerModuleError("(type Count int)\n(type Count* int)", "duplicate binding: Count")
+
+  test "rejects malformed object type declarations":
+    expectLowerModuleError("(type Person (object))", "object type expects fields")
+    expectLowerModuleError("(type Person (object name))", "object field must be (name Type)")
+    expectLowerModuleError("(type Person (object (name)))", "object field must be (name Type)")
+    expectLowerModuleError("(type Person (object (1 string)))", "object field name must be a symbol")
+    expectLowerModuleError("(type Person (object (name 1)))", "object field type must be a type symbol")
+    expectLowerModuleError("(type Person (object (name string) (name int)))", "duplicate object field: name")
+
+  test "rejects malformed enum type declarations":
+    expectLowerModuleError("(type Mood (enum))", "enum type expects values")
+    expectLowerModuleError("(type Mood (enum 1))", "enum value must be a symbol")
+    expectLowerModuleError("(type Mood (enum happy happy))", "duplicate enum value: happy")
+    expectLowerModuleError("(type Mood (enum happy*))", "enum values cannot use export markers")
+
+  test "rejects reserved type forms until implemented":
+    expectLowerModuleError("(type Pair (tuple (left int)))", "tuple type declarations are not implemented yet")
+    expectLowerModuleError("(type UserId (distinct int))", "distinct type declarations are not implemented yet")
+    expectLowerModuleError("(type PersonRef (ref object (name string)))", "ref object type declarations are not implemented yet")

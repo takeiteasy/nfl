@@ -60,6 +60,24 @@ proc identForTypeSymbol(sx: Syntax): NimNode =
     raiseCompilerError(sx.span, "expected symbol")
   ident(sx.sym).attachLineInfo(sx)
 
+proc exportedIdentForSymbol(sx: Syntax; what: string): NimNode =
+  if sx.kind != sxSymbol:
+    raiseCompilerError(sx.span, what & " must be a symbol")
+  if sx.sym.endsWith("*"):
+    let base = sx.sym[0 ..< sx.sym.high]
+    if base.len == 0:
+      raiseCompilerError(sx.span, "exported name must have a base name")
+    return nnkPostfix.newTree(ident("*"), ident(base).attachLineInfo(sx)).attachLineInfo(sx)
+  ident(sx.sym).attachLineInfo(sx)
+
+proc emitTypeReference(sx: Syntax): NimNode =
+  if sx.kind != sxSymbol:
+    raiseCompilerError(sx.span, "expected type symbol")
+  if sx.sym.contains('.') and sx.sym != ".":
+    emitDottedSymbol(sx)
+  else:
+    identForTypeSymbol(sx)
+
 proc emitModulePath(sx: Syntax): NimNode =
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, "import expects a module symbol")
@@ -216,6 +234,41 @@ proc emitImport(sx: Syntax): NimNode =
   expectArity(sx, "import", sx.items.len - 1, 1)
   nnkImportStmt.newTree(emitModulePath(sx.items[1])).attachLineInfo(sx)
 
+proc emitObjectType(sx: Syntax): NimNode =
+  var fields = nnkRecList.newTree().attachLineInfo(sx)
+  for field in sx.items.toOpenArray(1, sx.items.high):
+    fields.add nnkIdentDefs.newTree(
+      exportedIdentForSymbol(field.items[0], "object field name"),
+      emitTypeReference(field.items[1]),
+      newEmptyNode()
+    ).attachLineInfo(field)
+  nnkObjectTy.newTree(newEmptyNode(), newEmptyNode(), fields).attachLineInfo(sx)
+
+proc emitEnumType(sx: Syntax): NimNode =
+  result = nnkEnumTy.newTree(newEmptyNode()).attachLineInfo(sx)
+  for value in sx.items.toOpenArray(1, sx.items.high):
+    result.add identForTypeSymbol(value)
+
+proc emitTypeBody(sx: Syntax): NimNode =
+  if sx.kind == sxSymbol:
+    return emitTypeReference(sx)
+  if sx.kind == sxList and sx.items.len > 0:
+    if sx.items[0].isSymbol("object"):
+      return emitObjectType(sx)
+    if sx.items[0].isSymbol("enum"):
+      return emitEnumType(sx)
+  raiseCompilerError(sx.span, "unsupported type declaration")
+
+proc emitTypeDecl(sx: Syntax): NimNode =
+  expectArity(sx, "type", sx.items.len - 1, 2)
+  nnkTypeSection.newTree(
+    nnkTypeDef.newTree(
+      exportedIdentForSymbol(sx.items[1], "type name"),
+      newEmptyNode(),
+      emitTypeBody(sx.items[2])
+    ).attachLineInfo(sx)
+  ).attachLineInfo(sx)
+
 proc emitDot(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len < 3:
     raiseCompilerError(sx.span, ". expects object and field or method name")
@@ -318,6 +371,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, "define is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("proc"):
       raiseCompilerError(sx.span, "proc is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("type"):
+      raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
       raiseCompilerError(sx.span, "import is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("quote"):
@@ -344,6 +399,8 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return emitImport(sx)
     if sx.items[0].isSymbol("proc"):
       return ctx.emitProc(sx)
+    if sx.items[0].isSymbol("type"):
+      return emitTypeDecl(sx)
   newCall(bindSym"nimpStmt", ctx.emitExpr(sx)).attachLineInfo(sx)
 
 proc emitExpr*(sx: Syntax): NimNode =

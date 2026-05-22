@@ -191,3 +191,39 @@ nimpModule "(define secondValue (first [3 4]))", "second-module.nimp"
       check exitCode == 0
       check not output.contains("Warning:")
       check not output.contains("redefinition")
+
+  test "nim module can import exported nimp types":
+    let nimExe = findExe("nim")
+    check nimExe.len > 0
+    if nimExe.len > 0:
+      let dir = getTempDir() / "nimp cli imported types"
+      createDir(dir)
+      let nimpFile = dir / "types.nimp"
+      let producer = dir / "producer.nim"
+      let consumer = dir / "consumer.nim"
+
+      writeFile(nimpFile, """
+(type PublicPerson*
+  (object
+    (name* string)
+    (age* int)))
+(type PublicMood*
+  (enum publicHappy publicSad))
+""")
+      writeFile(producer, """
+import nimp/compiler
+
+nimpModule(staticRead("types.nimp"), "types.nimp")
+""")
+      writeFile(consumer, """
+import producer
+
+let p = PublicPerson(name: "Ada", age: 36)
+doAssert p.name == "Ada"
+doAssert p.age == 36
+doAssert publicHappy != publicSad
+""")
+
+      let (output, exitCode) = runCommand(nimExe, @["check", "--path:src", consumer])
+      check exitCode == 0
+      check not output.contains("Error:")

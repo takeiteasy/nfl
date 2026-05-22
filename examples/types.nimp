@@ -1,0 +1,11 @@
+(type Person
+  (object
+    (name string)
+    (age int)))
+
+(proc personAge ((p Person)) (: int)
+  (. p age))
+
+(define nobody (default Person))
+
+(echo "default person age: " (personAge nobody))
