@@ -1,0 +1,18 @@
+; Const declarations — compile-time constants.
+; A public constant (exported with `*`, accessible as `maxItems` from Nim).
+(const maxItems* 100)
+
+; A private constant.
+(const defaultStep 5)
+
+; An optional type annotation using the (name type) form.
+(const (bufferSize int) 1024)
+
+; The defconstant alias behaves identically.
+(defconstant version* 2)
+
+; References always use the base name (without `*`).
+(echo "maxItems: " maxItems)
+(echo "defaultStep: " defaultStep)
+(echo "bufferSize: " bufferSize)
+(echo "version: " version)

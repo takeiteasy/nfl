@@ -64,15 +64,25 @@ proc identForTypeSymbol(sx: Syntax): NimNode =
     raiseCompilerError(sx.span, "expected symbol")
   ident(sx.sym).attachLineInfo(sx)
 
-proc exportedIdentForSymbol(sx: Syntax; what: string): NimNode =
+proc declIdent(ctx: var EmitContext; sx: Syntax; what: string): NimNode =
+  ## Build the declaration-site identifier for a symbol, handling both the
+  ## export postfix (`name*` → `nnkPostfix(*, ident(name))`) and hygiene.
+  ## Hygienic symbols cannot carry `*` — they have no stable public name.
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, what & " must be a symbol")
   if sx.sym.endsWith("*"):
+    if sx.hygieneId != 0:
+      raiseCompilerError(sx.span, "exported name cannot be a hygienic symbol")
     let base = sx.sym[0 ..< sx.sym.high]
     if base.len == 0:
       raiseCompilerError(sx.span, "exported name must have a base name")
-    return nnkPostfix.newTree(ident("*"), ident(base).attachLineInfo(sx)).attachLineInfo(sx)
-  ident(sx.sym).attachLineInfo(sx)
+    if base.contains("*"):
+      raiseCompilerError(sx.span, "export marker is only allowed at the end of a name")
+    return nnkPostfix.newTree(
+      ident("*"),
+      ident(base).attachLineInfo(sx)
+    ).attachLineInfo(sx)
+  ctx.identForSymbol(sx)
 
 proc emitTypeReference(sx: Syntax): NimNode =
   if sx.kind != sxSymbol:
@@ -218,7 +228,7 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
     formalParams.add ctx.emitParam(param)
 
   nnkProcDef.newTree(
-    ctx.identForSymbol(name),
+    ctx.declIdent(name, "proc name"),
     newEmptyNode(),
     newEmptyNode(),
     formalParams,
@@ -233,17 +243,36 @@ proc emitDefvar(ctx: var EmitContext; sx: Syntax): NimNode =
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, formName & " name must be a symbol")
-  nnkVarSection.newTree(nnkIdentDefs.newTree(ctx.identForSymbol(name), newEmptyNode(), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)).attachLineInfo(sx)
+  nnkVarSection.newTree(nnkIdentDefs.newTree(ctx.declIdent(name, formName & " name"), newEmptyNode(), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)).attachLineInfo(sx)
+
+proc emitConst(ctx: var EmitContext; sx: Syntax): NimNode =
+  let formName = sx.items[0].sym
+  expectArity(sx, formName, sx.items.len - 1, 2)
+  let nameTarget = sx.items[1]
+  let value = ctx.emitExpr(sx.items[2])
+  var nameIdent: NimNode
+  var typeIdent: NimNode = newEmptyNode()
+  if nameTarget.kind == sxSymbol:
+    nameIdent = ctx.declIdent(nameTarget, formName & " name")
+  elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
+       nameTarget.items[0].kind == sxSymbol and nameTarget.items[1].kind == sxSymbol:
+    nameIdent = ctx.declIdent(nameTarget.items[0], formName & " name")
+    typeIdent = identForTypeSymbol(nameTarget.items[1])
+  else:
+    raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
+  nnkConstSection.newTree(
+    nnkConstDef.newTree(nameIdent, typeIdent, value).attachLineInfo(sx)
+  ).attachLineInfo(sx)
 
 proc emitImport(sx: Syntax): NimNode =
   expectArity(sx, "import", sx.items.len - 1, 1)
   nnkImportStmt.newTree(emitModulePath(sx.items[1])).attachLineInfo(sx)
 
-proc emitObjectType(sx: Syntax): NimNode =
+proc emitObjectType(ctx: var EmitContext; sx: Syntax): NimNode =
   var fields = nnkRecList.newTree().attachLineInfo(sx)
   for field in sx.items.toOpenArray(1, sx.items.high):
     fields.add nnkIdentDefs.newTree(
-      exportedIdentForSymbol(field.items[0], "object field name"),
+      ctx.declIdent(field.items[0], "object field name"),
       emitTypeReference(field.items[1]),
       newEmptyNode()
     ).attachLineInfo(field)
@@ -254,23 +283,23 @@ proc emitEnumType(sx: Syntax): NimNode =
   for value in sx.items.toOpenArray(1, sx.items.high):
     result.add identForTypeSymbol(value)
 
-proc emitTypeBody(sx: Syntax): NimNode =
+proc emitTypeBody(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.kind == sxSymbol:
     return emitTypeReference(sx)
   if sx.kind == sxList and sx.items.len > 0:
     if sx.items[0].isSymbol("object"):
-      return emitObjectType(sx)
+      return ctx.emitObjectType(sx)
     if sx.items[0].isSymbol("enum"):
       return emitEnumType(sx)
   raiseCompilerError(sx.span, "unsupported type declaration")
 
-proc emitTypeDecl(sx: Syntax): NimNode =
+proc emitTypeDecl(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "type", sx.items.len - 1, 2)
   nnkTypeSection.newTree(
     nnkTypeDef.newTree(
-      exportedIdentForSymbol(sx.items[1], "type name"),
+      ctx.declIdent(sx.items[1], "type name"),
       newEmptyNode(),
-      emitTypeBody(sx.items[2])
+      ctx.emitTypeBody(sx.items[2])
     ).attachLineInfo(sx)
   ).attachLineInfo(sx)
 
@@ -408,6 +437,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
     elif sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
       raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("const"):
+      raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("proc"):
       raiseCompilerError(sx.span, "proc is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("type"):
@@ -434,12 +465,14 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return
     if sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
       return ctx.emitDefvar(sx)
+    if sx.items[0].isSymbol("const"):
+      return ctx.emitConst(sx)
     if sx.items[0].isSymbol("import"):
       return emitImport(sx)
     if sx.items[0].isSymbol("proc"):
       return ctx.emitProc(sx)
     if sx.items[0].isSymbol("type"):
-      return emitTypeDecl(sx)
+      return ctx.emitTypeDecl(sx)
   newCall(bindSym"nimpStmt", ctx.emitExpr(sx)).attachLineInfo(sx)
 
 proc emitExpr*(sx: Syntax): NimNode =

@@ -113,12 +113,12 @@ Definition of done:
 Ordinary calls use `(: name value)` for named arguments, which avoids the
 ambiguity between a named argument and a positional nested call expression.
 
-### 3. Export Marker And Visibility
+### 3. Export Marker And Visibility **Done**
 
-Nimp needs a way to emit Nim public symbols such as `Name*`, `field*`, and
-`procName*`.
+Nimp emits Nim public symbols by appending `*` to a declaration name:
+`Name*`, `field*`, `procName*`. Symbols without `*` remain private by default.
 
-Candidate syntax:
+Syntax:
 
 ```lisp
 (proc greet* ((name string)) (: string)
@@ -128,21 +128,37 @@ Candidate syntax:
   (object
     (name* string)
     (age int)))
+
+(defvar version* "1.0")
 ```
+
+Design decision: `*` is part of the symbol string through the reader, expand,
+and lower phases. It is interpreted as an export marker exclusively in the
+lowering validation (`lower.nim:validateExportedDecl`) and backend emission
+(`backend.nim:declIdent`). No new reader or syntax-node changes were needed.
+The binding registered in the scope table uses the base name (stripped of `*`)
+so that references always work without the marker.
+
+Hygiene rule: a hygienic symbol (`hygieneId != 0`, produced by `gensym`) cannot
+carry `*` — gensym'd names have no stable public identity. The compiler rejects
+the combination with an explicit error.
 
 Tasks:
 
-- [ ] Decide whether `*` is part of the symbol name or represented by metadata.
-- [ ] Support exported procs, types, enum values, object fields, constants, and
-      top-level definitions where Nim allows them.
-- [ ] Keep exported-name handling compatible with hygiene metadata.
-- [ ] Add tests proving Nim code can import public declarations from a Nimp
+- [x] Decide whether `*` is part of the symbol name or represented by metadata.
+- [x] Support exported procs, types, object fields, and top-level variable
+      definitions where Nim allows them.
+- [x] Keep exported-name handling compatible with hygiene metadata.
+- [x] Add tests proving Nim code can import public declarations from a Nimp
       module.
 
 Definition of done:
 
-- [ ] Nimp can emit a public Nim-facing API from a `.nimp` file.
-- [ ] Private symbols remain private by default.
+- [x] Nimp can emit a public Nim-facing API from a `.nimp` file.
+- [x] Private symbols remain private by default.
+
+Enum value export remains intentionally unsupported: exporting the enum type
+automatically exports its values in Nim.
 
 ### 4. Pragmas
 
@@ -175,29 +191,35 @@ Definition of done:
 - [ ] Nimp can attach at least marker pragmas to procs and types.
 - [ ] Pragmas compose with export markers and generics.
 
-### 5. Const Declarations
+### 5. Const Declarations ✓
 
-Add top-level and local `const` where Nim requires compile-time constants.
+Add top-level `const` where Nim requires compile-time constants.
 
-Candidate syntax:
+Syntax — both spellings are accepted and behave identically:
 
 ```lisp
 (const answer 42)
 (const greeting "hello")
+(const maxCoord* 1000)          ; exported
+(const (limit int) 100)         ; optional (name type) annotation
+(defconstant answer 42)         ; alias
 ```
+
+The name slot is a bare symbol or a `(name type)` pair, matching the existing
+typed-binding convention used by `let`/`var`. Initializers must be
+compile-time-evaluable (CTFE); a `const` is immutable and `set!` is rejected.
 
 Tasks:
 
-- [ ] Decide whether `const` is module-only initially or also allowed in local
-      statement positions.
-- [ ] Add lowering validation and backend emission for `nnkConstSection`.
-- [ ] Support optional type annotations if they share the existing binding
-      syntax.
-- [ ] Add tests distinguishing `const` from `defvar`/`defparameter`/`let`.
+- [x] Module-only scope chosen; local `const` deferred.
+- [x] Add lowering validation and backend emission for `nnkConstSection`.
+- [x] Support optional type annotations via the `(name type)` binding syntax.
+- [x] Export markers supported via `declIdent`/`validateExportedDecl`.
+- [x] Add tests distinguishing `const` from `defvar`/`defparameter`/`let`.
 
 Definition of done:
 
-- [ ] A Nimp file can define Nim constants usable from Nim and Nimp code.
+- [x] A Nimp file can define Nim constants usable from Nim and Nimp code.
 
 ### 6. Generic Declarations
 

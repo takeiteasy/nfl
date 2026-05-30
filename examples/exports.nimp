@@ -1,0 +1,35 @@
+; Export markers: a trailing `*` on a symbol makes the declaration public in
+; the emitted Nim module.  Symbols without `*` remain private by default.
+
+(import std/math)
+
+; Public type with a mix of public and private fields.
+(type Point*
+  (object
+    (x* int)
+    (y* int)
+    (label string)))
+
+; Public proc — callable by any Nim file that imports this module.
+; Note: type references never carry `*`; only declaration names do.
+(proc makePoint* ((x int) (y int)) (: Point)
+  (new Point (x x) (y y) (label "")))
+
+(proc distance* ((a Point) (b Point)) (: float)
+  (let ((dx (toFloat (- (. a x) (. b x))))
+        (dy (toFloat (- (. a y) (. b y)))))
+    (sqrt (+ (* dx dx) (* dy dy)))))
+
+; Private helper — not visible outside the module.
+(proc clamp ((v int) (lo int) (hi int)) (: int)
+  (if (< v lo) lo (if (> v hi) hi v)))
+
+; Public constant-like variable.
+(defvar origin* (makePoint 0 0))
+
+; Private implementation detail.
+(defvar maxCoord 1000)
+
+; References always use the base name (without `*`).
+(echo "origin: " (. origin x) " " (. origin y))
+(echo "clamped: " (clamp 1500 0 maxCoord))

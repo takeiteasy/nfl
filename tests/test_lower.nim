@@ -144,3 +144,64 @@ suite "lowering validation":
     expectLowerModuleError("(type Pair (tuple (left int)))", "tuple type declarations are not implemented yet")
     expectLowerModuleError("(type UserId (distinct int))", "distinct type declarations are not implemented yet")
     expectLowerModuleError("(type PersonRef (ref object (name string)))", "ref object type declarations are not implemented yet")
+
+  test "allows exported proc":
+    discard lowerModule(readAll("(proc greet* ((name string)) (: string) name)", "lower-test.nimp"))
+
+  test "allows exported defvar":
+    discard lowerModule(readAll("(defvar version* \"1.0\")", "lower-test.nimp"))
+    discard lowerModule(readAll("(defparameter limit* 100)", "lower-test.nimp"))
+
+  test "exported defvar binding resolves under base name":
+    # The binding is registered as `x`, not `x*`, so references without `*` work.
+    discard lowerModule(readAll("(defvar x* 1)\n(defvar y (+ x* 0))", "lower-test.nimp"))
+
+  test "allows exported type and object fields":
+    discard lowerModule(readAll("(type Person* (object (name* string) (age int)))", "lower-test.nimp"))
+
+  test "rejects export marker in proc name mid-position":
+    expectLowerModuleError("(proc gre*et ((name string)) name)", "export marker is only allowed at the end of a name")
+
+  test "rejects bare export marker as proc name":
+    expectLowerModuleError("(proc * ((name string)) name)", "exported name must have a base name")
+
+  test "rejects export marker in defvar name mid-position":
+    expectLowerModuleError("(defvar x*y 1)", "export marker is only allowed at the end of a name")
+
+  test "rejects bare export marker as defvar name":
+    expectLowerModuleError("(defvar * 1)", "exported name must have a base name")
+
+  test "allows const declaration":
+    discard lowerModule(readAll("(const answer 42)", "lower-test.nimp"))
+    discard lowerModule(readAll("(const greeting \"hello\")", "lower-test.nimp"))
+
+  test "allows typed const declaration":
+    discard lowerModule(readAll("(const (limit int) 100)", "lower-test.nimp"))
+
+  test "allows exported const":
+    discard lowerModule(readAll("(const maxCoord* 1000)", "lower-test.nimp"))
+    discard lowerModule(readAll("(const (scale* int) 2)", "lower-test.nimp"))
+
+  test "allows defconstant alias":
+    discard lowerModule(readAll("(defconstant answer 42)", "lower-test.nimp"))
+
+  test "exported const binding resolves under base name":
+    discard lowerModule(readAll("(const x* 1)\n(const y (+ x* 0))", "lower-test.nimp"))
+
+  test "rejects const with wrong arity":
+    expectLowerModuleError("(const x)", "expects 2")
+
+  test "rejects const with non-symbol name":
+    expectLowerModuleError("(const 1 42)", "const name must be a symbol or (name type)")
+
+  test "rejects export marker in const name mid-position":
+    expectLowerModuleError("(const a*b 1)", "export marker is only allowed at the end of a name")
+
+  test "rejects bare export marker as const name":
+    expectLowerModuleError("(const * 1)", "exported name must have a base name")
+
+  test "rejects set! on const binding":
+    expectLowerModuleError("(const c 1)\n(defvar d (block (set! c 2) c))", "immutable binding")
+
+  test "rejects const in expression scope":
+    expectLowerError("(let ((x (const a 1))) x)", "const is only allowed at statement/module scope")

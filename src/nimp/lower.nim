@@ -138,6 +138,23 @@ proc lowerLambda(ctx: var LowerContext; sx: Syntax) =
   lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
   ctx.popScope()
 
+proc validateExportedDecl(name: Syntax; what: string): string =
+  ## Validates a declaration name that may optionally carry a trailing `*`
+  ## export marker. Returns the base name with the marker stripped.
+  ## Raises a CompilerError if the marker is malformed or the symbol is
+  ## hygienic (hygienic symbols have no stable public name).
+  if name.kind != sxSymbol:
+    raiseCompilerError(name.span, what & " must be a symbol")
+  result = name.sym
+  if result.endsWith("*"):
+    if name.hygieneId != 0:
+      raiseCompilerError(name.span, "exported name cannot be a hygienic symbol")
+    result = result[0 ..< result.high]
+    if result.len == 0:
+      raiseCompilerError(name.span, "exported name must have a base name")
+  if result.contains("*"):
+    raiseCompilerError(name.span, "export marker is only allowed at the end of a name")
+
 proc procBodyStart(sx: Syntax): int =
   result = 3
   if sx.items.len > 3 and sx.items[3].kind == sxList and sx.items[3].items.len == 2 and sx.items[3].items[0].isSymbol(":"):
@@ -152,6 +169,8 @@ proc lowerProc(ctx: var LowerContext; sx: Syntax) =
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "proc name must be a symbol")
+  # Validate the export marker early so errors point at the name, not the body.
+  let baseName = name.validateExportedDecl("proc name")
   let params = sx.items[2]
   if params.kind != sxList:
     raiseCompilerError(params.span, "proc parameters must be a list")
@@ -163,7 +182,9 @@ proc lowerProc(ctx: var LowerContext; sx: Syntax) =
     lowerParam(ctx, param)
   lowerBody(ctx, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ctx.popScope()
-  declare(ctx, name, bkImmutable)
+  # Proc names resolve via Nim's own name resolution; we register under the
+  # base name (stripped of any `*`) so local set!/lookup always finds it.
+  declare(ctx, newSymbol(baseName, name.span), bkImmutable)
 
 proc lowerDefvar(ctx: var LowerContext; sx: Syntax) =
   let formName = sx.items[0].sym
@@ -171,8 +192,29 @@ proc lowerDefvar(ctx: var LowerContext; sx: Syntax) =
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, formName & " name must be a symbol")
+  # Validate the export marker and strip it so the binding is registered under
+  # the base name; references always use the bare name, not `name*`.
+  let baseName = name.validateExportedDecl(formName & " name")
   lowerExpr(ctx, sx.items[2])
-  declare(ctx, name, bkMutable)
+  declare(ctx, newSymbol(baseName, name.span), bkMutable)
+
+proc lowerConst(ctx: var LowerContext; sx: Syntax) =
+  let formName = sx.items[0].sym
+  expectArity(sx, formName, sx.items.len - 1, 2)
+  let nameTarget = sx.items[1]
+  var baseName: string
+  var nameSpan: Span
+  if nameTarget.kind == sxSymbol:
+    baseName = nameTarget.validateExportedDecl(formName & " name")
+    nameSpan = nameTarget.span
+  elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
+       nameTarget.items[0].kind == sxSymbol and nameTarget.items[1].kind == sxSymbol:
+    baseName = nameTarget.items[0].validateExportedDecl(formName & " name")
+    nameSpan = nameTarget.items[0].span
+  else:
+    raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
+  lowerExpr(ctx, sx.items[2])
+  declare(ctx, newSymbol(baseName, nameSpan), bkImmutable)
 
 proc lowerImport(sx: Syntax) =
   expectArity(sx, "import", sx.items.len - 1, 1)
@@ -240,17 +282,6 @@ proc lowerNew(ctx: var LowerContext; sx: Syntax) =
 proc lowerQuote(sx: Syntax) =
   expectArity(sx, "quote", sx.items.len - 1, 1)
 
-proc exportedBaseName(name: Syntax): string =
-  if name.kind != sxSymbol:
-    raiseCompilerError(name.span, "type name must be a symbol")
-  result = name.sym
-  if result.endsWith("*"):
-    result = result[0 ..< result.high]
-    if result.len == 0:
-      raiseCompilerError(name.span, "exported name must have a base name")
-  if result.contains("*"):
-    raiseCompilerError(name.span, "export marker is only allowed at the end of a name")
-
 proc validateTypeReference(sx: Syntax; what: string) =
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, what & " must be a type symbol")
@@ -269,7 +300,7 @@ proc lowerObjectType(sx: Syntax) =
     let name = field.items[0]
     if name.kind != sxSymbol:
       raiseCompilerError(name.span, "object field name must be a symbol")
-    let key = name.exportedBaseName()
+    let key = name.validateExportedDecl("object field name")
     if seen.hasKey(key):
       raiseCompilerError(name.span, "duplicate object field: " & key)
     seen[key] = true
@@ -294,7 +325,7 @@ proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "type name must be a symbol")
-  let declaredName = newSymbol(name.exportedBaseName(), name.span)
+  let declaredName = newSymbol(name.validateExportedDecl("type name"), name.span)
   let body = sx.items[2]
   if body.kind == sxSymbol:
     validateTypeReference(body, "type alias target")
@@ -365,6 +396,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
     elif sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
       raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("const"):
+      raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
       raiseCompilerError(sx.span, "import is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("quote"):
@@ -378,6 +411,9 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
   if sx.kind == sxList and sx.items.len > 0:
     if sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
       lowerDefvar(ctx, sx)
+      return
+    if sx.items[0].isSymbol("const"):
+      lowerConst(ctx, sx)
       return
     if sx.items[0].isSymbol("import"):
       lowerImport(sx)

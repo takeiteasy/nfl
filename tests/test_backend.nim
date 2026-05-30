@@ -134,6 +134,20 @@ nimpModule """
 (defvar favoriteMood happy)
 (+ 1)
 (block (+ 1 2) nil)
+; Export marker tests — public proc, exported defvar, exported type with mixed fields.
+(proc publicGreet* ((name string)) (: string)
+  (name.toUpperAscii))
+(defvar publicVersion* "2.0")
+(type PublicPoint*
+  (object
+    (x* int)
+    (y int)))
+(defvar testPoint (new PublicPoint (x 3) (y 4)))
+; Const tests — plain, typed, exported.
+(const privateConst 7)
+(const (typedConst int) 11)
+(const publicSize* 3)
+(defconstant defconstantAlias 99)
 """, "module-test.nimp"
 
 suite "nimp module backend":
@@ -162,3 +176,32 @@ suite "nimp module backend":
 
   test "enum type definition":
     check favoriteMood == happy
+
+  test "exported proc is callable under its base name":
+    check publicGreet("world") == "WORLD"
+
+  test "exported defvar is accessible under its base name":
+    check publicVersion == "2.0"
+
+  test "exported type and mixed-export fields work":
+    check testPoint.x == 3
+    check testPoint.y == 4
+
+  test "private proc has no export postfix (regression)":
+    # greet and shout were defined without `*` and must remain private-nameable.
+    check greet("nim") == "NIM"
+    check shout("nim") == "NIM"
+
+  test "const declaration produces a compile-time constant":
+    check privateConst == 7
+    # Using publicSize* as an array length proves nnkConstSection was emitted —
+    # a var would cause a compile error here.
+    var arr: array[publicSize, int]
+    check arr.len == 3
+    static: doAssert publicSize == 3
+
+  test "typed const declaration":
+    check typedConst == 11
+
+  test "exported const is accessible under its base name":
+    check publicSize == 3
