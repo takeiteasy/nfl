@@ -165,13 +165,14 @@ proc lowerProc(ctx: var LowerContext; sx: Syntax) =
   ctx.popScope()
   declare(ctx, name, bkImmutable)
 
-proc lowerDefine(ctx: var LowerContext; sx: Syntax) =
-  expectArity(sx, "define", sx.items.len - 1, 2)
+proc lowerDefvar(ctx: var LowerContext; sx: Syntax) =
+  let formName = sx.items[0].sym
+  expectArity(sx, formName, sx.items.len - 1, 2)
   let name = sx.items[1]
   if name.kind != sxSymbol:
-    raiseCompilerError(name.span, "define name must be a symbol")
+    raiseCompilerError(name.span, formName & " name must be a symbol")
   lowerExpr(ctx, sx.items[2])
-  declare(ctx, name, bkImmutable)
+  declare(ctx, name, bkMutable)
 
 proc lowerImport(sx: Syntax) =
   expectArity(sx, "import", sx.items.len - 1, 1)
@@ -362,8 +363,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerNew(ctx, sx)
     elif sx.items[0].isSymbol(":"):
       raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
-    elif sx.items[0].isSymbol("define"):
-      raiseCompilerError(sx.span, "define is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
+      raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
       raiseCompilerError(sx.span, "import is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("quote"):
@@ -375,8 +376,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
   if sx.kind == sxList and sx.items.len > 0:
-    if sx.items[0].isSymbol("define"):
-      lowerDefine(ctx, sx)
+    if sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
+      lowerDefvar(ctx, sx)
       return
     if sx.items[0].isSymbol("import"):
       lowerImport(sx)

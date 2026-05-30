@@ -1,1 +1,1 @@
-const coreSource* = staticRead("../../std/core.nimp")
+const coreSource* = staticRead("preamble.nimp")

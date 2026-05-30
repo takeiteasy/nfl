@@ -1,17 +1,17 @@
-(defmacro when (test . body)
+(defmacro when (test &body body)
   `(if ,test (block ,@body) nil))
 
-(defmacro unless (test . body)
+(defmacro unless (test &body body)
   `(if ,test nil (block ,@body)))
 
-(defmacro and (. args)
+(defmacro and (&rest args)
   (if (nil? args)
       true
       (if (nil? (rest args))
           (first args)
           `(if ,(first args) (and ,@(rest args)) false))))
 
-(defmacro or (. args)
+(defmacro or (&rest args)
   (if (nil? args)
       false
       (if (nil? (rest args))
@@ -20,7 +20,7 @@
             `(let ((,value ,(first args)))
                (if ,value ,value (or ,@(rest args))))))))
 
-(defmacro cond (. clauses)
+(defmacro cond (&rest clauses)
   (if (nil? clauses)
       nil
       (let ((clause (first clauses)))
@@ -32,7 +32,7 @@
                     `(if ,(first clause) (block ,@(rest clause)) nil)
                     `(if ,(first clause) (block ,@(rest clause)) (cond ,@(rest clauses)))))))))
 
-(defmacro let* (bindings . body)
+(defmacro let* (bindings &body body)
   (if (nil? bindings)
       `(block ,@body)
       `(let (,(first bindings)) (let* ,(rest bindings) ,@body))))
@@ -61,7 +61,7 @@
 (defmacro foldr (items initial op)
   `(nimpSeqFoldr ,items ,initial ,op))
 
-(defmacro -> (value . forms)
+(defmacro -> (value &rest forms)
   (if (nil? forms)
       value
       (let ((form (first forms)))
@@ -69,7 +69,7 @@
             `(-> (,(first form) ,value ,@(rest form)) ,@(rest forms))
             `(-> (,form ,value) ,@(rest forms))))))
 
-(defmacro ->> (value . forms)
+(defmacro ->> (value &rest forms)
   (if (nil? forms)
       value
       (let ((form (first forms)))
@@ -77,7 +77,7 @@
             `(->> (,(first form) ,@(rest form) ,value) ,@(rest forms))
             `(->> (,form ,value) ,@(rest forms))))))
 
-(defmacro as-> (value name . forms)
+(defmacro as-> (value name &body forms)
   (if (nil? forms)
       value
       `(let ((,name ,value)) (as-> ,(first forms) ,name ,@(rest forms)))))

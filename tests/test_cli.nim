@@ -101,7 +101,7 @@ suite "nimp cli":
     check not output.contains("defmacro")
 
   test "reader errors point at nimp source":
-    let file = writeTempNimp("nimp cli reader diagnostic", "reader error.nimp", "\n(define x \"unterminated\n")
+    let file = writeTempNimp("nimp cli reader diagnostic", "reader error.nimp", "\n(defvar x \"unterminated\n")
 
     let (output, exitCode) = runCommand(cliExe, @["check", file])
     check exitCode != 0
@@ -126,7 +126,7 @@ suite "nimp cli":
     check output.contains("boom")
 
   test "nim type errors point at nimp source":
-    let file = writeTempNimp("nimp cli type diagnostic", "type error.nimp", "\n\n(define x (+ 1 \"bad\"))\n")
+    let file = writeTempNimp("nimp cli type diagnostic", "type error.nimp", "\n\n(defvar x (+ 1 \"bad\"))\n")
 
     let (output, exitCode) = runCommand(cliExe, @["check", file])
     check exitCode != 0
@@ -134,7 +134,7 @@ suite "nimp cli":
     check output.contains("type mismatch")
 
   test "unknown symbols point at nimp source":
-    let file = writeTempNimp("nimp cli unknown symbol diagnostic", "unknown symbol.nimp", "(define x missingSymbol)\n")
+    let file = writeTempNimp("nimp cli unknown symbol diagnostic", "unknown symbol.nimp", "(defvar x missingSymbol)\n")
 
     let (output, exitCode) = runCommand(cliExe, @["check", file])
     check exitCode != 0
@@ -183,8 +183,8 @@ suite "nimp cli":
       let file = writeTempNim("nimp cli helper warning", "two_modules.nim", """
 import nimp/compiler
 
-nimpModule "(define firstValue (first [1 2]))", "first-module.nimp"
-nimpModule "(define secondValue (first [3 4]))", "second-module.nimp"
+nimpModule "(defvar firstValue (first [1 2]))", "first-module.nimp"
+nimpModule "(defvar secondValue (first [3 4]))", "second-module.nimp"
 """)
 
       let (output, exitCode) = runCommand(nimExe, @["check", "--path:src", file])

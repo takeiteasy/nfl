@@ -45,10 +45,10 @@ suite "reader valid syntax":
       checkSpans(form)
 
   test "reads lists and vectors":
-    let form = readOne("(define xs [1 2 (do (x) x)])", "forms.nimp")
+    let form = readOne("(defvar xs [1 2 (do (x) x)])", "forms.nimp")
     check form.kind == sxList
     check form.items.len == 3
-    check form.items[0].sym == "define"
+    check form.items[0].sym == "defvar"
     check form.items[2].kind == sxVector
     check form.items[2].items.len == 3
     check form.items[2].items[2].kind == sxList
@@ -96,7 +96,7 @@ suite "reader malformed syntax":
     expectReaderError("\"no end", "unterminated string")
 
   test "reports unterminated list":
-    expectReaderError("(define x 1", "unterminated list")
+    expectReaderError("(defvar x 1", "unterminated list")
 
   test "reports unterminated vector":
     expectReaderError("[1 2", "unterminated vector")

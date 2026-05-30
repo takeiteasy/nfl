@@ -106,10 +106,10 @@ nimpModule """
 (proc shout ((name string)) (: string)
   (name.toUpperAscii))
 (when true nil)
-(define shouted (toUpperAscii "nimp"))
-(define shoutedAgain (greet "macro"))
-(define shoutedByMethod (shout "method"))
-(define hygienicResult (hygienic))
+(defvar shouted (toUpperAscii "nimp"))
+(defvar shoutedAgain (greet "macro"))
+(defvar shoutedByMethod (shout "method"))
+(defvar hygienicResult (hygienic))
 (type Count int)
 (type Person
   (object
@@ -123,21 +123,21 @@ nimpModule """
   (. p age))
 (proc personNamedAge ((p Person) (expected int)) (: bool)
   (== (. p age) expected))
-(define counted (incCount 2))
-(define defaultPerson (default Person))
-(define defaultAge (personAge defaultPerson))
-(define ada (new Person (name "Ada") (age 36)))
-(define adaName (. ada name))
-(define adaAge (personAge ada))
-(define adaHasExpectedAge (personNamedAge ada 36))
-(define adaHasExpectedNamedAge (personNamedAge (: expected 36) (: p ada)))
-(define favoriteMood happy)
+(defvar counted (incCount 2))
+(defvar defaultPerson (default Person))
+(defvar defaultAge (personAge defaultPerson))
+(defvar ada (new Person (name "Ada") (age 36)))
+(defvar adaName (. ada name))
+(defvar adaAge (personAge ada))
+(defvar adaHasExpectedAge (personNamedAge ada 36))
+(defvar adaHasExpectedNamedAge (personNamedAge (: expected 36) (: p ada)))
+(defvar favoriteMood happy)
 (+ 1)
 (block (+ 1 2) nil)
 """, "module-test.nimp"
 
 suite "nimp module backend":
-  test "import and define":
+  test "import and defvar":
     check shouted == "NIMP"
 
   test "proc definition":

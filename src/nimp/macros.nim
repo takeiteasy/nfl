@@ -1,13 +1,26 @@
+import std/options
 import std/tables
 
 import ./diagnostics
 import ./syntax
 
 type
+  MacroOptParam* = object
+    name*: string
+    default*: Option[Syntax]
+
+  MacroKeyParam* = object
+    keyword*: string        # matched against :keyword at call site (without leading :)
+    local*: string          # local binding name in macro body
+    default*: Option[Syntax]
+
   MacroDef* = object
     name*: string
-    params*: seq[string]
-    restParam*: string
+    params*: seq[string]           # required positional params
+    optParams*: seq[MacroOptParam] # &optional params
+    restParam*: string             # &rest or dotted-pair rest (empty if none)
+    bodyParam*: string             # &body (empty if none)
+    keyParams*: seq[MacroKeyParam] # &key params
     body*: seq[Syntax]
     span*: Span
 

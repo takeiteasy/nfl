@@ -6,7 +6,7 @@
 (proc personAge ((p Person)) (: int)
   (. p age))
 
-(define ada (new Person
+(defvar ada (new Person
   (name "Ada")
   (age 36)))
 

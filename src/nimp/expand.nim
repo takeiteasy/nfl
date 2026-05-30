@@ -39,32 +39,134 @@ proc evalBody(env: MacroEnv; scope: var EvalScope; body: openArray[Syntax]; owne
   for item in body:
     result = evalMacroExpr(env, scope, item)
 
-proc parseMacroParams(params: Syntax): tuple[names: seq[string], rest: string] =
+# ---------- lambda list parsing ----------
+
+type ParseMode = enum
+  pmRequired, pmOptional, pmKey, pmDone
+
+proc parseOptParam(item: Syntax): MacroOptParam =
+  if item.kind == sxSymbol:
+    return MacroOptParam(name: item.sym, default: none(Syntax))
+  if item.kind == sxList and item.items.len == 2 and item.items[0].kind == sxSymbol:
+    return MacroOptParam(name: item.items[0].sym, default: some(item.items[1]))
+  raiseCompilerError(item.span, "&optional parameter must be a symbol or (name default)")
+
+proc parseKeyParam(item: Syntax): MacroKeyParam =
+  if item.kind == sxSymbol:
+    return MacroKeyParam(keyword: item.sym, local: item.sym, default: none(Syntax))
+  if item.kind == sxList and item.items.len == 2:
+    let spec = item.items[0]
+    let dflt = item.items[1]
+    # simple name with default: (name default)
+    if spec.kind == sxSymbol:
+      return MacroKeyParam(keyword: spec.sym, local: spec.sym, default: some(dflt))
+    # rename form: ((:keyword local) default)
+    if spec.kind == sxList and spec.items.len == 2 and
+       spec.items[0].kind == sxSymbol and spec.items[1].kind == sxSymbol:
+      let kw = spec.items[0].sym
+      if kw.len < 2 or kw[0] != ':':
+        raiseCompilerError(spec.items[0].span, "&key rename keyword must start with :")
+      return MacroKeyParam(keyword: kw[1 .. ^1], local: spec.items[1].sym, default: some(dflt))
+  raiseCompilerError(item.span, "&key parameter must be a symbol, (name default), or ((:key local) default)")
+
+proc parseMacroParams(params: Syntax): tuple[
+    names: seq[string],
+    optParams: seq[MacroOptParam],
+    restParam: string,
+    bodyParam: string,
+    keyParams: seq[MacroKeyParam]] =
   if params.kind != sxList:
     raiseCompilerError(params.span, "macro parameters must be a list")
 
-  var sawRest = false
+  var mode = pmRequired
   var seen = initTable[string, bool]()
-  for i, item in params.items:
-    if item.kind != sxSymbol:
-      raiseCompilerError(item.span, "macro parameter must be a symbol")
-    if item.sym == ".":
-      if sawRest or i != params.items.high - 1:
-        raiseCompilerError(item.span, "invalid macro rest parameter")
-      sawRest = true
-    elif sawRest:
-      if seen.hasKey(item.sym):
-        raiseCompilerError(item.span, "duplicate macro parameter: " & item.sym)
-      result.rest = item.sym
-      seen[item.sym] = true
-    else:
-      if seen.hasKey(item.sym):
-        raiseCompilerError(item.span, "duplicate macro parameter: " & item.sym)
-      result.names.add item.sym
-      seen[item.sym] = true
 
-  if sawRest and result.rest.len == 0:
-    raiseCompilerError(params.items[^1].span, "invalid macro rest parameter")
+  proc checkDup(name: string; span: Span) =
+    if seen.hasKey(name):
+      raiseCompilerError(span, "duplicate macro parameter: " & name)
+    seen[name] = true
+
+  for i, item in params.items:
+    if item.kind == sxSymbol:
+      case item.sym
+      of "&optional":
+        if mode != pmRequired:
+          raiseCompilerError(item.span, "&optional must come before &rest, &body, and &key")
+        mode = pmOptional
+        continue
+      of "&rest":
+        if mode in {pmKey, pmDone}:
+          raiseCompilerError(item.span, "&rest cannot follow &key")
+        if result.restParam.len > 0 or result.bodyParam.len > 0:
+          raiseCompilerError(item.span, "only one rest/body parameter allowed")
+        if i == params.items.high:
+          raiseCompilerError(item.span, "&rest requires a parameter name")
+        let next = params.items[i + 1]
+        if next.kind != sxSymbol:
+          raiseCompilerError(next.span, "&rest parameter must be a symbol")
+        checkDup(next.sym, next.span)
+        result.restParam = next.sym
+        mode = pmDone
+        continue
+      of "&body":
+        if mode in {pmKey, pmDone}:
+          raiseCompilerError(item.span, "&body cannot follow &key")
+        if result.restParam.len > 0 or result.bodyParam.len > 0:
+          raiseCompilerError(item.span, "only one rest/body parameter allowed")
+        if i == params.items.high:
+          raiseCompilerError(item.span, "&body requires a parameter name")
+        let next = params.items[i + 1]
+        if next.kind != sxSymbol:
+          raiseCompilerError(next.span, "&body parameter must be a symbol")
+        checkDup(next.sym, next.span)
+        result.bodyParam = next.sym
+        mode = pmDone
+        continue
+      of "&key":
+        if mode == pmDone:
+          raiseCompilerError(item.span, "&key cannot follow &rest or &body")
+        mode = pmKey
+        continue
+      of ".":
+        # dotted-pair rest: (a b . rest) — . must be second-to-last
+        if mode != pmRequired:
+          raiseCompilerError(item.span, "dotted-pair rest only valid among required parameters")
+        if result.restParam.len > 0 or result.bodyParam.len > 0:
+          raiseCompilerError(item.span, "only one rest/body parameter allowed")
+        if i != params.items.high - 1:
+          raiseCompilerError(item.span, "dotted-pair . must be second-to-last in parameter list")
+        let next = params.items[i + 1]
+        if next.kind != sxSymbol:
+          raiseCompilerError(next.span, "dotted-pair rest parameter must be a symbol")
+        checkDup(next.sym, next.span)
+        result.restParam = next.sym
+        mode = pmDone
+        continue
+      else:
+        discard
+
+    # skip the name that was already consumed by &rest / &body / dotted-pair
+    if mode == pmDone and i > 0:
+      let prev = params.items[i - 1]
+      if prev.kind == sxSymbol and prev.sym in ["&rest", "&body", "."]:
+        continue
+
+    case mode
+    of pmRequired:
+      if item.kind != sxSymbol:
+        raiseCompilerError(item.span, "required macro parameter must be a symbol")
+      checkDup(item.sym, item.span)
+      result.names.add item.sym
+    of pmOptional:
+      let op = parseOptParam(item)
+      checkDup(op.name, item.span)
+      result.optParams.add op
+    of pmKey:
+      let kp = parseKeyParam(item)
+      checkDup(kp.local, item.span)
+      result.keyParams.add kp
+    of pmDone:
+      raiseCompilerError(item.span, "unexpected parameter after rest/body parameter")
 
 proc parseDefmacro(sx: Syntax): MacroDef =
   if sx.items.len < 4:
@@ -73,23 +175,103 @@ proc parseDefmacro(sx: Syntax): MacroDef =
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "defmacro name must be a symbol")
   let parsed = parseMacroParams(sx.items[2])
-  MacroDef(name: name.sym, params: parsed.names, restParam: parsed.rest, body: sx.items[3 .. ^1], span: sx.span)
+  MacroDef(
+    name: name.sym,
+    params: parsed.names,
+    optParams: parsed.optParams,
+    restParam: parsed.restParam,
+    bodyParam: parsed.bodyParam,
+    keyParams: parsed.keyParams,
+    body: sx.items[3 .. ^1],
+    span: sx.span)
 
-proc bindMacroArgs(def: MacroDef; call: Syntax): EvalScope =
-  let actual = call.items.len - 1
-  if def.restParam.len == 0 and actual != def.params.len:
-    raiseCompilerError(call.span, def.name & " expects " & $def.params.len & " arguments, got " & $actual)
-  if def.restParam.len > 0 and actual < def.params.len:
-    raiseCompilerError(call.span, def.name & " expects at least " & $def.params.len & " arguments, got " & $actual)
+# ---------- argument binding ----------
+
+proc isKeywordSym(sx: Syntax): bool =
+  sx.kind == sxSymbol and sx.sym.len >= 2 and sx.sym[0] == ':'
+
+proc splitCallArgs(call: Syntax): tuple[positional: seq[Syntax], keywords: Table[string, Syntax]] =
+  # Split at the first :keyword symbol. Everything before is positional;
+  # from there we expect alternating :key value pairs.
+  var i = 1  # skip the macro name at index 0
+  while i < call.items.len and not call.items[i].isKeywordSym:
+    result.positional.add call.items[i]
+    inc i
+  result.keywords = initTable[string, Syntax]()
+  while i < call.items.len:
+    let kw = call.items[i]
+    if not kw.isKeywordSym:
+      raiseCompilerError(kw.span, "expected keyword argument (e.g. :name), got " & kw.sym)
+    if i + 1 >= call.items.len:
+      raiseCompilerError(kw.span, "keyword argument " & kw.sym & " has no value")
+    let key = kw.sym[1 .. ^1]
+    if result.keywords.hasKey(key):
+      raiseCompilerError(kw.span, "duplicate keyword argument: " & kw.sym)
+    result.keywords[key] = call.items[i + 1]
+    i += 2
+
+proc bindMacroArgs(env: MacroEnv; def: MacroDef; call: Syntax): EvalScope =
+  let (positional, keywords) = splitCallArgs(call)
+  let hasRest = def.restParam.len > 0 or def.bodyParam.len > 0
+  let minArgs = def.params.len
+  let maxArgs = def.params.len + def.optParams.len
+  let isExact = not hasRest and def.optParams.len == 0 and def.keyParams.len == 0
+
+  # required params
+  if positional.len < minArgs:
+    if isExact:
+      raiseCompilerError(call.span, def.name & " expects " & $minArgs & " arguments, got " & $positional.len)
+    else:
+      raiseCompilerError(call.span, def.name & " expects at least " & $minArgs & " arguments, got " & $positional.len)
 
   result = initTable[string, Syntax]()
   for i, name in def.params:
-    result[name] = call.items[i + 1]
-  if def.restParam.len > 0:
+    result[name] = positional[i]
+  var pos = def.params.len
+
+  # optional params
+  for opt in def.optParams:
+    if pos < positional.len:
+      result[opt.name] = positional[pos]
+      inc pos
+    elif opt.default.isSome:
+      result[opt.name] = evalMacroExpr(env, result, opt.default.get())
+    else:
+      result[opt.name] = newNil(call.span)
+
+  # rest / body
+  let restName = if def.restParam.len > 0: def.restParam else: def.bodyParam
+  if restName.len > 0:
     var restItems: seq[Syntax] = @[]
-    for i in def.params.len + 1 ..< call.items.len:
-      restItems.add call.items[i]
-    result[def.restParam] = newList(restItems, call.span)
+    for i in pos ..< positional.len:
+      restItems.add positional[i]
+    result[restName] = newList(restItems, call.span)
+  elif pos < positional.len:
+    if isExact:
+      raiseCompilerError(call.span, def.name & " expects " & $minArgs & " arguments, got " & $positional.len)
+    else:
+      raiseCompilerError(call.span, def.name & " expects at most " & $maxArgs & " arguments, got " & $positional.len)
+
+  # key params
+  for kp in def.keyParams:
+    if keywords.hasKey(kp.keyword):
+      result[kp.local] = keywords[kp.keyword]
+    elif kp.default.isSome:
+      result[kp.local] = evalMacroExpr(env, result, kp.default.get())
+    else:
+      result[kp.local] = newNil(call.span)
+
+  # error on unknown keywords
+  for key in keywords.keys:
+    var found = false
+    for kp in def.keyParams:
+      if kp.keyword == key:
+        found = true
+        break
+    if not found:
+      raiseCompilerError(call.span, def.name & ": unknown keyword argument :" & key)
+
+# ---------- quasiquote ----------
 
 proc evalQuasiquote(env: MacroEnv; scope: var EvalScope; sx: Syntax; allowSplice: bool): Syntax
 
@@ -122,6 +304,8 @@ proc evalQuasiquote(env: MacroEnv; scope: var EvalScope; sx: Syntax; allowSplice
     newVector(evalQuasiquoteItems(env, scope, sx.items, sx), sx.span)
   else:
     sx.copySyntax()
+
+# ---------- built-in macro-time functions ----------
 
 proc evalBuiltin(env: MacroEnv; scope: var EvalScope; call: Syntax): Syntax =
   let name = call.items[0].sym
@@ -251,7 +435,7 @@ proc evalMacroExpr(env: MacroEnv; scope: var EvalScope; sx: Syntax): Syntax =
     sx.copySyntax()
 
 proc applyMacro(env: MacroEnv; def: MacroDef; call: Syntax): Syntax =
-  var scope = bindMacroArgs(def, call)
+  var scope = bindMacroArgs(env, def, call)
   try:
     evalBody(env, scope, def.body, call).withSpan(call.span)
   except CompilerError as err:

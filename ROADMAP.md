@@ -1,5 +1,14 @@
 # Nimp Roadmap
 
+## `defvar` / `defparameter` Semantics Note
+
+Both forms declare a top-level mutable binding (emits Nim `var`). In the compiled backend they behave identically — module-level initialisation runs once, so there is no prior binding to test. The distinction becomes observable in a REPL:
+
+- `defvar` — sets the variable only if it is not already bound (idempotent re-evaluation).
+- `defparameter` — always resets the variable (use for configuration that should update on reload).
+
+Until a REPL exists, choose `defvar` for module-level state and `defparameter` for configuration parameters as a documentation convention.
+
 ## Milestone 8: Serious-Language Features
 
 Milestone 8 should turn Nimp from a stable core into a language that can define
@@ -184,7 +193,7 @@ Tasks:
 - [ ] Add lowering validation and backend emission for `nnkConstSection`.
 - [ ] Support optional type annotations if they share the existing binding
       syntax.
-- [ ] Add tests distinguishing `const` from `define`/`let`.
+- [ ] Add tests distinguishing `const` from `defvar`/`defparameter`/`let`.
 
 Definition of done:
 

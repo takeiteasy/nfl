@@ -227,12 +227,13 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
     ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ).attachLineInfo(sx)
 
-proc emitDefine(ctx: var EmitContext; sx: Syntax): NimNode =
-  expectArity(sx, "define", sx.items.len - 1, 2)
+proc emitDefvar(ctx: var EmitContext; sx: Syntax): NimNode =
+  let formName = sx.items[0].sym
+  expectArity(sx, formName, sx.items.len - 1, 2)
   let name = sx.items[1]
   if name.kind != sxSymbol:
-    raiseCompilerError(name.span, "define name must be a symbol")
-  nnkLetSection.newTree(nnkIdentDefs.newTree(ctx.identForSymbol(name), newEmptyNode(), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)).attachLineInfo(sx)
+    raiseCompilerError(name.span, formName & " name must be a symbol")
+  nnkVarSection.newTree(nnkIdentDefs.newTree(ctx.identForSymbol(name), newEmptyNode(), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)).attachLineInfo(sx)
 
 proc emitImport(sx: Syntax): NimNode =
   expectArity(sx, "import", sx.items.len - 1, 1)
@@ -405,8 +406,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitNew(sx)
     elif sx.items[0].isSymbol(":"):
       raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
-    elif sx.items[0].isSymbol("define"):
-      raiseCompilerError(sx.span, "define is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
+      raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("proc"):
       raiseCompilerError(sx.span, "proc is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("type"):
@@ -431,8 +432,8 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       for i in 1 ..< sx.items.len:
         result.add ctx.emitStmt(sx.items[i])
       return
-    if sx.items[0].isSymbol("define"):
-      return ctx.emitDefine(sx)
+    if sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
+      return ctx.emitDefvar(sx)
     if sx.items[0].isSymbol("import"):
       return emitImport(sx)
     if sx.items[0].isSymbol("proc"):
