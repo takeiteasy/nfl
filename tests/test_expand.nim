@@ -2,16 +2,16 @@ import std/os
 import std/strutils
 import std/unittest
 
-import nimp/compiler
-import nimp/diagnostics
-import nimp/expand
-import nimp/macros
-import nimp/reader
-import nimp/syntax
+import nfl/compiler
+import nfl/diagnostics
+import nfl/expand
+import nfl/macros
+import nfl/reader
+import nfl/syntax
 
 proc expandOne(source: string): Syntax =
   let env = newMacroEnv()
-  let forms = expandModule(readAll(source, "expand-test.nimp"), env)
+  let forms = expandModule(readAll(source, "expand-test.nfl"), env)
   check forms.len == 1
   forms[0]
 
@@ -20,7 +20,7 @@ proc expectExpandError(source, messagePart: string) =
     discard expandOne(source)
     fail()
   except CompilerError as err:
-    check err.diagnostic.span.file == "expand-test.nimp"
+    check err.diagnostic.span.file == "expand-test.nfl"
     check err.diagnostic.message.contains(messagePart)
 
 proc renderForms(forms: seq[Syntax]): string =
@@ -92,7 +92,7 @@ suite "macro expansion":
 """
       fail()
     except CompilerError as err:
-      check err.diagnostic.span.file == "expand-test.nimp"
+      check err.diagnostic.span.file == "expand-test.nfl"
       check err.diagnostic.message.contains("error expanding macro nope")
       check err.diagnostic.message.contains("bad macro")
 
@@ -158,8 +158,8 @@ suite "macro expansion":
 
 suite "golden macro expansion":
   test "core macro fixtures":
-    for sourcePath in ["tests/golden/core_macros.nimp",
-                       "tests/golden/escaped_symbols.nimp"]:
+    for sourcePath in ["tests/golden/core_macros.nfl",
+                       "tests/golden/escaped_symbols.nfl"]:
       let expectedPath = sourcePath.changeFileExt("out")
       let actual = expandSource(readFile(sourcePath), sourcePath).renderForms()
       check actual.strip() == readFile(expectedPath).strip()

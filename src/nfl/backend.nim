@@ -356,23 +356,23 @@ proc emitNew(ctx: var EmitContext; sx: Syntax): NimNode =
 proc emitQuotedDatum(sx: Syntax): NimNode =
   case sx.kind
   of sxNil:
-    result = newCall(bindSym"nimpNilDatum").attachLineInfo(sx)
+    result = newCall(bindSym"nflNilDatum").attachLineInfo(sx)
   of sxBool:
-    result = newCall(bindSym"nimpBoolDatum", newLit(sx.boolVal)).attachLineInfo(sx)
+    result = newCall(bindSym"nflBoolDatum", newLit(sx.boolVal)).attachLineInfo(sx)
   of sxInt:
-    result = newCall(bindSym"nimpIntDatum", newLit(sx.intVal)).attachLineInfo(sx)
+    result = newCall(bindSym"nflIntDatum", newLit(sx.intVal)).attachLineInfo(sx)
   of sxFloat:
-    result = newCall(bindSym"nimpFloatDatum", newLit(sx.floatVal)).attachLineInfo(sx)
+    result = newCall(bindSym"nflFloatDatum", newLit(sx.floatVal)).attachLineInfo(sx)
   of sxString:
-    result = newCall(bindSym"nimpStringDatum", newLit(sx.strVal)).attachLineInfo(sx)
+    result = newCall(bindSym"nflStringDatum", newLit(sx.strVal)).attachLineInfo(sx)
   of sxSymbol:
-    result = newCall(bindSym"nimpSymbolDatum", newLit(sx.sym)).attachLineInfo(sx)
+    result = newCall(bindSym"nflSymbolDatum", newLit(sx.sym)).attachLineInfo(sx)
   of sxList:
-    result = newCall(bindSym"nimpListDatum").attachLineInfo(sx)
+    result = newCall(bindSym"nflListDatum").attachLineInfo(sx)
     for item in sx.items:
       result.add emitQuotedDatum(item)
   of sxVector:
-    result = newCall(bindSym"nimpVectorDatum").attachLineInfo(sx)
+    result = newCall(bindSym"nflVectorDatum").attachLineInfo(sx)
     for item in sx.items:
       result.add emitQuotedDatum(item)
 
@@ -473,7 +473,7 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return ctx.emitProc(sx)
     if sx.items[0].isSymbol("type"):
       return ctx.emitTypeDecl(sx)
-  newCall(bindSym"nimpStmt", ctx.emitExpr(sx)).attachLineInfo(sx)
+  newCall(bindSym"nflStmt", ctx.emitExpr(sx)).attachLineInfo(sx)
 
 proc emitExpr*(sx: Syntax): NimNode =
   var ctx = EmitContext(hygienicSymbols: initTable[int, NimNode]())

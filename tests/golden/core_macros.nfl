@@ -3,5 +3,5 @@
 (cond
   (false (echo "skip"))
   (true (echo "take")))
-(-> "nimp" toUpperAscii)
+(-> "nfl" toUpperAscii)
 (map [1 2 3] (do ((x int64)) (* x 2)))

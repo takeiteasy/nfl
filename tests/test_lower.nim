@@ -1,33 +1,33 @@
 import std/strutils
 import std/unittest
 
-import nimp/diagnostics
-import nimp/lower
-import nimp/reader
+import nfl/diagnostics
+import nfl/lower
+import nfl/reader
 
 proc expectLowerError(source, messagePart: string) =
   try:
-    discard lowerExpr(readOne(source, "lower-test.nimp"))
+    discard lowerExpr(readOne(source, "lower-test.nfl"))
     fail()
   except CompilerError as err:
-    check err.diagnostic.span.file == "lower-test.nimp"
+    check err.diagnostic.span.file == "lower-test.nfl"
     check err.diagnostic.message.contains(messagePart)
 
 proc expectLowerModuleError(source, messagePart: string) =
   try:
-    discard lowerModule(readAll(source, "lower-test.nimp"))
+    discard lowerModule(readAll(source, "lower-test.nfl"))
     fail()
   except CompilerError as err:
-    check err.diagnostic.span.file == "lower-test.nimp"
+    check err.diagnostic.span.file == "lower-test.nfl"
     check err.diagnostic.message.contains(messagePart)
 
 suite "lowering validation":
   test "allows set! for var bindings":
-    discard lowerExpr(readOne("(var ((x 1)) (set! x 2) x)", "lower-test.nimp"))
+    discard lowerExpr(readOne("(var ((x 1)) (set! x 2) x)", "lower-test.nfl"))
 
   test "allows typed let and var bindings":
-    discard lowerExpr(readOne("(let (((x int) 1)) x)", "lower-test.nimp"))
-    discard lowerExpr(readOne("(var (((x int) 1)) (set! x 2) x)", "lower-test.nimp"))
+    discard lowerExpr(readOne("(let (((x int) 1)) x)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(var (((x int) 1)) (set! x 2) x)", "lower-test.nfl"))
 
   test "rejects set! for let bindings":
     expectLowerError("(let ((x 1)) (set! x 2) x)", "immutable binding")
@@ -57,7 +57,7 @@ suite "lowering validation":
     expectLowerError("(slice xs 0)", "slice expects 3 arguments, got 2")
 
   test "allows object construction":
-    discard lowerExpr(readOne("(new Person (name \"Ada\") (age 36))", "lower-test.nimp"))
+    discard lowerExpr(readOne("(new Person (name \"Ada\") (age 36))", "lower-test.nfl"))
 
   test "rejects malformed object construction":
     expectLowerError("(new)", "new expects a type and field initializers")
@@ -75,15 +75,15 @@ suite "lowering validation":
 (new Person
   (name "Ada")
   (name "Grace"))
-""", "lower-test.nimp"))
+""", "lower-test.nfl"))
       fail()
     except CompilerError as err:
-      check err.diagnostic.span.file == "lower-test.nimp"
+      check err.diagnostic.span.file == "lower-test.nfl"
       check err.diagnostic.span.line == 3
       check err.diagnostic.message.contains("duplicate new field: name")
 
   test "allows named arguments in ordinary calls":
-    discard lowerExpr(readOne("(makePerson (: name \"Ada\") (: age 36))", "lower-test.nimp"))
+    discard lowerExpr(readOne("(makePerson (: name \"Ada\") (: age 36))", "lower-test.nfl"))
 
   test "rejects malformed named arguments":
     expectLowerError("(: name \"Ada\")", "named argument marker is only allowed in call argument position")
@@ -99,10 +99,10 @@ suite "lowering validation":
 (makePerson
   (: name "Ada")
   (: name "Grace"))
-""", "lower-test.nimp"))
+""", "lower-test.nfl"))
       fail()
     except CompilerError as err:
-      check err.diagnostic.span.file == "lower-test.nimp"
+      check err.diagnostic.span.file == "lower-test.nfl"
       check err.diagnostic.span.line == 3
       check err.diagnostic.message.contains("duplicate named argument: name")
 
@@ -114,7 +114,7 @@ suite "lowering validation":
     expectLowerError("`(a b)", "runtime quasiquote is not implemented yet")
 
   test "allows type declarations at statement scope":
-    discard lowerModule(readAll("(type Count int)\n(type Person (object (name string)))\n(type Mood (enum happy sad))\n", "lower-test.nimp"))
+    discard lowerModule(readAll("(type Count int)\n(type Person (object (name string)))\n(type Mood (enum happy sad))\n", "lower-test.nfl"))
 
   test "rejects type declarations in expression position":
     expectLowerError("(let ((x (type Count int))) x)", "type is only allowed at statement/module scope")
@@ -146,18 +146,18 @@ suite "lowering validation":
     expectLowerModuleError("(type PersonRef (ref object (name string)))", "ref object type declarations are not implemented yet")
 
   test "allows exported proc":
-    discard lowerModule(readAll("(proc greet* ((name string)) (: string) name)", "lower-test.nimp"))
+    discard lowerModule(readAll("(proc greet* ((name string)) (: string) name)", "lower-test.nfl"))
 
   test "allows exported defvar":
-    discard lowerModule(readAll("(defvar version* \"1.0\")", "lower-test.nimp"))
-    discard lowerModule(readAll("(defparameter limit* 100)", "lower-test.nimp"))
+    discard lowerModule(readAll("(defvar version* \"1.0\")", "lower-test.nfl"))
+    discard lowerModule(readAll("(defparameter limit* 100)", "lower-test.nfl"))
 
   test "exported defvar binding resolves under base name":
     # The binding is registered as `x`, not `x*`, so references without `*` work.
-    discard lowerModule(readAll("(defvar x* 1)\n(defvar y (+ x* 0))", "lower-test.nimp"))
+    discard lowerModule(readAll("(defvar x* 1)\n(defvar y (+ x* 0))", "lower-test.nfl"))
 
   test "allows exported type and object fields":
-    discard lowerModule(readAll("(type Person* (object (name* string) (age int)))", "lower-test.nimp"))
+    discard lowerModule(readAll("(type Person* (object (name* string) (age int)))", "lower-test.nfl"))
 
   test "rejects export marker in proc name mid-position":
     expectLowerModuleError("(proc gre*et ((name string)) name)", "export marker is only allowed at the end of a name")
@@ -172,21 +172,21 @@ suite "lowering validation":
     expectLowerModuleError("(defvar * 1)", "exported name must have a base name")
 
   test "allows const declaration":
-    discard lowerModule(readAll("(const answer 42)", "lower-test.nimp"))
-    discard lowerModule(readAll("(const greeting \"hello\")", "lower-test.nimp"))
+    discard lowerModule(readAll("(const answer 42)", "lower-test.nfl"))
+    discard lowerModule(readAll("(const greeting \"hello\")", "lower-test.nfl"))
 
   test "allows typed const declaration":
-    discard lowerModule(readAll("(const (limit int) 100)", "lower-test.nimp"))
+    discard lowerModule(readAll("(const (limit int) 100)", "lower-test.nfl"))
 
   test "allows exported const":
-    discard lowerModule(readAll("(const maxCoord* 1000)", "lower-test.nimp"))
-    discard lowerModule(readAll("(const (scale* int) 2)", "lower-test.nimp"))
+    discard lowerModule(readAll("(const maxCoord* 1000)", "lower-test.nfl"))
+    discard lowerModule(readAll("(const (scale* int) 2)", "lower-test.nfl"))
 
   test "allows defconstant alias":
-    discard lowerModule(readAll("(defconstant answer 42)", "lower-test.nimp"))
+    discard lowerModule(readAll("(defconstant answer 42)", "lower-test.nfl"))
 
   test "exported const binding resolves under base name":
-    discard lowerModule(readAll("(const x* 1)\n(const y (+ x* 0))", "lower-test.nimp"))
+    discard lowerModule(readAll("(const x* 1)\n(const y (+ x* 0))", "lower-test.nfl"))
 
   test "rejects const with wrong arity":
     expectLowerModuleError("(const x)", "expects 2")

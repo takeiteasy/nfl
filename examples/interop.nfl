@@ -8,7 +8,7 @@
 (proc hypotenuse ((a float) (b float)) (: float)
   (sqrt (+ (* a a) (* b b))))
 
-(defvar names (@ ["nimp" "macro" "nim"]))
+(defvar names (@ ["nfl" "macro" "nim"]))
 (defvar currentDir (getCurrentDir))
 (defvar baseName (lastPathPart currentDir))
 

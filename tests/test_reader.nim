@@ -1,9 +1,9 @@
 import std/unittest
 import std/strutils
 
-import nimp/diagnostics
-import nimp/reader
-import nimp/syntax
+import nfl/diagnostics
+import nfl/reader
+import nfl/syntax
 
 proc checkSpans(node: Syntax) =
   check node.span.line > 0
@@ -16,15 +16,15 @@ proc checkSpans(node: Syntax) =
 
 proc expectReaderError(source, messagePart: string) =
   try:
-    discard readAll(source, "bad.nimp")
+    discard readAll(source, "bad.nfl")
     fail()
   except ReaderError as err:
-    check err.diagnostic.span.file == "bad.nimp"
+    check err.diagnostic.span.file == "bad.nfl"
     check err.diagnostic.message.contains(messagePart)
 
 suite "reader valid syntax":
   test "reads scalar literals":
-    let forms = readAll("nil true false 42 -7 3.5 \"hi\\nthere\" symbol-name", "scalars.nimp")
+    let forms = readAll("nil true false 42 -7 3.5 \"hi\\nthere\" symbol-name", "scalars.nfl")
     check forms.len == 8
     check forms[0].kind == sxNil
     check forms[1].kind == sxBool
@@ -45,7 +45,7 @@ suite "reader valid syntax":
       checkSpans(form)
 
   test "reads lists and vectors":
-    let form = readOne("(defvar xs [1 2 (do (x) x)])", "forms.nimp")
+    let form = readOne("(defvar xs [1 2 (do (x) x)])", "forms.nfl")
     check form.kind == sxList
     check form.items.len == 3
     check form.items[0].sym == "defvar"
@@ -55,7 +55,7 @@ suite "reader valid syntax":
     checkSpans(form)
 
   test "reads escaped symbols":
-    let forms = readAll("|[]| |has space| |has\\|pipe| |has\\\\slash|", "escaped-symbols.nimp")
+    let forms = readAll("|[]| |has space| |has\\|pipe| |has\\\\slash|", "escaped-symbols.nfl")
     check forms.len == 4
     check forms[0].kind == sxSymbol
     check forms[0].sym == "[]"
@@ -70,7 +70,7 @@ suite "reader valid syntax":
       checkSpans(form)
 
   test "skips line and block comments":
-    let forms = readAll("; ignore me\n1 #| ignore\nme |# 2", "comments.nimp")
+    let forms = readAll("; ignore me\n1 #| ignore\nme |# 2", "comments.nfl")
     check forms.len == 2
     check forms[0].intVal == 1
     check forms[1].intVal == 2
@@ -78,7 +78,7 @@ suite "reader valid syntax":
     checkSpans(forms[1])
 
   test "expands quote forms to syntax lists":
-    let forms = readAll("'x `(a ,b ,@c)", "quote.nimp")
+    let forms = readAll("'x `(a ,b ,@c)", "quote.nfl")
     check forms.len == 2
     check forms[0].kind == sxList
     check forms[0].items[0].sym == "quote"

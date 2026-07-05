@@ -1,10 +1,10 @@
-# Nimp
+# NFL — Nim Flavoured Lisp
 
-Nimp is a Lisp-inspired processor for Nim. Nimp code is written in s-expressions and will compile to Nim AST through Nim macros.
+Nim Flavoured Lisp is a lisp dialect that processes s-expressions into Nim expressions using Nim macros. It is inspired by [Hylang](https://hylang.org/).
 
 ## LICENSE
 ```
-Nimp
+NFL — Nim Flavoured Lisp
 
 Copyright (C) 2025 George Watson
 

@@ -4,12 +4,12 @@ import std/tables
 
 version       = "0.2.0"
 author        = "George Watson"
-description   = "Nimp: a small Lisp-inspired processor for Nim"
+description   = "NFL: Nim Flavoured Lisp"
 license       = "GPL-3.0-or-later"
 srcDir        = "src"
 installExt    = @["nim"]
 binDir        = "bin"
-namedBin      = {"nimp/cli": "nimp"}.toTable
+namedBin      = {"nfl/cli": "nfl"}.toTable
 
 # Dependencies
 
@@ -21,5 +21,5 @@ task test, "Run tests":
   exec "nim c --path:src -r tests/test_lower.nim"
   exec "nim c --path:src -r tests/test_backend.nim"
   exec "nim c --path:src -r tests/test_stdlib.nim"
-  exec "nim c --path:src --out:src/nimp/nimp src/nimp/cli.nim"
+  exec "nim c --path:src --out:src/nfl/nfl src/nfl/cli.nim"
   exec "nim c --path:src -r tests/test_cli.nim"

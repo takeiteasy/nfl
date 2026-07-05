@@ -1,17 +1,17 @@
 import std/unittest
 
-import nimp/compiler
+import nfl/compiler
 
-nimpModule staticRead("sequence_helpers.nimp"), "tests/sequence_helpers.nimp"
+nflModule staticRead("sequence_helpers.nfl"), "tests/sequence_helpers.nfl"
 
-suite "nimp stdlib":
-  test "sequence helpers from nimp file":
+suite "nfl stdlib":
+  test "sequence helpers from nfl file":
     check firstValue == 1
     check restValues == @[2'i64, 3, 4]
     check emptyValues == true
     check appendedValues == @[1'i64, 2, 3, 4, 5, 6]
 
-  test "higher-order sequence helpers from nimp file":
+  test "higher-order sequence helpers from nfl file":
     check mappedValues == @[2'i64, 4, 6, 8]
     check mappedWithCapture == @[11'i64, 12, 13, 14]
     check filteredValues == @[1'i64, 2, 3]

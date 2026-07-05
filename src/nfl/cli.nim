@@ -39,7 +39,7 @@ proc nimStringLit(s: string): string =
   result.add '"'
 
 proc usage() =
-  stderr.writeLine "usage: nimp <run|compile|check|macroexpand> [--no-core] file.nimp"
+  stderr.writeLine "usage: nfl <run|compile|check|macroexpand> [--no-core] file.nfl"
 
 proc parseCommand(value: string): Command =
   case value
@@ -82,7 +82,7 @@ proc parseOptions(args: seq[string]): ParseResult =
 
 proc repoSrcPath(): string =
   let candidate = getCurrentDir() / "src"
-  if dirExists(candidate / "nimp"):
+  if dirExists(candidate / "nfl"):
     absolutePath(candidate)
   else:
     ""
@@ -91,17 +91,17 @@ proc defaultOutputPath(input: string): string =
   changeFileExt(input, ExeExt)
 
 proc tempBuildDir(): string =
-  getTempDir() / ("nimp-" & $getCurrentProcessId() & "-" & $epochTime())
+  getTempDir() / ("nfl-" & $getCurrentProcessId() & "-" & $epochTime())
 
 proc wrapperSource(input: string; autoloadCore: bool): string =
-  "import nimp/compiler\n" &
-    "nimpModule(staticRead(" & nimStringLit(input) & "), " &
+  "import nfl/compiler\n" &
+    "nflModule(staticRead(" & nimStringLit(input) & "), " &
     nimStringLit(input) & ", autoloadCore = " & $autoloadCore & ")\n"
 
 proc runNim(args: seq[string]): int =
   let nimExe = findExe("nim")
   if nimExe.len == 0:
-    stderr.writeLine "nimp: nim executable not found in PATH"
+    stderr.writeLine "nfl: nim executable not found in PATH"
     return 1
   let process = startProcess(nimExe, args = args, options = {poParentStreams})
   result = process.waitForExit()
@@ -146,7 +146,7 @@ proc compileViaNim(options: CliOptions): int =
   if result == 0:
     removeDir(tempDir)
   else:
-    stderr.writeLine "nimp: preserved temporary build directory: " & tempDir
+    stderr.writeLine "nfl: preserved temporary build directory: " & tempDir
 
 proc main(): int =
   let parsed = parseOptions(commandLineParams())
@@ -158,7 +158,7 @@ proc main(): int =
   let options = parsed.options
 
   if not fileExists(options.input):
-    stderr.writeLine "nimp: file not found: " & options.inputDisplay
+    stderr.writeLine "nfl: file not found: " & options.inputDisplay
     return 1
 
   case options.command

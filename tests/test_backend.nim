@@ -1,6 +1,6 @@
 import std/unittest
 
-import nimp/compiler
+import nfl/compiler
 
 type ImportedPerson = object
   name: string
@@ -12,76 +12,76 @@ proc importedPersonAge(p: ImportedPerson): int =
 proc describePerson(name: string; age: int): string =
   name & ":" & $age
 
-suite "nimp backend":
+suite "nfl backend":
   test "operator call":
-    check nimpExpr"(+ 1 2)" == 3
+    check nflExpr"(+ 1 2)" == 3
 
   test "if expression":
-    check nimpExpr"(if true 1 2)" == 1
+    check nflExpr"(if true 1 2)" == 1
 
   test "let expression":
-    check nimpExpr"(let ((x 1)) (+ x 2))" == 3
+    check nflExpr"(let ((x 1)) (+ x 2))" == 3
 
   test "typed let expression":
-    check nimpExpr"(let (((x int) 1)) (+ x 2))" == 3
+    check nflExpr"(let (((x int) 1)) (+ x 2))" == 3
 
   test "var and set expression":
-    check nimpExpr"(var ((x 1)) (set! x (+ x 2)) x)" == 3
+    check nflExpr"(var ((x 1)) (set! x (+ x 2)) x)" == 3
 
   test "typed var and set expression":
-    check nimpExpr"(var (((x int) 1)) (set! x (+ x 2)) x)" == 3
+    check nflExpr"(var (((x int) 1)) (set! x (+ x 2)) x)" == 3
 
   test "do expression":
-    let inc = nimpExpr"(do ((x int)) (+ x 1))"
+    let inc = nflExpr"(do ((x int)) (+ x 1))"
     check inc(2) == 3
 
   test "autoloaded core macros":
-    check nimpExpr"(and true true)" == true
-    check nimpExpr"(or false true)" == true
+    check nflExpr"(and true true)" == true
+    check nflExpr"(or false true)" == true
 
   test "autoload can be disabled for expressions":
-    check compiles(nimpExpr("(+ 1 2)", autoloadCore = false))
+    check compiles(nflExpr("(+ 1 2)", autoloadCore = false))
 
   test "field and indexing interop":
-    check nimpExpr"(let ((xs [10 20 30])) (. xs len))" == 3
-    check nimpExpr"(let ((xs [10 20 30])) xs.len)" == 3
-    check nimpExpr"(let ((xs [10 20 30])) (at xs 1))" == 20
-    check nimpExpr"(let ((xs [10 20 30])) (|[]| xs 1))" == 20
+    check nflExpr"(let ((xs [10 20 30])) (. xs len))" == 3
+    check nflExpr"(let ((xs [10 20 30])) xs.len)" == 3
+    check nflExpr"(let ((xs [10 20 30])) (at xs 1))" == 20
+    check nflExpr"(let ((xs [10 20 30])) (|[]| xs 1))" == 20
 
   test "constructs imported Nim objects":
-    check nimpExpr("""(let ((p (new ImportedPerson (name "Ada") (age 36)))) (importedPersonAge p))""") == 36
+    check nflExpr("""(let ((p (new ImportedPerson (name "Ada") (age 36)))) (importedPersonAge p))""") == 36
 
   test "passes Nim named arguments to ordinary calls":
-    check nimpExpr("""(describePerson (: age 36) (: name "Ada"))""") == "Ada:36"
+    check nflExpr("""(describePerson (: age 36) (: name "Ada"))""") == "Ada:36"
 
   test "autoloaded sequence helper macros":
-    check nimpExpr"(let ((xs [10 20 30])) (first xs))" == 10
-    check nimpExpr"(let ((xs [10 20 30])) (first (rest xs)))" == 20
-    check nimpExpr"(let ((xs [10 20 30])) (empty? xs))" == false
-    check nimpExpr"(let ((xs (@ [10 20])) (ys (@ [30 40]))) (at (append xs ys) 2))" == 30
+    check nflExpr"(let ((xs [10 20 30])) (first xs))" == 10
+    check nflExpr"(let ((xs [10 20 30])) (first (rest xs)))" == 20
+    check nflExpr"(let ((xs [10 20 30])) (empty? xs))" == false
+    check nflExpr"(let ((xs (@ [10 20])) (ys (@ [30 40]))) (at (append xs ys) 2))" == 30
 
   test "runtime quote returns public datum scalars":
-    let nilDatum = nimpExpr"'nil"
+    let nilDatum = nflExpr"'nil"
     check nilDatum.kind == ndNil
 
-    let boolDatum = nimpExpr"'false"
+    let boolDatum = nflExpr"'false"
     check boolDatum.kind == ndBool
     check boolDatum.boolVal == false
 
-    let intDatum = nimpExpr"'42"
+    let intDatum = nflExpr"'42"
     check intDatum.kind == ndInt
     check intDatum.intVal == 42
 
-    let stringDatum = nimpExpr("'\"hello\"")
+    let stringDatum = nflExpr("'\"hello\"")
     check stringDatum.kind == ndString
     check stringDatum.strVal == "hello"
 
-    let symbolDatum = nimpExpr"'alpha"
+    let symbolDatum = nflExpr"'alpha"
     check symbolDatum.kind == ndSymbol
     check symbolDatum.sym == "alpha"
 
   test "runtime quote preserves nested list and vector structure":
-    let datum = nimpExpr"'(alpha [1 beta] (gamma nil))"
+    let datum = nflExpr"'(alpha [1 beta] (gamma nil))"
     check datum.kind == ndList
     check datum.items.len == 3
     check datum.items[0].kind == ndSymbol
@@ -95,7 +95,7 @@ suite "nimp backend":
     check datum.items[2].items[0].sym == "gamma"
     check datum.items[2].items[1].kind == ndNil
 
-nimpModule """
+nflModule """
 (import std/strutils)
 (defmacro hygienic ()
   (let ((tmp (gensym "tmp")))
@@ -106,7 +106,7 @@ nimpModule """
 (proc shout ((name string)) (: string)
   (name.toUpperAscii))
 (when true nil)
-(defvar shouted (toUpperAscii "nimp"))
+(defvar shouted (toUpperAscii "nfl"))
 (defvar shoutedAgain (greet "macro"))
 (defvar shoutedByMethod (shout "method"))
 (defvar hygienicResult (hygienic))
@@ -148,11 +148,11 @@ nimpModule """
 (const (typedConst int) 11)
 (const publicSize* 3)
 (defconstant defconstantAlias 99)
-""", "module-test.nimp"
+""", "module-test.nfl"
 
-suite "nimp module backend":
+suite "nfl module backend":
   test "import and defvar":
-    check shouted == "NIMP"
+    check shouted == "NFL"
 
   test "proc definition":
     check shoutedAgain == "MACRO"

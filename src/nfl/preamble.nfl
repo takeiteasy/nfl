@@ -53,16 +53,16 @@
   `(& ,left ,right))
 
 (defmacro map (items op)
-  `(nimpSeqMap ,items ,op))
+  `(nflSeqMap ,items ,op))
 
 (defmacro filter (items pred)
-  `(nimpSeqFilter ,items ,pred))
+  `(nflSeqFilter ,items ,pred))
 
 (defmacro foldl (items initial op)
-  `(nimpSeqFoldl ,items ,initial ,op))
+  `(nflSeqFoldl ,items ,initial ,op))
 
 (defmacro foldr (items initial op)
-  `(nimpSeqFoldr ,items ,initial ,op))
+  `(nflSeqFoldr ,items ,initial ,op))
 
 (defmacro -> (value &rest forms)
   (if (nil? forms)

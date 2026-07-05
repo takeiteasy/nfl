@@ -4,4 +4,4 @@
   (do ((name string))
     (echo (toUpperAscii name))))
 
-(greet "nimp")
+(greet "nfl")
