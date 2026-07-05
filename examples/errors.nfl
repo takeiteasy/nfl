@@ -1,0 +1,35 @@
+; Demonstrates raise, try/except, named exception bindings, and finally.
+
+; Simple raise caught by an enclosing try.
+(proc safeDivide ((a int) (b int)) (: int)
+  (if (== b 0)
+      (raise (newException ValueError "division by zero"))
+      (div a b)))
+
+(defvar result
+  (try
+    (safeDivide 10 2)
+    (except ValueError 0)))
+
+(echo "10 / 2 = " result)
+
+; Named except binding gives access to the exception message.
+(proc diagnose ((n int)) (: string)
+  (try
+    (safeDivide 1 n)
+    "ok"
+    (except (e ValueError)
+      (. e msg))))
+
+(echo (diagnose 0))
+(echo (diagnose 1))
+
+; finally always runs, even when an exception is raised.
+(proc withCleanup () (: int)
+  (var ((done false))
+    (try
+      42
+      (finally (set! done true)))
+    (if done 1 0)))
+
+(echo "cleanup ran: " (withCleanup))

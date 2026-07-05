@@ -282,3 +282,118 @@ suite "lowering validation":
 
   test "rejects duplicate generic parameters":
     expectLowerModuleError("(proc f [T T] ((x T)) x)", "duplicate generic parameter: T")
+
+  # ---------------------------------------------------------------------------
+  # for
+  # ---------------------------------------------------------------------------
+
+  test "allows for loop with single binding":
+    discard lowerExpr(readOne("(for (x xs) (echo x))", "lower-test.nfl"))
+
+  test "allows for loop with multiple binding vars":
+    discard lowerExpr(readOne("(for ((i x) xs) (echo i))", "lower-test.nfl"))
+
+  test "rejects for with non-pair clause":
+    expectLowerError("(for xs (echo x))", "for clause must be a")
+
+  test "rejects for clause with wrong item count":
+    expectLowerError("(for (x) (echo x))", "for clause must be a")
+
+  test "rejects for with empty binding list":
+    expectLowerError("(for (() xs) (echo x))", "for binding list must not be empty")
+
+  test "rejects for with non-symbol binding":
+    expectLowerError("(for (1 xs) (echo x))", "for loop variable must be a symbol")
+
+  test "rejects for with non-symbol in multi-binding":
+    expectLowerError("(for ((i 1) xs) (echo x))", "for loop variable must be a symbol")
+
+  test "rejects for with missing body":
+    expectLowerError("(for (x xs))", "for expects a binding clause and body")
+
+  test "rejects set! on for loop variable":
+    expectLowerError("(for (x xs) (set! x 1))", "immutable binding")
+
+  # ---------------------------------------------------------------------------
+  # case
+  # ---------------------------------------------------------------------------
+
+  test "allows case with of and else branches":
+    discard lowerExpr(readOne("(case n (of 0 \"zero\") (else \"other\"))", "lower-test.nfl"))
+
+  test "allows case without else":
+    discard lowerExpr(readOne("(case n (of 0 \"zero\") (of 1 \"one\"))", "lower-test.nfl"))
+
+  test "rejects case with no branches":
+    expectLowerError("(case n)", "case expects a value and at least one branch")
+
+  test "rejects case with unknown branch head":
+    expectLowerError("(case n (when true \"yes\"))", "case branch must be headed by of or else")
+
+  test "rejects case with non-list branch":
+    expectLowerError("(case n 42)", "case branch must be a list")
+
+  test "rejects case else not last":
+    expectLowerError("(case n (else \"other\") (of 0 \"zero\"))", "case else branch must be last")
+
+  test "rejects case of with missing body":
+    expectLowerError("(case n (of 0))", "case of branch expects a value and body")
+
+  test "rejects case else with missing body":
+    expectLowerError("(case n (else))", "case else branch expects a body")
+
+  # ---------------------------------------------------------------------------
+  # raise
+  # ---------------------------------------------------------------------------
+
+  test "allows raise with argument":
+    discard lowerExpr(readOne("(raise e)", "lower-test.nfl"))
+
+  test "allows bare raise":
+    discard lowerExpr(readOne("(raise)", "lower-test.nfl"))
+
+  test "rejects raise with too many arguments":
+    expectLowerError("(raise e1 e2)", "raise expects 0 or 1 arguments, got 2")
+
+  # ---------------------------------------------------------------------------
+  # try
+  # ---------------------------------------------------------------------------
+
+  test "allows try with typed except":
+    discard lowerExpr(readOne("(try (riskyCall) (except ValueError (echo \"bad\")))", "lower-test.nfl"))
+
+  test "allows try with named except binding":
+    discard lowerExpr(readOne("(try (riskyCall) (except (e ValueError) (echo (. e msg))))", "lower-test.nfl"))
+
+  test "allows try with bare except catch-all":
+    discard lowerExpr(readOne("(try (riskyCall) (except (echo \"oops\")))", "lower-test.nfl"))
+
+  test "allows try with finally only":
+    discard lowerExpr(readOne("(try (riskyCall) (finally (cleanup)))", "lower-test.nfl"))
+
+  test "allows try with except and finally":
+    discard lowerExpr(readOne("(try (riskyCall) (except ValueError (echo \"bad\")) (finally (cleanup)))", "lower-test.nfl"))
+
+  test "allows try with multiple except branches":
+    discard lowerExpr(readOne("(try (riskyCall) (except ValueError (echo \"v\")) (except IOError (echo \"io\")))", "lower-test.nfl"))
+
+  test "rejects try with empty body":
+    expectLowerError("(try (except ValueError (echo \"bad\")))", "try body must not be empty")
+
+  test "rejects try with bare except not last":
+    expectLowerError("(try (riskyCall) (except (echo \"bare\")) (except ValueError (echo \"typed\")))", "bare except must be the last")
+
+  test "rejects try with empty except branch":
+    expectLowerError("(try (riskyCall) (except))", "except branch expects a type or body")
+
+  test "rejects try with typed except missing body":
+    expectLowerError("(try (riskyCall) (except ValueError))", "except branch expects a body after the type")
+
+  test "rejects try with named except missing body":
+    expectLowerError("(try (riskyCall) (except (e ValueError)))", "except branch expects a body after the binding")
+
+  test "rejects try with empty finally":
+    expectLowerError("(try (riskyCall) (finally))", "finally expects a body")
+
+  test "rejects set! on named except binding":
+    expectLowerError("(try (riskyCall) (except (e ValueError) (set! e nil)))", "immutable binding")

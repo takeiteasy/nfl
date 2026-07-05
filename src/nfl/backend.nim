@@ -84,10 +84,16 @@ proc emitDottedSymbol(sx: Syntax): NimNode =
 proc emitSymbolRef(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, "expected symbol")
+  # Route `foo.bar` through emitDottedSymbol.  Symbols that are composed
+  # entirely of dots (`.`, `..`, etc.) are Nim operators — leave them as
+  # plain identifiers so that e.g. `(.. 1 5)` emits `\`..`(1, 5)`.
   if sx.hygieneId == 0 and sx.sym.contains('.') and sx.sym != ".":
-    emitDottedSymbol(sx)
-  else:
-    ctx.identForSymbol(sx)
+    var allDots = true
+    for c in sx.sym:
+      if c != '.': allDots = false; break
+    if not allDots:
+      return emitDottedSymbol(sx)
+  ctx.identForSymbol(sx)
 
 proc identForTypeSymbol(sx: Syntax): NimNode =
   if sx.kind != sxSymbol:
@@ -499,6 +505,153 @@ proc emitCall(ctx: var EmitContext; sx: Syntax): NimNode =
       call.add ctx.emitExpr(sx.items[i])
   call
 
+# ---------------------------------------------------------------------------
+# for / case / raise / try
+# ---------------------------------------------------------------------------
+
+proc isExceptClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("except")
+
+proc isFinallyClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("finally")
+
+proc isExceptBinding(sx: Syntax): bool =
+  ## True when sx has the shape `(name TypeRef)` — used to distinguish a named
+  ## exception binding `(e ValueError)` from a bare catch-all body.
+  sx.kind == sxList and sx.items.len == 2 and
+  sx.items[0].kind == sxSymbol and
+  (sx.items[1].kind == sxSymbol or sx.items[1].kind == sxVector)
+
+proc emitForCore(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Builds the `nnkForStmt` for `(for CLAUSE body…)`.
+  ## Always returns a statement node; wrap in `emitBlockExpr` for expr context.
+  let clause = sx.items[1]
+  let binding = clause.items[0]
+  let iterable = clause.items[1]
+  result = nnkForStmt.newTree()
+  if binding.kind == sxSymbol:
+    result.add ctx.identForSymbol(binding)
+  else:
+    for v in binding.items:
+      result.add ctx.identForSymbol(v)
+  result.add ctx.emitExpr(iterable)
+  var body = newStmtList()
+  for i in 2 ..< sx.items.len:
+    body.add ctx.emitStmt(sx.items[i])
+  result.add body
+  result = result.attachLineInfo(sx)
+
+proc emitCase(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `nnkCaseStmt` with branch bodies as expressions (for expr context).
+  result = nnkCaseStmt.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
+  for i in 2 ..< sx.items.len:
+    let branch = sx.items[i]
+    if branch.items[0].isSymbol("of"):
+      result.add nnkOfBranch.newTree(
+        ctx.emitExpr(branch.items[1]),
+        ctx.emitBodyExpr(branch.items.toOpenArray(2, branch.items.high), branch)
+      ).attachLineInfo(branch)
+    else: # else branch
+      result.add nnkElse.newTree(
+        ctx.emitBodyExpr(branch.items.toOpenArray(1, branch.items.high), branch)
+      ).attachLineInfo(branch)
+
+proc emitCaseStmt(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `nnkCaseStmt` with branch bodies as statements (for stmt context).
+  result = nnkCaseStmt.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
+  for i in 2 ..< sx.items.len:
+    let branch = sx.items[i]
+    if branch.items[0].isSymbol("of"):
+      var body = newStmtList()
+      for j in 2 ..< branch.items.len:
+        body.add ctx.emitStmt(branch.items[j])
+      result.add nnkOfBranch.newTree(
+        ctx.emitExpr(branch.items[1]),
+        body
+      ).attachLineInfo(branch)
+    else:
+      var body = newStmtList()
+      for j in 1 ..< branch.items.len:
+        body.add ctx.emitStmt(branch.items[j])
+      result.add nnkElse.newTree(body).attachLineInfo(branch)
+
+proc emitRaise(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `nnkRaiseStmt`.  Nim accepts `raise` in expression position as a
+  ## noreturn expression (e.g. in the branch of an `if` expression).
+  let nargs = sx.items.len - 1
+  if nargs > 1:
+    raiseCompilerError(sx.span, "raise expects 0 or 1 arguments, got " & $nargs)
+  let operand = if nargs == 1: ctx.emitExpr(sx.items[1]) else: newEmptyNode()
+  nnkRaiseStmt.newTree(operand).attachLineInfo(sx)
+
+proc emitExceptBranch(ctx: var EmitContext; branch: Syntax; asExpr: bool): NimNode =
+  ## Emits one `nnkExceptBranch` node.  `asExpr` controls whether the branch
+  ## body is lowered as an expression or a statement list.
+  result = nnkExceptBranch.newTree().attachLineInfo(branch)
+  var bodyStart: int
+  if branch.items[1].kind == sxSymbol:
+    # typed: (except Type body…)
+    result.add emitTypeRef(branch.items[1])
+    bodyStart = 2
+  elif branch.items[1].isExceptBinding():
+    # named: (except (e Type) body…) → `except Type as e:`
+    result.add nnkInfix.newTree(
+      ident("as"),
+      emitTypeRef(branch.items[1].items[1]),
+      ctx.identForSymbol(branch.items[1].items[0])
+    ).attachLineInfo(branch.items[1])
+    bodyStart = 2
+  else:
+    # bare catch-all: (except body…)
+    bodyStart = 1
+  if asExpr:
+    result.add ctx.emitBodyExpr(branch.items.toOpenArray(bodyStart, branch.items.high), branch)
+  else:
+    var stmts = newStmtList()
+    for i in bodyStart ..< branch.items.len:
+      stmts.add ctx.emitStmt(branch.items[i])
+    result.add stmts
+
+proc emitTryCore(ctx: var EmitContext; sx: Syntax; asExpr: bool): NimNode =
+  ## Shared implementation for try in expression and statement contexts.
+  result = nnkTryStmt.newTree().attachLineInfo(sx)
+  # Locate body boundary.
+  var bodyEnd = 1
+  while bodyEnd <= sx.items.high and
+      not sx.items[bodyEnd].isExceptClause() and
+      not sx.items[bodyEnd].isFinallyClause():
+    inc bodyEnd
+  if asExpr:
+    result.add ctx.emitBodyExpr(sx.items.toOpenArray(1, bodyEnd - 1), sx)
+  else:
+    var body = newStmtList()
+    for i in 1 ..< bodyEnd:
+      body.add ctx.emitStmt(sx.items[i])
+    result.add body
+  var i = bodyEnd
+  # Except branches.
+  while i <= sx.items.high and sx.items[i].isExceptClause():
+    result.add ctx.emitExceptBranch(sx.items[i], asExpr)
+    inc i
+  # Optional finally.
+  if i <= sx.items.high and sx.items[i].isFinallyClause():
+    let fin = sx.items[i]
+    if asExpr:
+      result.add nnkFinally.newTree(
+        ctx.emitBodyExpr(fin.items.toOpenArray(1, fin.items.high), fin)
+      ).attachLineInfo(fin)
+    else:
+      var body = newStmtList()
+      for j in 1 ..< fin.items.len:
+        body.add ctx.emitStmt(fin.items[j])
+      result.add nnkFinally.newTree(body).attachLineInfo(fin)
+
+proc emitTry(ctx: var EmitContext; sx: Syntax): NimNode =
+  emitTryCore(ctx, sx, true)
+
+proc emitTryStmt(ctx: var EmitContext; sx: Syntax): NimNode =
+  emitTryCore(ctx, sx, false)
+
 proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
   case sx.kind
   of sxNil:
@@ -541,6 +694,14 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitSlice(sx)
     elif sx.items[0].isSymbol("new"):
       ctx.emitNew(sx)
+    elif sx.items[0].isSymbol("for"):
+      emitBlockExpr(@[ctx.emitForCore(sx)], newNilLit()).attachLineInfo(sx)
+    elif sx.items[0].isSymbol("case"):
+      ctx.emitCase(sx)
+    elif sx.items[0].isSymbol("raise"):
+      ctx.emitRaise(sx)
+    elif sx.items[0].isSymbol("try"):
+      ctx.emitTry(sx)
     elif sx.items[0].isSymbol(":"):
       raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
     elif sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
@@ -568,6 +729,14 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.kind == sxList and sx.items.len > 0:
     if sx.items[0].isSymbol("if"):
       return ctx.emitIfStmt(sx)
+    if sx.items[0].isSymbol("for"):
+      return ctx.emitForCore(sx)
+    if sx.items[0].isSymbol("case"):
+      return ctx.emitCaseStmt(sx)
+    if sx.items[0].isSymbol("raise"):
+      return ctx.emitRaise(sx)
+    if sx.items[0].isSymbol("try"):
+      return ctx.emitTryStmt(sx)
     if sx.items[0].isSymbol("block"):
       result = newStmtList()
       for i in 1 ..< sx.items.len:

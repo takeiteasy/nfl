@@ -95,6 +95,27 @@ suite "nfl backend":
     check datum.items[2].items[0].sym == "gamma"
     check datum.items[2].items[1].kind == ndNil
 
+suite "nfl backend — for / case / raise / try":
+  test "for loop sums elements":
+    check nflExpr"(var ((acc 0)) (for (x [1 2 3]) (set! acc (+ acc x))) acc)" == 6
+
+  test "for loop over range":
+    check nflExpr"(var ((acc 0)) (for (i (.. 1 5)) (set! acc (+ acc i))) acc)" == 15
+
+  test "case expression returns correct branch":
+    check nflExpr"(case 0 (of 0 10) (of 1 20) (else 99))" == 10
+    check nflExpr"(case 1 (of 0 10) (of 1 20) (else 99))" == 20
+    check nflExpr"(case 2 (of 0 10) (of 1 20) (else 99))" == 99
+
+  test "raise caught by enclosing try":
+    check nflExpr("(try (raise (newException ValueError \"boom\")) (except ValueError \"caught\"))") == "caught"
+
+  test "try successful path":
+    check nflExpr("(try \"ok\" (except ValueError \"err\"))") == "ok"
+
+  test "try bare catch-all":
+    check nflExpr("(try (raise (newException CatchableError \"any\")) (except \"handled\"))") == "handled"
+
 nflModule """
 (import std/strutils)
 (defmacro hygienic ()
@@ -197,6 +218,71 @@ nflModule """
 (type BoxPure [T] {.pure.}
   (object
     (val T)))
+; --- For loop tests ---
+; Sum elements of an array literal with a for loop.
+(defvar forSeqSum
+  (block
+    (var ((acc 0))
+      (for (x [1 2 3 4 5])
+        (set! acc (+ acc x)))
+      acc)))
+; Sum of range 1..5 using the `..` range operator.
+(defvar forRangeSum
+  (block
+    (var ((acc 0))
+      (for (i (.. 1 5))
+        (set! acc (+ acc i)))
+      acc)))
+; Multi-var iteration over array pairs.
+(defvar forPairsSum
+  (block
+    (var ((acc 0))
+      (for ((i x) (. [10 20 30] pairs))
+        (set! acc (+ acc i)))
+      acc)))
+; --- Case tests ---
+(proc caseLabel ((n int)) (: string)
+  (case n
+    (of 0 "zero")
+    (of 1 "one")
+    (else "many")))
+; Case as statement — side effect via mutable var.
+(defvar caseStmtRan
+  (block
+    (var ((x "unset"))
+      (case 1
+        (of 0 (set! x "zero"))
+        (of 1 (set! x "one"))
+        (else (set! x "other")))
+      x)))
+; --- Error handling tests ---
+; try: successful path — no exception raised.
+(proc trySafe ((x int)) (: string)
+  (try
+    (if (< x 0)
+        (raise (newException ValueError "negative"))
+        "ok")
+    (except ValueError
+      "caught")))
+; try: named except binding lets us read the exception message.
+(proc tryNamed () (: string)
+  (try
+    (raise (newException ValueError "oops"))
+    (except (e ValueError)
+      (. e msg))))
+; try: finally block runs even on the success path.
+(defvar finallyRan
+  (block
+    (var ((ran false))
+      (try
+        nil
+        (finally (set! ran true)))
+      ran)))
+; try: bare catch-all.
+(proc tryBare () (: string)
+  (try
+    (raise (newException CatchableError "any"))
+    (except "handled")))
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -297,3 +383,37 @@ suite "nfl module backend":
   test "generic type with pragma compiles":
     let b = BoxPure[int](val: 3)
     check b.val == 3
+
+suite "nfl module backend — for / case / raise / try":
+  test "for loop sums sequence elements":
+    check forSeqSum == 15
+
+  test "for loop sums range":
+    check forRangeSum == 15
+
+  test "for multi-var pairs iteration":
+    # Indices 0 + 1 + 2 = 3.
+    check forPairsSum == 3
+
+  test "case expression dispatches correctly":
+    check caseLabel(0) == "zero"
+    check caseLabel(1) == "one"
+    check caseLabel(99) == "many"
+
+  test "case as statement — side effect executes correct branch":
+    check caseStmtRan == "one"
+
+  test "try — successful path returns body value":
+    check trySafe(1) == "ok"
+
+  test "try — exception caught returns handler value":
+    check trySafe(-1) == "caught"
+
+  test "try — named except binding reads exception message":
+    check tryNamed() == "oops"
+
+  test "try — finally block runs on success path":
+    check finallyRan == true
+
+  test "try — bare catch-all catches any exception":
+    check tryBare() == "handled"

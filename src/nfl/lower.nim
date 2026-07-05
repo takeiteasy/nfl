@@ -365,6 +365,145 @@ proc lowerNew(ctx: var LowerContext; sx: Syntax) =
 proc lowerQuote(sx: Syntax) =
   expectArity(sx, "quote", sx.items.len - 1, 1)
 
+proc lowerFor(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(for CLAUSE body…)` where CLAUSE is `(BINDING ITERABLE)`.
+  ## BINDING is a symbol (one var) or a list of symbols (multiple vars, e.g.
+  ## for pair/tuple iterators).  Loop variables are declared immutable so that
+  ## `set!` inside the body raises a lowering error.
+  if sx.items.len < 3:
+    raiseCompilerError(sx.span, "for expects a binding clause and body")
+  let clause = sx.items[1]
+  if clause.kind != sxList or clause.items.len != 2:
+    raiseCompilerError(clause.span, "for clause must be a (binding iterable) pair")
+  let binding = clause.items[0]
+  let iterable = clause.items[1]
+  var vars: seq[Syntax]
+  if binding.kind == sxSymbol:
+    vars = @[binding]
+  elif binding.kind == sxList:
+    if binding.items.len == 0:
+      raiseCompilerError(binding.span, "for binding list must not be empty")
+    for v in binding.items:
+      if v.kind != sxSymbol:
+        raiseCompilerError(v.span, "for loop variable must be a symbol")
+    vars = binding.items
+  else:
+    raiseCompilerError(binding.span, "for loop variable must be a symbol or list of symbols")
+  # Lower the iterable in the outer scope before introducing loop vars.
+  lowerExpr(ctx, iterable)
+  ctx.pushScope()
+  for v in vars:
+    declare(ctx, v, bkImmutable)
+  lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
+  ctx.popScope()
+
+proc lowerCase(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(case VALUE (of LIT body…)… [(else body…)])`.
+  ## `of` and `else` are recognized positionally inside case only.
+  if sx.items.len < 3:
+    raiseCompilerError(sx.span, "case expects a value and at least one branch")
+  lowerExpr(ctx, sx.items[1])
+  var seenElse = false
+  for i in 2 ..< sx.items.len:
+    let branch = sx.items[i]
+    if branch.kind != sxList or branch.items.len == 0:
+      raiseCompilerError(branch.span, "case branch must be a list headed by of or else")
+    if seenElse:
+      raiseCompilerError(branch.span, "case else branch must be last")
+    if branch.items[0].isSymbol("of"):
+      if branch.items.len < 3:
+        raiseCompilerError(branch.span, "case of branch expects a value and body")
+      lowerExpr(ctx, branch.items[1])
+      lowerBody(ctx, branch.items.toOpenArray(2, branch.items.high), branch)
+    elif branch.items[0].isSymbol("else"):
+      if branch.items.len < 2:
+        raiseCompilerError(branch.span, "case else branch expects a body")
+      seenElse = true
+      lowerBody(ctx, branch.items.toOpenArray(1, branch.items.high), branch)
+    else:
+      raiseCompilerError(branch.items[0].span, "case branch must be headed by of or else")
+
+proc lowerRaise(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(raise)` (re-raise) or `(raise expr)`.
+  let nargs = sx.items.len - 1
+  if nargs > 1:
+    raiseCompilerError(sx.span, "raise expects 0 or 1 arguments, got " & $nargs)
+  if nargs == 1:
+    lowerExpr(ctx, sx.items[1])
+
+proc isExceptClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("except")
+
+proc isFinallyClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("finally")
+
+proc isExceptBinding(sx: Syntax): bool =
+  ## True if sx looks like a `(name TypeRef)` exception binding.
+  ## Disambiguation: items[0] is the bound name symbol; items[1] is a type
+  ## symbol or generic vector.  A bare catch-all body form starting with a
+  ## call would need items[1] to be a list where items[1][1] is NOT a
+  ## symbol/vector — that case falls through to the bare catch-all branch.
+  sx.kind == sxList and sx.items.len == 2 and
+  sx.items[0].kind == sxSymbol and
+  (sx.items[1].kind == sxSymbol or sx.items[1].kind == sxVector)
+
+proc lowerTry(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(try body… (except …)… [(finally body…)])`.
+  ## Body is the leading run of forms before the first except/finally clause.
+  ## A bare `(except body…)` catch-all must be the last except branch.
+  ## At most one `(finally body…)` clause is allowed and must be last.
+  if sx.items.len < 2:
+    raiseCompilerError(sx.span, "try expects a body")
+  # Locate the boundary between body forms and except/finally clauses.
+  var bodyEnd = 1
+  while bodyEnd <= sx.items.high and
+      not sx.items[bodyEnd].isExceptClause() and
+      not sx.items[bodyEnd].isFinallyClause():
+    inc bodyEnd
+  if bodyEnd == 1:
+    raiseCompilerError(sx.span, "try body must not be empty")
+  lowerBody(ctx, sx.items.toOpenArray(1, bodyEnd - 1), sx)
+  var i = bodyEnd
+  # Except branches.
+  var seenBare = false
+  while i <= sx.items.high and sx.items[i].isExceptClause():
+    let branch = sx.items[i]
+    if seenBare:
+      raiseCompilerError(branch.span, "bare except must be the last except branch")
+    if branch.items.len < 2:
+      raiseCompilerError(branch.span, "except branch expects a type or body")
+    if branch.items[1].kind == sxSymbol:
+      # typed: (except Type body…)
+      validateTypeReference(branch.items[1], "except type")
+      if branch.items.len < 3:
+        raiseCompilerError(branch.span, "except branch expects a body after the type")
+      lowerBody(ctx, branch.items.toOpenArray(2, branch.items.high), branch)
+    elif branch.items[1].isExceptBinding():
+      # named: (except (e Type) body…)
+      validateTypeReference(branch.items[1].items[1], "except type")
+      if branch.items.len < 3:
+        raiseCompilerError(branch.span, "except branch expects a body after the binding")
+      ctx.pushScope()
+      declare(ctx, branch.items[1].items[0], bkImmutable)
+      lowerBody(ctx, branch.items.toOpenArray(2, branch.items.high), branch)
+      ctx.popScope()
+    else:
+      # bare catch-all: (except body…) — body starts at items[1]
+      seenBare = true
+      lowerBody(ctx, branch.items.toOpenArray(1, branch.items.high), branch)
+    inc i
+  # Optional finally clause.
+  if i <= sx.items.high:
+    let fin = sx.items[i]
+    if not fin.isFinallyClause():
+      raiseCompilerError(fin.span, "expected except or finally clause in try")
+    if fin.items.len < 2:
+      raiseCompilerError(fin.span, "finally expects a body")
+    lowerBody(ctx, fin.items.toOpenArray(1, fin.items.high), fin)
+    inc i
+  if i <= sx.items.high:
+    raiseCompilerError(sx.items[i].span, "unexpected form after try clauses")
+
 proc validateTypeReference(sx: Syntax; what: string) =
   ## Accepts a plain type symbol or a generic type application `[Head arg …]`.
   if sx.kind == sxVector:
@@ -511,6 +650,14 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
       raiseCompilerError(sx.span, "import is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("for"):
+      lowerFor(ctx, sx)
+    elif sx.items[0].isSymbol("case"):
+      lowerCase(ctx, sx)
+    elif sx.items[0].isSymbol("raise"):
+      lowerRaise(ctx, sx)
+    elif sx.items[0].isSymbol("try"):
+      lowerTry(ctx, sx)
     elif sx.items[0].isSymbol("quote"):
       lowerQuote(sx)
     elif sx.items[0].isSymbol("quasiquote"):

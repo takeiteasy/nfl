@@ -1,0 +1,19 @@
+; Demonstrates for loops: single variable, range iteration, and multi-var.
+
+; Sum elements of a sequence.
+(defvar nums [1 2 3 4 5])
+(var ((total 0))
+  (for (n nums)
+    (set! total (+ total n)))
+  (echo "Sum: " total))
+
+; Iterate over a range using the `..` operator.
+(var ((rangeTotal 0))
+  (for (i (.. 1 5))
+    (set! rangeTotal (+ rangeTotal i)))
+  (echo "Range sum: " rangeTotal))
+
+; Multi-variable iteration using pairs.
+(defvar words ["apple" "banana" "cherry"])
+(for ((idx word) (. words pairs))
+  (echo idx ": " word))
