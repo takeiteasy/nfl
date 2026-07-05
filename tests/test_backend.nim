@@ -168,6 +168,35 @@ nflModule """
 (defvar pragmaVar {.used.} 77)
 ; Pragma on const.
 (const pragmaConst {.used.} 13)
+; Generic declarations.
+; Simple generic proc — inference-based call.
+(proc identity [T] ((x T)) (: T)
+  x)
+; Two-parameter generic proc.
+(proc pickFst [T U] ((a T) (b U)) (: T)
+  a)
+; Generic type.
+(type Box [T]
+  (object
+    (value T)))
+; Generic proc consuming a generic type — uses [Box T] in parameter position.
+(proc unbox [T] ((b [Box T])) (: T)
+  (. b value))
+; Instantiate the generic type with explicit [Box int].
+(defvar intBox (new [Box int] (value 42)))
+; Call via inference.
+(defvar identResult (identity 99))
+; Two-param call via inference.
+(defvar firstResult (pickFst 7 "ignored"))
+; Unbox round-trip.
+(defvar unboxResult (unbox intBox))
+; Generic proc with pragma.
+(proc inlinedId [T] {.inline.} ((x T)) (: T)
+  x)
+; Generic type with pragma.
+(type BoxPure [T] {.pure.}
+  (object
+    (val T)))
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -244,3 +273,27 @@ suite "nfl module backend":
 
   test "pragma on const compiles":
     check pragmaConst == 13
+
+  test "generic proc — inference-based call":
+    check identity(42) == 42
+    check identity("hi") == "hi"
+    check identResult == 99
+
+  test "two-parameter generic proc":
+    check pickFst(7, "x") == 7
+    check firstResult == 7
+
+  test "generic type — explicit instantiation":
+    check intBox.value == 42
+
+  test "generic proc with generic type in param type":
+    check unbox(intBox) == 42
+    check unboxResult == 42
+
+  test "generic proc with pragma compiles and works":
+    check inlinedId(5) == 5
+    check inlinedId("nfl") == "nfl"
+
+  test "generic type with pragma compiles":
+    let b = BoxPure[int](val: 3)
+    check b.val == 3

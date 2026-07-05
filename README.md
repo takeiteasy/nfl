@@ -1,6 +1,8 @@
-# NFL — Nim Flavoured Lisp
+# Nim Flavoured Lisp
 
-Nim Flavoured Lisp is a lisp dialect that processes s-expressions into Nim expressions using Nim macros. It is inspired by [Hylang](https://hylang.org/).
+> **WARNING**: Work in progress
+
+**N**im **F**lavoured **L**isp (NFL) is a lisp dialect that processes s-expressions into Nim expressions using Nim macros. It is inspired by [Hylang](https://hylang.org/).
 
 ## LICENSE
 ```

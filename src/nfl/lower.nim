@@ -76,7 +76,9 @@ proc bindingName(binding: Syntax): Syntax =
   let target = binding.items[0]
   if target.kind == sxSymbol:
     return target
-  if target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and target.items[1].kind == sxSymbol:
+  # `(name type)` where type may be a symbol or a generic type vector `[Head T…]`
+  if target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and
+      (target.items[1].kind == sxSymbol or target.items[1].kind == sxVector):
     return target.items[0]
   raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
 
@@ -132,7 +134,9 @@ proc lowerSet(ctx: var LowerContext; sx: Syntax) =
 proc lowerParam(ctx: var LowerContext; param: Syntax) =
   if param.kind == sxSymbol:
     declare(ctx, param, bkImmutable)
-  elif param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and param.items[1].kind == sxSymbol:
+  elif param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and
+      (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
+    validateTypeReference(param.items[1], "parameter type")
     declare(ctx, param.items[0], bkImmutable)
   else:
     raiseCompilerError(param.span, "do parameter must be a symbol or (name type)")
@@ -166,13 +170,25 @@ proc validateExportedDecl(name: Syntax; what: string): string =
   if result.contains("*"):
     raiseCompilerError(name.span, "export marker is only allowed at the end of a name")
 
+proc procGenericIdx(sx: Syntax): int =
+  ## Returns the index of the optional generic-params vector in a `proc` or `type`
+  ## form, or -1 if none is present.  Generic params appear as a `sxVector`
+  ## immediately after the name (slot 2).
+  if sx.items.len > 2 and sx.items[2].kind == sxVector:
+    2
+  else:
+    -1
+
 proc procParamsIdx(sx: Syntax): int =
   ## Returns the index of the parameter list in a `proc` form, skipping an
-  ## optional pragma clause that may appear between the name and params.
-  if sx.items.len > 2 and sx.items[2].isPragmaClause():
-    3
-  else:
-    2
+  ## optional generic-params vector and/or pragma clause that may appear between
+  ## the name and params.
+  var idx = 2
+  if sx.items.len > idx and sx.items[idx].kind == sxVector:
+    idx += 1   # skip [T …]
+  if sx.items.len > idx and sx.items[idx].isPragmaClause():
+    idx += 1   # skip {.pragma.}
+  idx
 
 proc procBodyStart(sx: Syntax): int =
   let paramsIdx = procParamsIdx(sx)
@@ -180,9 +196,24 @@ proc procBodyStart(sx: Syntax): int =
   if sx.items.len > result and sx.items[result].kind == sxList and
      sx.items[result].items.len == 2 and sx.items[result].items[0].isSymbol(":"):
     let returnType = sx.items[result].items[1]
-    if returnType.kind != sxSymbol:
-      raiseCompilerError(returnType.span, "proc return type must be a symbol")
+    if returnType.kind != sxSymbol and returnType.kind != sxVector:
+      raiseCompilerError(returnType.span, "proc return type must be a symbol or generic type")
     result = paramsIdx + 2
+
+proc validateGenericParams(sx: Syntax) =
+  ## Validates a generic-params vector `[T U …]`.  Each entry must be a plain
+  ## non-empty symbol with no export marker and no duplicates.
+  if sx.items.len == 0:
+    raiseCompilerError(sx.span, "generic parameter list must not be empty")
+  var seen = initTable[string, bool]()
+  for entry in sx.items:
+    if entry.kind != sxSymbol or entry.sym.len == 0:
+      raiseCompilerError(entry.span, "generic parameter must be a symbol")
+    if entry.sym.contains("*"):
+      raiseCompilerError(entry.span, "generic parameter cannot use export markers")
+    if seen.hasKey(entry.sym):
+      raiseCompilerError(entry.span, "duplicate generic parameter: " & entry.sym)
+    seen[entry.sym] = true
 
 proc lowerProc(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len < 4:
@@ -192,12 +223,17 @@ proc lowerProc(ctx: var LowerContext; sx: Syntax) =
     raiseCompilerError(name.span, "proc name must be a symbol")
   # Validate the export marker early so errors point at the name, not the body.
   let baseName = name.validateExportedDecl("proc name")
-  # Optional pragma clause immediately after the name.
+  # Optional generic-params vector immediately after the name.
+  let genIdx = procGenericIdx(sx)
+  if genIdx >= 0:
+    validateGenericParams(sx.items[genIdx])
+  # Optional pragma clause after generic params (or directly after name).
   let paramsIdx = procParamsIdx(sx)
-  if paramsIdx == 3:
-    if sx.items.len < 5:
+  let pragmaIdx = paramsIdx - 1
+  if pragmaIdx >= 2 and sx.items[pragmaIdx].isPragmaClause():
+    if paramsIdx > sx.items.high:
       raiseCompilerError(sx.span, "proc expects name, parameters, and body")
-    validatePragma(sx.items[2])
+    validatePragma(sx.items[pragmaIdx])
   let params = sx.items[paramsIdx]
   if params.kind != sxList:
     raiseCompilerError(params.span, "proc parameters must be a list")
@@ -246,9 +282,11 @@ proc lowerConst(ctx: var LowerContext; sx: Syntax) =
     baseName = nameTarget.validateExportedDecl(formName & " name")
     nameSpan = nameTarget.span
   elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
-       nameTarget.items[0].kind == sxSymbol and nameTarget.items[1].kind == sxSymbol:
+       nameTarget.items[0].kind == sxSymbol and
+       (nameTarget.items[1].kind == sxSymbol or nameTarget.items[1].kind == sxVector):
     baseName = nameTarget.items[0].validateExportedDecl(formName & " name")
     nameSpan = nameTarget.items[0].span
+    validateTypeReference(nameTarget.items[1], formName & " type")
   else:
     raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
   # Optional pragma clause immediately after the name.
@@ -328,6 +366,14 @@ proc lowerQuote(sx: Syntax) =
   expectArity(sx, "quote", sx.items.len - 1, 1)
 
 proc validateTypeReference(sx: Syntax; what: string) =
+  ## Accepts a plain type symbol or a generic type application `[Head arg …]`.
+  if sx.kind == sxVector:
+    if sx.items.len < 2:
+      raiseCompilerError(sx.span, what & ": generic type application must have a head and at least one argument")
+    validateTypeReference(sx.items[0], what & " head")
+    for i in 1 ..< sx.items.len:
+      validateTypeReference(sx.items[i], what & " argument")
+    return
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, what & " must be a type symbol")
   if sx.sym.contains("*"):
@@ -374,20 +420,24 @@ proc lowerEnumType(sx: Syntax) =
 
 proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
   let nargs = sx.items.len - 1
-  if nargs < 2 or nargs > 3:
+  if nargs < 2:
     raiseCompilerError(sx.span, "type expects 2 arguments, got " & $nargs)
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "type name must be a symbol")
   let declaredName = newSymbol(name.validateExportedDecl("type name"), name.span)
-  # Optional pragma clause immediately after the name.
-  var bodyIdx = 2
-  if nargs == 3:
-    if not sx.items[2].isPragmaClause():
-      raiseCompilerError(sx.items[2].span, "expected pragma clause between type name and body")
-    validatePragma(sx.items[2])
-    bodyIdx = 3
-  let body = sx.items[bodyIdx]
+  # Optional generic-params vector `[T …]` immediately after the name.
+  var idx = 2
+  if sx.items.len > idx and sx.items[idx].kind == sxVector:
+    validateGenericParams(sx.items[idx])
+    idx += 1
+  # Optional pragma clause after generic params (or directly after name).
+  if sx.items.len > idx and sx.items[idx].isPragmaClause():
+    validatePragma(sx.items[idx])
+    idx += 1
+  if idx > sx.items.high:
+    raiseCompilerError(sx.span, "type expects a body")
+  let body = sx.items[idx]
   if body.kind == sxSymbol:
     validateTypeReference(body, "type alias target")
   elif body.kind == sxList and body.items.len > 0:

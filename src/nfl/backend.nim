@@ -16,13 +16,25 @@ proc isSymbol(sx: Syntax; name: string): bool =
 proc isPragmaClause(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("pragma")
 
+proc procGenericIdx(sx: Syntax): int =
+  ## Returns the index of the optional generic-params vector in a `proc` or `type`
+  ## form, or -1 if none is present.  Generic params appear as a `sxVector`
+  ## immediately after the name (slot 2).
+  if sx.items.len > 2 and sx.items[2].kind == sxVector:
+    2
+  else:
+    -1
+
 proc procParamsIdx(sx: Syntax): int =
   ## Returns the index of the parameter list in a `proc` form, skipping an
-  ## optional pragma clause that may appear between the name and params.
-  if sx.items.len > 2 and sx.items[2].isPragmaClause():
-    3
-  else:
-    2
+  ## optional generic-params vector and/or pragma clause that may appear between
+  ## the name and params.
+  var idx = 2
+  if sx.items.len > idx and sx.items[idx].kind == sxVector:
+    idx += 1   # skip [T …]
+  if sx.items.len > idx and sx.items[idx].isPragmaClause():
+    idx += 1   # skip {.pragma.}
+  idx
 
 proc procBodyStart(sx: Syntax): int =
   let paramsIdx = procParamsIdx(sx)
@@ -102,13 +114,36 @@ proc declIdent(ctx: var EmitContext; sx: Syntax; what: string): NimNode =
     ).attachLineInfo(sx)
   ctx.identForSymbol(sx)
 
-proc emitTypeReference(sx: Syntax): NimNode =
+proc emitTypeRef(sx: Syntax): NimNode =
+  ## Emits a type reference: either a plain/dotted symbol or a generic type
+  ## application `[Head arg …]` → `nnkBracketExpr(Head, arg, …)`.
+  if sx.kind == sxVector:
+    if sx.items.len < 2:
+      raiseCompilerError(sx.span, "generic type application must have a head and at least one argument")
+    result = nnkBracketExpr.newTree(emitTypeRef(sx.items[0])).attachLineInfo(sx)
+    for i in 1 ..< sx.items.len:
+      result.add emitTypeRef(sx.items[i])
+    return
   if sx.kind != sxSymbol:
-    raiseCompilerError(sx.span, "expected type symbol")
+    raiseCompilerError(sx.span, "expected type symbol or generic type application")
   if sx.sym.contains('.') and sx.sym != ".":
     emitDottedSymbol(sx)
   else:
     identForTypeSymbol(sx)
+
+proc emitTypeReference(sx: Syntax): NimNode =
+  ## Legacy thin wrapper — use emitTypeRef for new callers.
+  emitTypeRef(sx)
+
+proc emitGenericParams(sx: Syntax): NimNode =
+  ## Emits `nnkGenericParams` from a `[T U …]` declaration vector.
+  result = nnkGenericParams.newTree().attachLineInfo(sx)
+  for entry in sx.items:
+    result.add nnkIdentDefs.newTree(
+      ident(entry.sym).attachLineInfo(entry),
+      newEmptyNode(),
+      newEmptyNode()
+    ).attachLineInfo(entry)
 
 proc emitModulePath(sx: Syntax): NimNode =
   if sx.kind != sxSymbol:
@@ -149,8 +184,9 @@ proc emitBindingIdentDefs(ctx: var EmitContext; binding: Syntax): NimNode =
   let value = ctx.emitExpr(binding.items[1])
   if target.kind == sxSymbol:
     return nnkIdentDefs.newTree(ctx.identForSymbol(target), newEmptyNode(), value).attachLineInfo(binding)
-  if target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and target.items[1].kind == sxSymbol:
-    return nnkIdentDefs.newTree(ctx.identForSymbol(target.items[0]), identForTypeSymbol(target.items[1]), value).attachLineInfo(binding)
+  if target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and
+      (target.items[1].kind == sxSymbol or target.items[1].kind == sxVector):
+    return nnkIdentDefs.newTree(ctx.identForSymbol(target.items[0]), emitTypeRef(target.items[1]), value).attachLineInfo(binding)
   raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
 
 proc emitLetLike(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
@@ -192,8 +228,9 @@ proc emitSet(ctx: var EmitContext; sx: Syntax): NimNode =
 proc emitParam(ctx: var EmitContext; param: Syntax): NimNode =
   if param.kind == sxSymbol:
     return nnkIdentDefs.newTree(ctx.identForSymbol(param), newEmptyNode(), newEmptyNode()).attachLineInfo(param)
-  if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and param.items[1].kind == sxSymbol:
-    return nnkIdentDefs.newTree(ctx.identForSymbol(param.items[0]), identForTypeSymbol(param.items[1]), newEmptyNode()).attachLineInfo(param)
+  if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and
+      (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
+    return nnkIdentDefs.newTree(ctx.identForSymbol(param.items[0]), emitTypeRef(param.items[1]), newEmptyNode()).attachLineInfo(param)
   raiseCompilerError(param.span, "do parameter must be a symbol or (name type)")
 
 proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
@@ -236,13 +273,17 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "proc name must be a symbol")
+  # Optional generic-params vector (slot 2) → nnkProcDef slot 2.
+  let genIdx = procGenericIdx(sx)
+  var genericParamsNode: NimNode = newEmptyNode()
+  if genIdx >= 0:
+    genericParamsNode = emitGenericParams(sx.items[genIdx])
   let paramsIdx = procParamsIdx(sx)
   # Extract optional pragma (goes into nnkProcDef slot 4).
   var pragmaNode: NimNode = newEmptyNode()
-  if paramsIdx == 3:
-    if sx.items.len < 5:
-      raiseCompilerError(sx.span, "proc expects name, parameters, and body")
-    pragmaNode = emitPragma(sx.items[2])
+  let pragmaIdx = paramsIdx - 1
+  if pragmaIdx >= 2 and sx.items[pragmaIdx].isPragmaClause():
+    pragmaNode = emitPragma(sx.items[pragmaIdx])
   let params = sx.items[paramsIdx]
   if params.kind != sxList:
     raiseCompilerError(params.span, "proc parameters must be a list")
@@ -255,9 +296,7 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
   let retIdx = paramsIdx + 1
   if bodyStart == paramsIdx + 2:
     let annotation = sx.items[retIdx].items[1]
-    if annotation.kind != sxSymbol:
-      raiseCompilerError(annotation.span, "proc return type must be a symbol")
-    returnType = identForTypeSymbol(annotation)
+    returnType = emitTypeRef(annotation)
 
   var formalParams = nnkFormalParams.newTree(returnType)
   for param in params.items:
@@ -266,7 +305,7 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
   nnkProcDef.newTree(
     ctx.declIdent(name, "proc name"),
     newEmptyNode(),
-    newEmptyNode(),
+    genericParamsNode,
     formalParams,
     pragmaNode,
     newEmptyNode(),
@@ -307,9 +346,10 @@ proc emitConst(ctx: var EmitContext; sx: Syntax): NimNode =
   if nameTarget.kind == sxSymbol:
     nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name")
   elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
-       nameTarget.items[0].kind == sxSymbol and nameTarget.items[1].kind == sxSymbol:
+       nameTarget.items[0].kind == sxSymbol and
+       (nameTarget.items[1].kind == sxSymbol or nameTarget.items[1].kind == sxVector):
     nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name")
-    typeIdent = identForTypeSymbol(nameTarget.items[1])
+    typeIdent = emitTypeRef(nameTarget.items[1])
   else:
     raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
   nnkConstSection.newTree(
@@ -352,17 +392,22 @@ proc emitTypeBody(ctx: var EmitContext; sx: Syntax): NimNode =
   raiseCompilerError(sx.span, "unsupported type declaration")
 
 proc emitTypeDecl(ctx: var EmitContext; sx: Syntax): NimNode =
-  # Optional pragma clause between type name and body.
+  # Optional generic-params vector `[T …]` immediately after the name → nnkTypeDef slot 1.
+  var idx = 2
+  var genericParamsNode: NimNode = newEmptyNode()
+  if sx.items.len > idx and sx.items[idx].kind == sxVector:
+    genericParamsNode = emitGenericParams(sx.items[idx])
+    idx += 1
+  # Optional pragma clause after generic params (or directly after name).
   var pragma: Syntax = nil
-  var bodyIdx = 2
-  if sx.items.len == 4 and sx.items[2].isPragmaClause():
-    pragma = sx.items[2]
-    bodyIdx = 3
+  if sx.items.len > idx and sx.items[idx].isPragmaClause():
+    pragma = sx.items[idx]
+    idx += 1
   nnkTypeSection.newTree(
     nnkTypeDef.newTree(
       pragmaDeclIdent(ctx, sx.items[1], pragma, "type name"),
-      newEmptyNode(),
-      ctx.emitTypeBody(sx.items[bodyIdx])
+      genericParamsNode,
+      ctx.emitTypeBody(sx.items[idx])
     ).attachLineInfo(sx)
   ).attachLineInfo(sx)
 

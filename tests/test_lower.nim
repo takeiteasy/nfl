@@ -246,3 +246,39 @@ suite "lowering validation":
   test "rejects export marker in pragma entry":
     # Write (pragma foo*) directly — foo* contains `*`.
     expectLowerModuleError("(proc add (pragma foo*) ((x int)) x)", "pragma entry must be a marker symbol")
+
+  test "allows generic proc declaration":
+    discard lowerModule(readAll("(proc identity [T] ((x T)) (: T) x)", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc pair [T U] ((a T) (b U)) (: T) a)", "lower-test.nfl"))
+
+  test "allows generic type declaration":
+    discard lowerModule(readAll("(type Box [T] (object (value T)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Pair [T U] (object (fst T) (snd U)))", "lower-test.nfl"))
+
+  test "allows generic proc with pragma":
+    discard lowerModule(readAll("(proc identity [T] {.inline.} ((x T)) (: T) x)", "lower-test.nfl"))
+
+  test "allows generic type with pragma":
+    discard lowerModule(readAll("(type Box [T] {.bycopy.} (object (value T)))", "lower-test.nfl"))
+
+  test "allows generic type reference in param type":
+    discard lowerModule(readAll("(proc unbox [T] ((b [Box T])) (: T) b)", "lower-test.nfl"))
+
+  test "allows generic type reference in new":
+    discard lowerModule(readAll("""
+(type Box [T] (object (value T)))
+(defvar b (new [Box int] (value 5)))
+""", "lower-test.nfl"))
+
+  test "rejects empty generic parameter list":
+    expectLowerModuleError("(proc f [] (()) ())", "generic parameter list must not be empty")
+    expectLowerModuleError("(type Box [] (object (value int)))", "generic parameter list must not be empty")
+
+  test "rejects non-symbol generic parameter":
+    expectLowerModuleError("(proc f [1] ((x int)) x)", "generic parameter must be a symbol")
+
+  test "rejects exported generic parameter":
+    expectLowerModuleError("(proc f [T*] ((x int)) x)", "generic parameter cannot use export markers")
+
+  test "rejects duplicate generic parameters":
+    expectLowerModuleError("(proc f [T T] ((x T)) x)", "duplicate generic parameter: T")
