@@ -148,6 +148,26 @@ nflModule """
 (const (typedConst int) 11)
 (const publicSize* 3)
 (defconstant defconstantAlias 99)
+; Pragma tests.
+; {.discardable.} lets us call the proc as a statement without `discard`.
+(proc makeValue {.discardable.} () (: int)
+  42)
+; {.pure.} on enum requires fully-qualified access when ambiguous; used here
+; to prove the pragma reached the generated nnkTypeDef.
+(type Flavor {.pure.}
+  (enum vanilla chocolate))
+; Pragma composes with the `*` export marker.
+(proc doubled* {.inline.} ((x int)) (: int)
+  (* x 2))
+; Pragma on object field.
+(type Tagged
+  (object
+    (value int)
+    (tag {.used.} string)))
+; Pragma on defvar.
+(defvar pragmaVar {.used.} 77)
+; Pragma on const.
+(const pragmaConst {.used.} 13)
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -205,3 +225,22 @@ suite "nfl module backend":
 
   test "exported const is accessible under its base name":
     check publicSize == 3
+
+  test "discardable pragma allows result to be discarded at statement scope":
+    makeValue()  # would require `discard` without {.discardable.}
+
+  test "pragma on type compiles and type is usable":
+    check Flavor.vanilla != Flavor.chocolate
+
+  test "pragma composes with export marker on proc":
+    check doubled(5) == 10
+
+  test "pragma on object field compiles":
+    let t = Tagged(value: 3, tag: "hi")
+    check t.value == 3
+
+  test "pragma on defvar compiles":
+    check pragmaVar == 77
+
+  test "pragma on const compiles":
+    check pragmaConst == 13

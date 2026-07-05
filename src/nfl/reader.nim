@@ -129,6 +129,39 @@ proc readDelimited(r: var Reader; closeChar: char; vector: bool; start: Span): S
       return newList(items, fullSpan)
     items.add r.readForm()
 
+proc readPragma(r: var Reader; start: Span): Syntax =
+  ## Reads a Nim pragma clause `{.p1 p2.}` or `{.p1, p2.}` and returns it as a
+  ## list headed by the symbol `pragma`, e.g. `(pragma inline cdecl)`.
+  ## `r` must still be pointing at `{` when called; both `{` and `.` are consumed
+  ## inside this proc.
+  discard r.advance()  # consume `{`
+  discard r.advance()  # consume `.`
+  var markers: seq[Syntax] = @[]
+  while true:
+    r.skipTrivia()
+    if r.atEnd:
+      raiseReaderError(start, "unterminated pragma")
+    if r.peek == '.' and r.peekNext == '}':
+      discard r.advance()  # `.`
+      discard r.advance()  # `}`
+      break
+    if r.peek == ',':
+      discard r.advance()  # skip `,` separator
+      continue
+    # Read one marker identifier, stopping before whitespace, `,`, `.`, or `}`.
+    let mStart = r.currentSpan
+    var token = ""
+    while not r.atEnd and r.peek notin {' ', '\t', '\r', '\n', ',', '.', '}', '\0'}:
+      token.add r.advance()
+    if token.len == 0:
+      raiseReaderError(r.currentSpan, "expected pragma marker")
+    markers.add newSymbol(token, mStart.withEnd(r.line, r.col))
+  let fullSpan = start.withEnd(r.line, r.col)
+  var items: seq[Syntax] = @[newSymbol("pragma", start)]
+  for m in markers:
+    items.add m
+  newList(items, fullSpan)
+
 proc readQuote(r: var Reader; name: string; start: Span): Syntax =
   r.skipTrivia()
   if r.atEnd or r.peek in {')', ']'}:
@@ -190,6 +223,11 @@ proc readForm(r: var Reader): Syntax =
     readString(r)
   of '|':
     readEscapedSymbol(r)
+  of '{':
+    if r.peekNext == '.':
+      readPragma(r, start)
+    else:
+      readAtom(r)
   of '\'':
     discard r.advance()
     readQuote(r, "quote", start)

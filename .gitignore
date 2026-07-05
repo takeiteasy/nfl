@@ -1,8 +1,6 @@
 nimble.develop
 nimble.paths
-/nil
-/nimp
-nil_bin
+/nfl
 /tests/test_lisp
 /tests/test_reader
 /tests/test_expand
@@ -10,11 +8,12 @@ nil_bin
 /tests/test_lower
 /tests/test_cli
 /tests/test_stdlib
-/src/nimp/cli
-/src/nimp/nimp
+/src/nfl/cli
+/src/nfl/nfl
 /examples/*
 !/examples/*.lisp
 !/examples/*.nim
-!/examples/*.nimp
+!/examples/*.nfl
+!/examples/*.nfl
 nimbledeps
 /build_std

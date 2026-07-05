@@ -1,0 +1,41 @@
+; Demonstrate Nim pragma annotations in NFL.
+;
+; Pragmas are written as `{.name.}` or `{.name1, name2.}` and placed
+; immediately after the declaration name they annotate.
+
+; Proc pragma — {.discardable.} lets callers ignore the return value.
+(proc makeAnswer {.discardable.} () (: int)
+  42)
+
+; Proc pragma with return type.
+(proc addFast {.inline.} ((x int) (y int)) (: int)
+  (+ x y))
+
+; Multiple marker pragmas on a proc.
+(proc purePlus {.inline, noSideEffect.} ((x int) (y int)) (: int)
+  (+ x y))
+
+; Pragma composes with the `*` export marker.
+(proc doubled* {.inline.} ((x int)) (: int)
+  (* x 2))
+
+; Pragma on a type declaration.
+(type Point {.bycopy.}
+  (object
+    (x int)
+    (y int)))
+
+; Pragma on object fields.
+(type Tagged
+  (object
+    (value int)
+    (label {.used.} string)))
+
+; Pragma on defvar.
+(defvar counter {.used.} 0)
+
+; Pragma on const.
+(const maxItems {.used.} 100)
+
+(echo (addFast 3 4))
+(echo (doubled 5))

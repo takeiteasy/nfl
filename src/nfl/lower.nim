@@ -15,6 +15,17 @@ type
 proc isSymbol(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
 
+proc isPragmaClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("pragma")
+
+proc validatePragma(sx: Syntax) =
+  ## Validates a pragma clause `(pragma m1 m2 …)`.  Each entry after the head
+  ## must be a plain non-empty symbol with no export marker.
+  for i in 1 ..< sx.items.len:
+    let entry = sx.items[i]
+    if entry.kind != sxSymbol or entry.sym.len == 0 or entry.sym.contains("*"):
+      raiseCompilerError(entry.span, "pragma entry must be a marker symbol")
+
 proc formName(sx: Syntax): string =
   if sx.kind == sxSymbol: sx.sym else: "form"
 
@@ -155,13 +166,23 @@ proc validateExportedDecl(name: Syntax; what: string): string =
   if result.contains("*"):
     raiseCompilerError(name.span, "export marker is only allowed at the end of a name")
 
+proc procParamsIdx(sx: Syntax): int =
+  ## Returns the index of the parameter list in a `proc` form, skipping an
+  ## optional pragma clause that may appear between the name and params.
+  if sx.items.len > 2 and sx.items[2].isPragmaClause():
+    3
+  else:
+    2
+
 proc procBodyStart(sx: Syntax): int =
-  result = 3
-  if sx.items.len > 3 and sx.items[3].kind == sxList and sx.items[3].items.len == 2 and sx.items[3].items[0].isSymbol(":"):
-    let returnType = sx.items[3].items[1]
+  let paramsIdx = procParamsIdx(sx)
+  result = paramsIdx + 1
+  if sx.items.len > result and sx.items[result].kind == sxList and
+     sx.items[result].items.len == 2 and sx.items[result].items[0].isSymbol(":"):
+    let returnType = sx.items[result].items[1]
     if returnType.kind != sxSymbol:
       raiseCompilerError(returnType.span, "proc return type must be a symbol")
-    result = 4
+    result = paramsIdx + 2
 
 proc lowerProc(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len < 4:
@@ -171,7 +192,13 @@ proc lowerProc(ctx: var LowerContext; sx: Syntax) =
     raiseCompilerError(name.span, "proc name must be a symbol")
   # Validate the export marker early so errors point at the name, not the body.
   let baseName = name.validateExportedDecl("proc name")
-  let params = sx.items[2]
+  # Optional pragma clause immediately after the name.
+  let paramsIdx = procParamsIdx(sx)
+  if paramsIdx == 3:
+    if sx.items.len < 5:
+      raiseCompilerError(sx.span, "proc expects name, parameters, and body")
+    validatePragma(sx.items[2])
+  let params = sx.items[paramsIdx]
   if params.kind != sxList:
     raiseCompilerError(params.span, "proc parameters must be a list")
   let bodyStart = procBodyStart(sx)
@@ -188,19 +215,30 @@ proc lowerProc(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerDefvar(ctx: var LowerContext; sx: Syntax) =
   let formName = sx.items[0].sym
-  expectArity(sx, formName, sx.items.len - 1, 2)
+  let nargs = sx.items.len - 1
+  if nargs < 2 or nargs > 3:
+    raiseCompilerError(sx.span, formName & " expects 2 arguments, got " & $nargs)
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, formName & " name must be a symbol")
   # Validate the export marker and strip it so the binding is registered under
   # the base name; references always use the bare name, not `name*`.
   let baseName = name.validateExportedDecl(formName & " name")
-  lowerExpr(ctx, sx.items[2])
+  # Optional pragma clause immediately after the name.
+  var valueIdx = 2
+  if nargs == 3:
+    if not sx.items[2].isPragmaClause():
+      raiseCompilerError(sx.items[2].span, "expected pragma clause between " & formName & " name and value")
+    validatePragma(sx.items[2])
+    valueIdx = 3
+  lowerExpr(ctx, sx.items[valueIdx])
   declare(ctx, newSymbol(baseName, name.span), bkMutable)
 
 proc lowerConst(ctx: var LowerContext; sx: Syntax) =
   let formName = sx.items[0].sym
-  expectArity(sx, formName, sx.items.len - 1, 2)
+  let nargs = sx.items.len - 1
+  if nargs < 2 or nargs > 3:
+    raiseCompilerError(sx.span, formName & " expects 2 arguments, got " & $nargs)
   let nameTarget = sx.items[1]
   var baseName: string
   var nameSpan: Span
@@ -213,7 +251,14 @@ proc lowerConst(ctx: var LowerContext; sx: Syntax) =
     nameSpan = nameTarget.items[0].span
   else:
     raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
-  lowerExpr(ctx, sx.items[2])
+  # Optional pragma clause immediately after the name.
+  var valueIdx = 2
+  if nargs == 3:
+    if not sx.items[2].isPragmaClause():
+      raiseCompilerError(sx.items[2].span, "expected pragma clause between " & formName & " name and value")
+    validatePragma(sx.items[2])
+    valueIdx = 3
+  lowerExpr(ctx, sx.items[valueIdx])
   declare(ctx, newSymbol(baseName, nameSpan), bkImmutable)
 
 proc lowerImport(sx: Syntax) =
@@ -295,7 +340,8 @@ proc lowerObjectType(sx: Syntax) =
     raiseCompilerError(sx.span, "object type expects fields")
   var seen = initTable[string, bool]()
   for field in sx.items.toOpenArray(1, sx.items.high):
-    if field.kind != sxList or field.items.len != 2:
+    # Field form: `(name Type)` or `(name {.p.} Type)` — 2 or 3 items.
+    if field.kind != sxList or (field.items.len != 2 and field.items.len != 3):
       raiseCompilerError(field.span, "object field must be (name Type)")
     let name = field.items[0]
     if name.kind != sxSymbol:
@@ -304,7 +350,13 @@ proc lowerObjectType(sx: Syntax) =
     if seen.hasKey(key):
       raiseCompilerError(name.span, "duplicate object field: " & key)
     seen[key] = true
-    validateTypeReference(field.items[1], "object field type")
+    var typeIdx = 1
+    if field.items.len == 3:
+      if not field.items[1].isPragmaClause():
+        raiseCompilerError(field.items[1].span, "expected pragma clause between field name and type")
+      validatePragma(field.items[1])
+      typeIdx = 2
+    validateTypeReference(field.items[typeIdx], "object field type")
 
 proc lowerEnumType(sx: Syntax) =
   if sx.items.len == 1:
@@ -321,12 +373,21 @@ proc lowerEnumType(sx: Syntax) =
     seen[key] = true
 
 proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
-  expectArity(sx, "type", sx.items.len - 1, 2)
+  let nargs = sx.items.len - 1
+  if nargs < 2 or nargs > 3:
+    raiseCompilerError(sx.span, "type expects 2 arguments, got " & $nargs)
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "type name must be a symbol")
   let declaredName = newSymbol(name.validateExportedDecl("type name"), name.span)
-  let body = sx.items[2]
+  # Optional pragma clause immediately after the name.
+  var bodyIdx = 2
+  if nargs == 3:
+    if not sx.items[2].isPragmaClause():
+      raiseCompilerError(sx.items[2].span, "expected pragma clause between type name and body")
+    validatePragma(sx.items[2])
+    bodyIdx = 3
+  let body = sx.items[bodyIdx]
   if body.kind == sxSymbol:
     validateTypeReference(body, "type alias target")
   elif body.kind == sxList and body.items.len > 0:
@@ -404,6 +465,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerQuote(sx)
     elif sx.items[0].isSymbol("quasiquote"):
       raiseCompilerError(sx.span, "runtime quasiquote is not implemented yet")
+    elif sx.items[0].isSymbol("pragma"):
+      raiseCompilerError(sx.span, "pragma is only allowed as a declaration annotation")
     else:
       lowerCall(ctx, sx)
 

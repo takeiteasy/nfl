@@ -91,6 +91,52 @@ suite "reader valid syntax":
     for form in forms:
       checkSpans(form)
 
+suite "reader pragma syntax":
+  test "reads single-marker pragma clause":
+    let sx = readOne("{.inline.}", "pragma.nfl")
+    check sx.kind == sxList
+    check sx.items.len == 2
+    check sx.items[0].kind == sxSymbol
+    check sx.items[0].sym == "pragma"
+    check sx.items[1].kind == sxSymbol
+    check sx.items[1].sym == "inline"
+    checkSpans(sx)
+
+  test "reads multi-marker pragma with comma separator":
+    let sx = readOne("{.inline, cdecl.}", "pragma.nfl")
+    check sx.kind == sxList
+    check sx.items.len == 3
+    check sx.items[1].sym == "inline"
+    check sx.items[2].sym == "cdecl"
+
+  test "reads multi-marker pragma with whitespace separator":
+    let sx = readOne("{.inline cdecl.}", "pragma.nfl")
+    check sx.kind == sxList
+    check sx.items.len == 3
+    check sx.items[1].sym == "inline"
+    check sx.items[2].sym == "cdecl"
+
+  test "reads empty pragma clause":
+    let sx = readOne("{..}", "pragma.nfl")
+    check sx.kind == sxList
+    check sx.items.len == 1
+    check sx.items[0].sym == "pragma"
+
+  test "pragma clause appears inside larger form":
+    let forms = readAll("(proc foo {.inline.} () 1)", "pragma.nfl")
+    check forms.len == 1
+    let sx = forms[0]
+    check sx.kind == sxList
+    check sx.items[2].kind == sxList
+    check sx.items[2].items[0].sym == "pragma"
+    check sx.items[2].items[1].sym == "inline"
+
+  test "bare { without . falls through to atom reader":
+    let forms = readAll("{myvar}", "pragma.nfl")
+    check forms.len == 1
+    check forms[0].kind == sxSymbol
+    check forms[0].sym == "{myvar}"
+
 suite "reader malformed syntax":
   test "reports unterminated string":
     expectReaderError("\"no end", "unterminated string")
@@ -114,3 +160,7 @@ suite "reader malformed syntax":
     expectReaderError("|", "unterminated escaped symbol")
     expectReaderError("||", "escaped symbol cannot be empty")
     expectReaderError("|bad\\n|", "invalid escaped symbol escape")
+
+  test "reports unterminated pragma":
+    expectReaderError("{.inline", "unterminated pragma")
+    expectReaderError("{.", "unterminated pragma")

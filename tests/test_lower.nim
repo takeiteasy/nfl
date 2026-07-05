@@ -205,3 +205,44 @@ suite "lowering validation":
 
   test "rejects const in expression scope":
     expectLowerError("(let ((x (const a 1))) x)", "const is only allowed at statement/module scope")
+
+  test "allows pragma on proc":
+    discard lowerModule(readAll("(proc add {.inline.} ((x int) (y int)) (+ x y))", "lower-test.nfl"))
+
+  test "allows pragma on proc with return type":
+    discard lowerModule(readAll("(proc add {.inline.} ((x int) (y int)) (: int) (+ x y))", "lower-test.nfl"))
+
+  test "allows multi-marker pragma on proc":
+    discard lowerModule(readAll("(proc add {.inline, noSideEffect.} ((x int)) x)", "lower-test.nfl"))
+
+  test "allows pragma on exported proc":
+    discard lowerModule(readAll("(proc add* {.inline.} ((x int)) x)", "lower-test.nfl"))
+
+  test "allows pragma on type declaration":
+    discard lowerModule(readAll("(type Person {.bycopy.} (object (name string)))", "lower-test.nfl"))
+
+  test "allows pragma on object field":
+    discard lowerModule(readAll("(type Person (object (name {.exportc.} string)))", "lower-test.nfl"))
+
+  test "allows pragma on defvar":
+    discard lowerModule(readAll("(defvar x {.volatile.} 1)", "lower-test.nfl"))
+
+  test "allows pragma on defparameter":
+    discard lowerModule(readAll("(defparameter y {.used.} 2)", "lower-test.nfl"))
+
+  test "allows pragma on const":
+    discard lowerModule(readAll("(const x {.used.} 1)", "lower-test.nfl"))
+
+  test "allows pragma on typed const":
+    discard lowerModule(readAll("(const (x int) {.used.} 1)", "lower-test.nfl"))
+
+  test "rejects pragma in expression position":
+    expectLowerError("{.inline.}", "pragma is only allowed as a declaration annotation")
+
+  test "rejects non-symbol pragma entry (via literal list form)":
+    # Write (pragma 1) directly — `1` is sxInt, not sxSymbol.
+    expectLowerModuleError("(proc add (pragma 1) ((x int)) x)", "pragma entry must be a marker symbol")
+
+  test "rejects export marker in pragma entry":
+    # Write (pragma foo*) directly — foo* contains `*`.
+    expectLowerModuleError("(proc add (pragma foo*) ((x int)) x)", "pragma entry must be a marker symbol")

@@ -13,6 +13,24 @@ type EmitContext = object
 proc isSymbol(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
 
+proc isPragmaClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("pragma")
+
+proc procParamsIdx(sx: Syntax): int =
+  ## Returns the index of the parameter list in a `proc` form, skipping an
+  ## optional pragma clause that may appear between the name and params.
+  if sx.items.len > 2 and sx.items[2].isPragmaClause():
+    3
+  else:
+    2
+
+proc procBodyStart(sx: Syntax): int =
+  let paramsIdx = procParamsIdx(sx)
+  result = paramsIdx + 1
+  if sx.items.len > result and sx.items[result].kind == sxList and
+     sx.items[result].items.len == 2 and sx.items[result].items[0].isSymbol(":"):
+    result = paramsIdx + 2
+
 proc formName(sx: Syntax): string =
   if sx.kind == sxSymbol: sx.sym else: "form"
 
@@ -197,10 +215,20 @@ proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
     ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)
   ).attachLineInfo(sx)
 
-proc procBodyStart(sx: Syntax): int =
-  result = 3
-  if sx.items.len > 3 and sx.items[3].kind == sxList and sx.items[3].items.len == 2 and sx.items[3].items[0].isSymbol(":"):
-    result = 4
+proc emitPragma(sx: Syntax): NimNode =
+  ## Emits a `nnkPragma` node from a `(pragma m1 m2 …)` syntax object.
+  result = nnkPragma.newTree().attachLineInfo(sx)
+  for i in 1 ..< sx.items.len:
+    result.add ident(sx.items[i].sym).attachLineInfo(sx.items[i])
+
+proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: string): NimNode =
+  ## Returns the declaration identifier for `name`, wrapped in `nnkPragmaExpr`
+  ## when `pragma` is non-nil (i.e. a pragma clause was specified).  Handles
+  ## the export postfix (`name*`) correctly in both cases.
+  let nameNode = ctx.declIdent(name, what)
+  if pragma == nil:
+    return nameNode
+  nnkPragmaExpr.newTree(nameNode, emitPragma(pragma)).attachLineInfo(name)
 
 proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len < 4:
@@ -208,7 +236,14 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "proc name must be a symbol")
-  let params = sx.items[2]
+  let paramsIdx = procParamsIdx(sx)
+  # Extract optional pragma (goes into nnkProcDef slot 4).
+  var pragmaNode: NimNode = newEmptyNode()
+  if paramsIdx == 3:
+    if sx.items.len < 5:
+      raiseCompilerError(sx.span, "proc expects name, parameters, and body")
+    pragmaNode = emitPragma(sx.items[2])
+  let params = sx.items[paramsIdx]
   if params.kind != sxList:
     raiseCompilerError(params.span, "proc parameters must be a list")
 
@@ -217,8 +252,9 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
     raiseCompilerError(sx.span, "proc expects body expression")
 
   var returnType = ident("auto")
-  if bodyStart == 4:
-    let annotation = sx.items[3].items[1]
+  let retIdx = paramsIdx + 1
+  if bodyStart == paramsIdx + 2:
+    let annotation = sx.items[retIdx].items[1]
     if annotation.kind != sxSymbol:
       raiseCompilerError(annotation.span, "proc return type must be a symbol")
     returnType = identForTypeSymbol(annotation)
@@ -232,31 +268,47 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
     newEmptyNode(),
     newEmptyNode(),
     formalParams,
-    newEmptyNode(),
+    pragmaNode,
     newEmptyNode(),
     ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ).attachLineInfo(sx)
 
 proc emitDefvar(ctx: var EmitContext; sx: Syntax): NimNode =
   let formName = sx.items[0].sym
-  expectArity(sx, formName, sx.items.len - 1, 2)
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, formName & " name must be a symbol")
-  nnkVarSection.newTree(nnkIdentDefs.newTree(ctx.declIdent(name, formName & " name"), newEmptyNode(), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)).attachLineInfo(sx)
+  # Optional pragma clause between name and value.
+  var pragma: Syntax = nil
+  var valueIdx = 2
+  if sx.items.len == 4 and sx.items[2].isPragmaClause():
+    pragma = sx.items[2]
+    valueIdx = 3
+  nnkVarSection.newTree(
+    nnkIdentDefs.newTree(
+      pragmaDeclIdent(ctx, name, pragma, formName & " name"),
+      newEmptyNode(),
+      ctx.emitExpr(sx.items[valueIdx])
+    ).attachLineInfo(sx)
+  ).attachLineInfo(sx)
 
 proc emitConst(ctx: var EmitContext; sx: Syntax): NimNode =
   let formName = sx.items[0].sym
-  expectArity(sx, formName, sx.items.len - 1, 2)
   let nameTarget = sx.items[1]
-  let value = ctx.emitExpr(sx.items[2])
+  # Optional pragma clause between name and value.
+  var pragma: Syntax = nil
+  var valueIdx = 2
+  if sx.items.len == 4 and sx.items[2].isPragmaClause():
+    pragma = sx.items[2]
+    valueIdx = 3
+  let value = ctx.emitExpr(sx.items[valueIdx])
   var nameIdent: NimNode
   var typeIdent: NimNode = newEmptyNode()
   if nameTarget.kind == sxSymbol:
-    nameIdent = ctx.declIdent(nameTarget, formName & " name")
+    nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name")
   elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
        nameTarget.items[0].kind == sxSymbol and nameTarget.items[1].kind == sxSymbol:
-    nameIdent = ctx.declIdent(nameTarget.items[0], formName & " name")
+    nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name")
     typeIdent = identForTypeSymbol(nameTarget.items[1])
   else:
     raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
@@ -271,9 +323,15 @@ proc emitImport(sx: Syntax): NimNode =
 proc emitObjectType(ctx: var EmitContext; sx: Syntax): NimNode =
   var fields = nnkRecList.newTree().attachLineInfo(sx)
   for field in sx.items.toOpenArray(1, sx.items.high):
+    # Field form: `(name Type)` or `(name {.p.} Type)` — 2 or 3 items.
+    var pragma: Syntax = nil
+    var typeIdx = 1
+    if field.items.len == 3 and field.items[1].isPragmaClause():
+      pragma = field.items[1]
+      typeIdx = 2
     fields.add nnkIdentDefs.newTree(
-      ctx.declIdent(field.items[0], "object field name"),
-      emitTypeReference(field.items[1]),
+      pragmaDeclIdent(ctx, field.items[0], pragma, "object field name"),
+      emitTypeReference(field.items[typeIdx]),
       newEmptyNode()
     ).attachLineInfo(field)
   nnkObjectTy.newTree(newEmptyNode(), newEmptyNode(), fields).attachLineInfo(sx)
@@ -294,12 +352,17 @@ proc emitTypeBody(ctx: var EmitContext; sx: Syntax): NimNode =
   raiseCompilerError(sx.span, "unsupported type declaration")
 
 proc emitTypeDecl(ctx: var EmitContext; sx: Syntax): NimNode =
-  expectArity(sx, "type", sx.items.len - 1, 2)
+  # Optional pragma clause between type name and body.
+  var pragma: Syntax = nil
+  var bodyIdx = 2
+  if sx.items.len == 4 and sx.items[2].isPragmaClause():
+    pragma = sx.items[2]
+    bodyIdx = 3
   nnkTypeSection.newTree(
     nnkTypeDef.newTree(
-      ctx.declIdent(sx.items[1], "type name"),
+      pragmaDeclIdent(ctx, sx.items[1], pragma, "type name"),
       newEmptyNode(),
-      ctx.emitTypeBody(sx.items[2])
+      ctx.emitTypeBody(sx.items[bodyIdx])
     ).attachLineInfo(sx)
   ).attachLineInfo(sx)
 
@@ -449,6 +512,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       emitQuote(sx)
     elif sx.items[0].isSymbol("quasiquote"):
       raiseCompilerError(sx.span, "runtime quasiquote is not implemented yet")
+    elif sx.items[0].isSymbol("pragma"):
+      raiseCompilerError(sx.span, "pragma is only allowed as a declaration annotation")
     else:
       ctx.emitCall(sx)
 
