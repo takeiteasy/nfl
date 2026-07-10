@@ -2,12 +2,58 @@
 
 > **WARNING**: Work in progress
 
-**N**im **F**lavoured **L**isp (NFL) is a lisp dialect that processes s-expressions into Nim expressions using Nim macros. It is inspired by [Hylang](https://hylang.org/).
+**NFL** is a Lisp dialect that compiles to Nim. It processes s-expressions into Nim AST via macros, giving you Lisp syntax with full access to the Nim ecosystem and type system.
 
-## LICENSE
+Inspired by [Hylang](https://hylang.org/).
+
+## Quick example
+
+```lisp
+(import std/strutils)
+
+(proc greet ((name string)) (: string)
+  (toUpperAscii name))
+
+(echo (greet "nfl"))
+```
+
+Compile and run:
+
+```sh
+nfl compile hello.nfl && ./hello
+# NFL
+```
+
+## Building
+
+Requires **Nim >= 2.2.4**.
+
+```sh
+nimble build
+```
+
+This produces a `bin/nfl` binary. To run it against a file:
+
+```sh
+nfl check   file.nfl   # type-check only
+nfl compile file.nfl   # compile to binary
+```
+
+## Documentation
+
+- [Getting Started](docs/getting-started.md) — installation, first program, core concepts
+- [Language Reference](docs/language-reference.md) — all language forms
+- [Macro System](docs/macros.md) — writing and using macros
+- [Nim Interop](docs/nim-interop.md) — calling Nim stdlib, dot notation, exports, pragmas
+
+## Examples
+
+The `examples/` directory contains runnable `.nfl` programs covering types, loops, error handling, macros, pragmas, and Nim interop.
+
+## License
+
 ```
 NFL — Nim Flavoured Lisp
-
 Copyright (C) 2025 George Watson
 
 This program is free software: you can redistribute it and/or modify
@@ -17,9 +63,9 @@ the Free Software Foundation, either version 3 of the License, or
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 ```
