@@ -2,6 +2,13 @@
 ;
 ; Pragmas are written as `{.name.}` or `{.name1, name2.}` and placed
 ; immediately after the declaration name they annotate.
+;
+; Two pragma forms are supported:
+;   Marker pragmas:  {.inline.}            — no argument
+;   Value pragmas:   {.importc: "name".}   — key: value pair (colon syntax)
+; Both forms may be mixed freely: {.inline, importc: "foo".}
+
+; --- Marker pragmas (no argument) ---
 
 ; Proc pragma — {.discardable.} lets callers ignore the return value.
 (proc makeAnswer {.discardable.} () (: int)
@@ -37,5 +44,35 @@
 ; Pragma on const.
 (const maxItems {.used.} 100)
 
+; --- Value pragmas (key: value) ---
+
+; {.raises: [].} declares that a proc raises no exceptions.
+(proc safeAdd {.raises: [].} ((x int) (y int)) (: int)
+  (+ x y))
+
+; {.deprecated: "msg".} marks a proc as deprecated with a message.
+(proc oldDouble {.deprecated: "use doubled instead".} ((x int)) (: int)
+  (* x 2))
+
+; Marker and value pragmas mixed on the same declaration.
+(proc fastSafe {.inline, raises: [].} ((x int) (y int)) (: int)
+  (+ x y))
+
+; --- Local binding pragmas ---
+
+; Pragmas can annotate local let/var bindings inside expressions.
+; The pragma sits between the binding target and the value.
+(defvar letResult
+  (let ((x {.used.} 10))
+    x))
+
+; Typed local binding with a pragma.
+(defvar typedLetResult
+  (let (((n int) {.used.} 5))
+    n))
+
 (echo (addFast 3 4))
 (echo (doubled 5))
+(echo (safeAdd 10 20))
+(echo letResult)
+(echo typedLetResult)

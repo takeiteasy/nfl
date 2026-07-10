@@ -137,6 +137,59 @@ suite "reader pragma syntax":
     check forms[0].kind == sxSymbol
     check forms[0].sym == "{myvar}"
 
+suite "reader value pragma syntax":
+  test "reads a single key:value pragma entry":
+    let sx = readOne("{.importc: \"foo\".}", "pragma.nfl")
+    check sx.kind == sxList
+    check sx.items.len == 2
+    check sx.items[0].sym == "pragma"
+    # entry is a (: importc "foo") list
+    let entry = sx.items[1]
+    check entry.kind == sxList
+    check entry.items.len == 3
+    check entry.items[0].sym == ":"
+    check entry.items[1].sym == "importc"
+    check entry.items[2].kind == sxString
+    check entry.items[2].strVal == "foo"
+    checkSpans(sx)
+
+  test "reads a key:[vector] pragma entry":
+    let sx = readOne("{.raises: [IOError].}", "pragma.nfl")
+    check sx.kind == sxList
+    check sx.items.len == 2
+    let entry = sx.items[1]
+    check entry.kind == sxList
+    check entry.items[0].sym == ":"
+    check entry.items[1].sym == "raises"
+    # value is a vector [IOError]
+    check entry.items[2].kind == sxVector
+    check entry.items[2].items.len == 1
+    check entry.items[2].items[0].sym == "IOError"
+
+  test "reads mixed markers and value entries":
+    let sx = readOne("{.inline, importc: \"foo\".}", "pragma.nfl")
+    check sx.kind == sxList
+    check sx.items.len == 3
+    check sx.items[1].kind == sxSymbol
+    check sx.items[1].sym == "inline"
+    let entry = sx.items[2]
+    check entry.kind == sxList
+    check entry.items[1].sym == "importc"
+    check entry.items[2].strVal == "foo"
+
+  test "reads multiple value entries":
+    let sx = readOne("{.importc: \"foo\", raises: [].}", "pragma.nfl")
+    check sx.items.len == 3
+    check sx.items[1].items[1].sym == "importc"
+    check sx.items[2].items[1].sym == "raises"
+
+  test "existing whitespace-separated markers still parse as two entries":
+    # Regression guard: {.inline cdecl.} must remain two separate markers.
+    let sx = readOne("{.inline cdecl.}", "pragma.nfl")
+    check sx.items.len == 3
+    check sx.items[1].sym == "inline"
+    check sx.items[2].sym == "cdecl"
+
 suite "reader malformed syntax":
   test "reports unterminated string":
     expectReaderError("\"no end", "unterminated string")

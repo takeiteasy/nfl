@@ -247,6 +247,27 @@ suite "lowering validation":
     # Write (pragma foo*) directly — foo* contains `*`.
     expectLowerModuleError("(proc add (pragma foo*) ((x int)) x)", "pragma entry must be a marker symbol")
 
+  test "allows value pragma on proc":
+    discard lowerModule(readAll("(proc cFoo {.importc: \"foo\", cdecl.} () (: int) 0)", "lower-test.nfl"))
+
+  test "allows value pragma on defvar":
+    discard lowerModule(readAll("(defvar x {.importc: \"gFoo\".} int)", "lower-test.nfl"))
+
+  test "rejects export marker in value pragma key":
+    expectLowerModuleError("(proc add (pragma (: foo* 1)) ((x int)) x)", "pragma key must be a non-empty symbol")
+
+  test "allows pragma on local let binding (untyped)":
+    discard lowerExpr(readOne("(let ((x {.volatile.} 1)) x)", "lower-test.nfl"))
+
+  test "allows pragma on local let binding (typed)":
+    discard lowerExpr(readOne("(let (((x int) {.volatile.} 5)) x)", "lower-test.nfl"))
+
+  test "allows pragma on local var binding":
+    discard lowerExpr(readOne("(var ((x {.volatile.} 1)) x)", "lower-test.nfl"))
+
+  test "rejects non-pragma clause between binding target and value":
+    expectLowerError("(let ((x 42 1)) x)", "expected pragma clause between binding target and value")
+
   test "allows generic proc declaration":
     discard lowerModule(readAll("(proc identity [T] ((x T)) (: T) x)", "lower-test.nfl"))
     discard lowerModule(readAll("(proc pair [T U] ((a T) (b U)) (: T) a)", "lower-test.nfl"))

@@ -20,11 +20,20 @@ proc isPragmaClause(sx: Syntax): bool =
 
 proc validatePragma(sx: Syntax) =
   ## Validates a pragma clause `(pragma m1 m2 …)`.  Each entry after the head
-  ## must be a plain non-empty symbol with no export marker.
+  ## must be either:
+  ##   - a plain non-empty symbol (marker pragma), or
+  ##   - a value entry `(: key value)` where `key` is a non-empty symbol without `*`.
   for i in 1 ..< sx.items.len:
     let entry = sx.items[i]
-    if entry.kind != sxSymbol or entry.sym.len == 0 or entry.sym.contains("*"):
-      raiseCompilerError(entry.span, "pragma entry must be a marker symbol")
+    if entry.kind == sxSymbol:
+      if entry.sym.len == 0 or entry.sym.contains("*"):
+        raiseCompilerError(entry.span, "pragma entry must be a marker symbol")
+    elif entry.kind == sxList and entry.items.len == 3 and entry.items[0].isSymbol(":"):
+      let key = entry.items[1]
+      if key.kind != sxSymbol or key.sym.len == 0 or key.sym.contains("*"):
+        raiseCompilerError(key.span, "pragma key must be a non-empty symbol")
+    else:
+      raiseCompilerError(entry.span, "pragma entry must be a marker symbol or key: value pair")
 
 proc formName(sx: Syntax): string =
   if sx.kind == sxSymbol: sx.sym else: "form"
@@ -71,8 +80,14 @@ proc isNamedArg(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol(":")
 
 proc bindingName(binding: Syntax): Syntax =
-  if binding.kind != sxList or binding.items.len != 2:
-    raiseCompilerError(binding.span, "binding must be a pair")
+  ## Returns the name symbol from a binding pair `(target value)` or
+  ## an annotated binding triple `(target {.pragma.} value)`.
+  if binding.kind != sxList or binding.items.len notin {2, 3}:
+    raiseCompilerError(binding.span, "binding must be a pair or annotated triple")
+  if binding.items.len == 3:
+    if not binding.items[1].isPragmaClause():
+      raiseCompilerError(binding.items[1].span, "expected pragma clause between binding target and value")
+    validatePragma(binding.items[1])
   let target = binding.items[0]
   if target.kind == sxSymbol:
     return target
@@ -93,8 +108,8 @@ proc lowerBindings(ctx: var LowerContext; bindings: Syntax; mutable: bool) =
     raiseCompilerError(bindings.span, "bindings must be a list")
 
   for binding in bindings.items:
-    discard binding.bindingName()
-    lowerExpr(ctx, binding.items[1])
+    discard binding.bindingName()                  # validates structure + optional pragma
+    lowerExpr(ctx, binding.items[binding.items.high])  # value is always the last item
 
   ctx.pushScope()
   let kind = if mutable: bkMutable else: bkImmutable

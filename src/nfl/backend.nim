@@ -53,6 +53,8 @@ proc expectArity(sx: Syntax; name: string; actual, expected: int) =
 proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode
 proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode
 proc emitNamedArg(ctx: var EmitContext; sx: Syntax): NimNode
+proc emitPragma(ctx: var EmitContext; sx: Syntax): NimNode
+proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: string): NimNode
 
 proc isNamedArg(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol(":")
@@ -184,15 +186,27 @@ proc emitBlockExpr(stmts: seq[NimNode]; body: NimNode): NimNode =
   nnkBlockStmt.newTree(newEmptyNode(), list)
 
 proc emitBindingIdentDefs(ctx: var EmitContext; binding: Syntax): NimNode =
-  if binding.kind != sxList or binding.items.len != 2:
-    raiseCompilerError(binding.span, "binding must be a pair")
+  if binding.kind != sxList or binding.items.len notin {2, 3}:
+    raiseCompilerError(binding.span, "binding must be a pair or annotated triple")
   let target = binding.items[0]
-  let value = ctx.emitExpr(binding.items[1])
+  # Optional pragma clause at items[1] for annotated bindings `(target {.p.} value)`.
+  var pragma: Syntax = nil
+  if binding.items.len == 3:
+    pragma = binding.items[1]
+  let value = ctx.emitExpr(binding.items[binding.items.high])
   if target.kind == sxSymbol:
-    return nnkIdentDefs.newTree(ctx.identForSymbol(target), newEmptyNode(), value).attachLineInfo(binding)
+    return nnkIdentDefs.newTree(
+      ctx.pragmaDeclIdent(target, pragma, "binding name"),
+      newEmptyNode(),
+      value
+    ).attachLineInfo(binding)
   if target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and
       (target.items[1].kind == sxSymbol or target.items[1].kind == sxVector):
-    return nnkIdentDefs.newTree(ctx.identForSymbol(target.items[0]), emitTypeRef(target.items[1]), value).attachLineInfo(binding)
+    return nnkIdentDefs.newTree(
+      ctx.pragmaDeclIdent(target.items[0], pragma, "binding name"),
+      emitTypeRef(target.items[1]),
+      value
+    ).attachLineInfo(binding)
   raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
 
 proc emitLetLike(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
@@ -258,11 +272,25 @@ proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
     ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)
   ).attachLineInfo(sx)
 
-proc emitPragma(sx: Syntax): NimNode =
+proc emitPragma(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits a `nnkPragma` node from a `(pragma m1 m2 …)` syntax object.
+  ## Each entry is either:
+  ##   - a symbol (marker pragma) → bare `ident`
+  ##   - a list `(: key value)` (value pragma) → `nnkExprColonExpr(ident(key), emitExpr(value))`
   result = nnkPragma.newTree().attachLineInfo(sx)
   for i in 1 ..< sx.items.len:
-    result.add ident(sx.items[i].sym).attachLineInfo(sx.items[i])
+    let entry = sx.items[i]
+    if entry.kind == sxSymbol:
+      result.add ident(entry.sym).attachLineInfo(entry)
+    elif entry.kind == sxList and entry.items.len == 3 and entry.items[0].isSymbol(":"):
+      let key = entry.items[1]
+      let value = entry.items[2]
+      result.add nnkExprColonExpr.newTree(
+        ident(key.sym).attachLineInfo(key),
+        ctx.emitExpr(value)
+      ).attachLineInfo(entry)
+    else:
+      raiseCompilerError(entry.span, "invalid pragma entry")
 
 proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: string): NimNode =
   ## Returns the declaration identifier for `name`, wrapped in `nnkPragmaExpr`
@@ -271,7 +299,7 @@ proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: s
   let nameNode = ctx.declIdent(name, what)
   if pragma == nil:
     return nameNode
-  nnkPragmaExpr.newTree(nameNode, emitPragma(pragma)).attachLineInfo(name)
+  nnkPragmaExpr.newTree(nameNode, ctx.emitPragma(pragma)).attachLineInfo(name)
 
 proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len < 4:
@@ -289,7 +317,7 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
   var pragmaNode: NimNode = newEmptyNode()
   let pragmaIdx = paramsIdx - 1
   if pragmaIdx >= 2 and sx.items[pragmaIdx].isPragmaClause():
-    pragmaNode = emitPragma(sx.items[pragmaIdx])
+    pragmaNode = ctx.emitPragma(sx.items[pragmaIdx])
   let params = sx.items[paramsIdx]
   if params.kind != sxList:
     raiseCompilerError(params.span, "proc parameters must be a list")

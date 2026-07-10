@@ -189,6 +189,18 @@ nflModule """
 (defvar pragmaVar {.used.} 77)
 ; Pragma on const.
 (const pragmaConst {.used.} 13)
+; Value pragma: {.deprecated: "msg".} is usable without external linkage.
+(proc oldHelper {.deprecated: "use newHelper instead".} () (: int)
+  99)
+; Value pragma: {.raises: [].} declares proc raises nothing.
+(proc noRaises {.raises: [].} () (: int)
+  42)
+; Local let binding pragma.
+(defvar localPragmaResult
+  (let ((x {.used.} 7)) x))
+; Local let binding with type and pragma.
+(defvar localTypedPragmaResult
+  (let (((x int) {.used.} 12)) x))
 ; Generic declarations.
 ; Simple generic proc — inference-based call.
 (proc identity [T] ((x T)) (: T)
@@ -359,6 +371,20 @@ suite "nfl module backend":
 
   test "pragma on const compiles":
     check pragmaConst == 13
+
+  test "value pragma {.deprecated: msg.} compiles and proc is callable":
+    {.push warnings: off.}
+    check oldHelper() == 99
+    {.pop.}
+
+  test "value pragma {.raises: [].} compiles and proc is callable":
+    check noRaises() == 42
+
+  test "local let binding with pragma compiles and evaluates":
+    check localPragmaResult == 7
+
+  test "typed local let binding with pragma compiles and evaluates":
+    check localTypedPragmaResult == 12
 
   test "generic proc — inference-based call":
     check identity(42) == 42
