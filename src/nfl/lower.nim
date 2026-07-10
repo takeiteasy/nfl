@@ -230,14 +230,18 @@ proc validateGenericParams(sx: Syntax) =
       raiseCompilerError(entry.span, "duplicate generic parameter: " & entry.sym)
     seen[entry.sym] = true
 
-proc lowerProc(ctx: var LowerContext; sx: Syntax) =
+proc lowerRoutine(ctx: var LowerContext; sx: Syntax; formName: string;
+                  requireReturnType: bool) =
+  ## Shared validation for proc/template/iterator definition forms.
+  ## `requireReturnType` causes an error when no `(: type)` annotation is
+  ## present — used for iterator which needs an explicit element type.
   if sx.items.len < 4:
-    raiseCompilerError(sx.span, "proc expects name, parameters, and body")
+    raiseCompilerError(sx.span, formName & " expects name, parameters, and body")
   let name = sx.items[1]
   if name.kind != sxSymbol:
-    raiseCompilerError(name.span, "proc name must be a symbol")
+    raiseCompilerError(name.span, formName & " name must be a symbol")
   # Validate the export marker early so errors point at the name, not the body.
-  let baseName = name.validateExportedDecl("proc name")
+  let baseName = name.validateExportedDecl(formName & " name")
   # Optional generic-params vector immediately after the name.
   let genIdx = procGenericIdx(sx)
   if genIdx >= 0:
@@ -247,22 +251,40 @@ proc lowerProc(ctx: var LowerContext; sx: Syntax) =
   let pragmaIdx = paramsIdx - 1
   if pragmaIdx >= 2 and sx.items[pragmaIdx].isPragmaClause():
     if paramsIdx > sx.items.high:
-      raiseCompilerError(sx.span, "proc expects name, parameters, and body")
+      raiseCompilerError(sx.span, formName & " expects name, parameters, and body")
     validatePragma(sx.items[pragmaIdx])
   let params = sx.items[paramsIdx]
   if params.kind != sxList:
-    raiseCompilerError(params.span, "proc parameters must be a list")
+    raiseCompilerError(params.span, formName & " parameters must be a list")
   let bodyStart = procBodyStart(sx)
+  if requireReturnType and bodyStart == paramsIdx + 1:
+    raiseCompilerError(sx.span, formName & " requires an explicit return type (: type)")
   if bodyStart > sx.items.high:
-    raiseCompilerError(sx.span, "proc expects body expression")
+    raiseCompilerError(sx.span, formName & " expects body expression")
   ctx.pushScope()
   for param in params.items:
     lowerParam(ctx, param)
   lowerBody(ctx, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ctx.popScope()
-  # Proc names resolve via Nim's own name resolution; we register under the
+  # Routine names resolve via Nim's own name resolution; we register under the
   # base name (stripped of any `*`) so local set!/lookup always finds it.
   declare(ctx, newSymbol(baseName, name.span), bkImmutable)
+
+proc lowerProc(ctx: var LowerContext; sx: Syntax) =
+  lowerRoutine(ctx, sx, "proc", requireReturnType = false)
+
+proc lowerTemplate(ctx: var LowerContext; sx: Syntax) =
+  lowerRoutine(ctx, sx, "template", requireReturnType = false)
+
+proc lowerIterator(ctx: var LowerContext; sx: Syntax) =
+  lowerRoutine(ctx, sx, "iterator", requireReturnType = true)
+
+proc lowerYield(ctx: var LowerContext; sx: Syntax) =
+  ## Validates a `(yield expr)` form.  NFL does not enforce that yield only
+  ## appears inside an iterator body — Nim's semantic pass handles that.
+  if sx.items.len != 2:
+    raiseCompilerError(sx.span, "yield expects exactly one expression")
+  lowerExpr(ctx, sx.items[1])
 
 proc lowerDefvar(ctx: var LowerContext; sx: Syntax) =
   let formName = sx.items[0].sym
@@ -645,8 +667,14 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerSet(ctx, sx)
     elif sx.items[0].isSymbol("do"):
       lowerLambda(ctx, sx)
+    elif sx.items[0].isSymbol("yield"):
+      lowerYield(ctx, sx)
     elif sx.items[0].isSymbol("proc"):
       raiseCompilerError(sx.span, "proc is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("template"):
+      raiseCompilerError(sx.span, "template is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("iterator"):
+      raiseCompilerError(sx.span, "iterator is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("type"):
       raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("."):
@@ -695,6 +723,12 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
       return
     if sx.items[0].isSymbol("proc"):
       lowerProc(ctx, sx)
+      return
+    if sx.items[0].isSymbol("template"):
+      lowerTemplate(ctx, sx)
+      return
+    if sx.items[0].isSymbol("iterator"):
+      lowerIterator(ctx, sx)
       return
     if sx.items[0].isSymbol("type"):
       lowerTypeDecl(ctx, sx)

@@ -1,0 +1,25 @@
+; Demonstrates Nim template definitions from NFL.
+; Templates are zero-cost compile-time abstractions that expand inline.
+
+; A template with a typed parameter — wraps a value in a block with logging.
+(template withLog ((label string) body)
+  (block
+    (echo ">>> " label)
+    body
+    (echo "<<< " label)))
+
+; A template with a return type — computes the square of an int.
+(template square ((x int)) (: int)
+  (* x x))
+
+; A template with a bare-symbol (untyped) parameter — injects code inline.
+; The bare symbol `expr` becomes an `untyped` parameter in Nim.
+(template twice (expr)
+  (block expr expr))
+
+; Use the templates.
+(withLog "demo" (echo "inside block"))
+
+(echo "square(6) = " (square 6))
+
+(twice (echo "printed twice"))

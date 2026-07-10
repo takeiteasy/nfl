@@ -1,0 +1,33 @@
+; Demonstrates Nim iterator definitions from NFL.
+; Iterators work with NFL `for` loops exactly like Nim's built-in iterators.
+
+; An iterator that yields integers in the half-open range [0, n).
+(iterator upTo ((n int)) (: int)
+  (for (i (.. 0 (- n 1)))
+    (yield i)))
+
+; An iterator that yields every other element (even indices) of a range.
+(iterator evens ((limit int)) (: int)
+  (for (i (.. 0 limit))
+    (if (== (mod i 2) 0)
+        (yield i)
+        nil)))
+
+; Consume `upTo` with a for loop — prints 0 1 2 3 4.
+(echo "upTo(5):")
+(for (x (upTo 5))
+  (echo "  " x))
+
+; Accumulate the sum of upTo(6) = 0+1+2+3+4+5 = 15.
+(defvar total
+  (block
+    (var ((acc 0))
+      (for (x (upTo 6))
+        (set! acc (+ acc x)))
+      acc)))
+(echo "sum of upTo(6) = " total)
+
+; Print even numbers below 10: 0 2 4 6 8 10.
+(echo "evens up to 10:")
+(for (n (evens 10))
+  (echo "  " n))

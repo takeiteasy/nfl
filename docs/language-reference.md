@@ -107,6 +107,70 @@ Omit the return type for void procedures:
     (* n 2)))
 ```
 
+### `template` — Nim template definition
+
+Defines a zero-cost compile-time template. Templates expand inline at the call site with no runtime overhead.
+
+```lisp
+(template name (params...) (: return-type)
+  body...)
+
+(template name* (params...) ...)  ; exported
+(template name {.pragma.} (params...) ...)
+```
+
+Parameters follow the same `(name type)` form as `proc`. A bare symbol parameter (no type) becomes an `untyped` template parameter in Nim:
+
+```lisp
+; Typed parameter
+(template square ((x int)) (: int)
+  (* x x))
+
+; Untyped parameter — accepts any expression
+(template twice (expr)
+  (block expr expr))
+
+; With logging prefix
+(template withLog ((label string) body)
+  (block
+    (echo ">>> " label)
+    body
+    (echo "<<< " label)))
+```
+
+The return type annotation `(: type)` is optional; omit it for void templates.
+
+### `iterator` — Nim iterator definition
+
+Defines a Nim inline iterator. Iterators are consumed by `for` loops and must have an explicit return type `(: elem-type)`.
+
+```lisp
+(iterator name ((param type) ...) (: yield-type)
+  body...)
+
+(iterator name* ((param type) ...) (: yield-type) ...)  ; exported
+(iterator name {.pragma.} ((param type) ...) (: yield-type) ...)
+```
+
+Use `yield` inside the body to produce values:
+
+```lisp
+(iterator upTo ((n int)) (: int)
+  (for (i (.. 0 (- n 1)))
+    (yield i)))
+
+(for (x (upTo 5))
+  (echo x))    ; prints 0 1 2 3 4
+```
+
+### `yield` — produce an iterator value
+
+```lisp
+(yield expr)
+```
+
+Valid only inside an `iterator` body. Nim's compiler enforces this restriction.
+
 ## Types
 
 ### `type` — type declaration

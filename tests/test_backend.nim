@@ -295,6 +295,35 @@ nflModule """
   (try
     (raise (newException CatchableError "any"))
     (except "handled")))
+; --- Template tests ---
+; Unexported template: squares an int.
+(template square ((x int))
+  (* x x))
+; Exported template with explicit return type — callable under base name from Nim/NFL.
+(template double* ((x int)) (: int)
+  (* x 2))
+; Template with bare-symbol (untyped) param — e.g. used for code injection.
+(template inject (body)
+  body)
+; Use templates via defvar.
+(defvar templateResult (square 7))
+(defvar injectResult (inject 99))
+; --- Iterator tests ---
+; Unexported iterator yielding 0..n-1 used for the defvar sum.
+(iterator upTo ((n int)) (: int)
+  (for (i (.. 0 (- n 1)))
+    (yield i)))
+; Exported iterator — callable from NFL for and from Nim.
+(iterator range2* ((n int)) (: int)
+  (for (i (.. 0 (- n 1)))
+    (yield i)))
+; Sum all values produced by the unexported iterator.
+(defvar iterSum
+  (block
+    (var ((acc 0))
+      (for (x (upTo 5))
+        (set! acc (+ acc x)))
+      acc)))
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -443,3 +472,22 @@ suite "nfl module backend — for / case / raise / try":
 
   test "try — bare catch-all catches any exception":
     check tryBare() == "handled"
+
+suite "nfl module backend — template / iterator":
+  test "template definition produces correct value":
+    check templateResult == 49   # square(7) = 7 * 7 = 49
+
+  test "exported template callable under base name":
+    check double(4) == 8
+
+  test "template with untyped param":
+    check injectResult == 99
+
+  test "iterator sum via for loop":
+    check iterSum == 10   # 0 + 1 + 2 + 3 + 4 = 10
+
+  test "exported iterator callable from NFL for":
+    var s = 0
+    for x in range2(4):
+      s += x
+    check s == 6   # 0 + 1 + 2 + 3 = 6

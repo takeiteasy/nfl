@@ -418,3 +418,85 @@ suite "lowering validation":
 
   test "rejects set! on named except binding":
     expectLowerError("(try (riskyCall) (except (e ValueError) (set! e nil)))", "immutable binding")
+
+  # ---------------------------------------------------------------------------
+  # template
+  # ---------------------------------------------------------------------------
+
+  test "allows basic template":
+    discard lowerModule(readAll("(template double ((x int)) (* x 2))", "lower-test.nfl"))
+
+  test "allows template with bare-symbol (untyped) param":
+    discard lowerModule(readAll("(template withLog (body) body)", "lower-test.nfl"))
+
+  test "allows exported template":
+    discard lowerModule(readAll("(template double* ((x int)) (* x 2))", "lower-test.nfl"))
+
+  test "allows template with pragma":
+    discard lowerModule(readAll("(template double {.deprecated.} ((x int)) (* x 2))", "lower-test.nfl"))
+
+  test "allows generic template":
+    discard lowerModule(readAll("(template echo2 [T] ((x T)) (block (echo x) (echo x)))", "lower-test.nfl"))
+
+  test "allows template with return type":
+    discard lowerModule(readAll("(template double ((x int)) (: int) (* x 2))", "lower-test.nfl"))
+
+  test "rejects template with too few arguments":
+    expectLowerModuleError("(template tooShort ())", "template expects name, parameters, and body")
+
+  test "rejects template with non-symbol name":
+    expectLowerModuleError("(template 42 () body)", "template name must be a symbol")
+
+  test "rejects template with non-list params":
+    expectLowerModuleError("(template t x body)", "template parameters must be a list")
+
+  test "rejects template in expression position":
+    expectLowerError("(template t () 1)", "template is only allowed at statement/module scope")
+
+  test "rejects export marker in template name mid-position":
+    expectLowerModuleError("(template te*mpl ((x int)) x)", "export marker is only allowed at the end of a name")
+
+  # ---------------------------------------------------------------------------
+  # iterator
+  # ---------------------------------------------------------------------------
+
+  test "allows basic iterator":
+    discard lowerModule(readAll("(iterator upTo ((n int)) (: int) (yield n))", "lower-test.nfl"))
+
+  test "allows exported iterator":
+    discard lowerModule(readAll("(iterator upTo* ((n int)) (: int) (yield n))", "lower-test.nfl"))
+
+  test "allows iterator with pragma":
+    discard lowerModule(readAll("(iterator upTo {.inline.} ((n int)) (: int) (yield n))", "lower-test.nfl"))
+
+  test "rejects iterator missing return type":
+    expectLowerModuleError("(iterator upTo ((n int)) (yield n))", "iterator requires an explicit return type")
+
+  test "rejects iterator with too few arguments":
+    expectLowerModuleError("(iterator tooShort ())", "iterator expects name, parameters, and body")
+
+  test "rejects iterator with non-symbol name":
+    expectLowerModuleError("(iterator 42 () (yield 1))", "iterator name must be a symbol")
+
+  test "rejects iterator with non-list params":
+    # `params` is a symbol, not a list; the params slot must be a list `(...)`.
+    expectLowerModuleError("(iterator it params (: int) body)", "iterator parameters must be a list")
+
+  test "rejects iterator in expression position":
+    expectLowerError("(iterator it () (: int) (yield 1))", "iterator is only allowed at statement/module scope")
+
+  test "rejects export marker in iterator name mid-position":
+    expectLowerModuleError("(iterator up*To ((n int)) (: int) (yield n))", "export marker is only allowed at the end of a name")
+
+  # ---------------------------------------------------------------------------
+  # yield
+  # ---------------------------------------------------------------------------
+
+  test "allows yield with expression":
+    discard lowerExpr(readOne("(yield 42)", "lower-test.nfl"))
+
+  test "rejects yield with no arguments":
+    expectLowerError("(yield)", "yield expects exactly one expression")
+
+  test "rejects yield with too many arguments":
+    expectLowerError("(yield 1 2)", "yield expects exactly one expression")

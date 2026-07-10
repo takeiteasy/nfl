@@ -301,30 +301,38 @@ proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: s
     return nameNode
   nnkPragmaExpr.newTree(nameNode, ctx.emitPragma(pragma)).attachLineInfo(name)
 
-proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
+proc emitRoutine(ctx: var EmitContext; sx: Syntax; nodeKind: NimNodeKind;
+                 formName: string; stmtBody: bool = false): NimNode =
+  ## Shared emitter for proc/template/iterator definition forms.
+  ## All three Nim routine kinds share the identical 7-slot AST layout as
+  ## nnkProcDef: (name, patterns, genericParams, formalParams, pragma, reserved, body).
+  ##
+  ## `stmtBody` — when true the routine body is emitted as a plain statement
+  ## list rather than as an expression (required for iterators whose bodies
+  ## are yield-statement sequences, not value-producing expressions).
   if sx.items.len < 4:
-    raiseCompilerError(sx.span, "proc expects name, parameters, and body")
+    raiseCompilerError(sx.span, formName & " expects name, parameters, and body")
   let name = sx.items[1]
   if name.kind != sxSymbol:
-    raiseCompilerError(name.span, "proc name must be a symbol")
-  # Optional generic-params vector (slot 2) → nnkProcDef slot 2.
+    raiseCompilerError(name.span, formName & " name must be a symbol")
+  # Optional generic-params vector (slot 2) → routine node slot 2.
   let genIdx = procGenericIdx(sx)
   var genericParamsNode: NimNode = newEmptyNode()
   if genIdx >= 0:
     genericParamsNode = emitGenericParams(sx.items[genIdx])
   let paramsIdx = procParamsIdx(sx)
-  # Extract optional pragma (goes into nnkProcDef slot 4).
+  # Extract optional pragma (goes into routine node slot 4).
   var pragmaNode: NimNode = newEmptyNode()
   let pragmaIdx = paramsIdx - 1
   if pragmaIdx >= 2 and sx.items[pragmaIdx].isPragmaClause():
     pragmaNode = ctx.emitPragma(sx.items[pragmaIdx])
   let params = sx.items[paramsIdx]
   if params.kind != sxList:
-    raiseCompilerError(params.span, "proc parameters must be a list")
+    raiseCompilerError(params.span, formName & " parameters must be a list")
 
   let bodyStart = procBodyStart(sx)
   if bodyStart > sx.items.high:
-    raiseCompilerError(sx.span, "proc expects body expression")
+    raiseCompilerError(sx.span, formName & " expects body expression")
 
   var returnType = ident("auto")
   let retIdx = paramsIdx + 1
@@ -336,15 +344,39 @@ proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
   for param in params.items:
     formalParams.add ctx.emitParam(param)
 
-  nnkProcDef.newTree(
-    ctx.declIdent(name, "proc name"),
+  let bodyNode =
+    if stmtBody:
+      # Iterator bodies are pure statement sequences — do not use emitBodyExpr
+      # which would wrap the last item as a value-producing expression.
+      var stmts = newStmtList()
+      for item in sx.items.toOpenArray(bodyStart, sx.items.high):
+        stmts.add ctx.emitStmt(item)
+      stmts
+    else:
+      ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
+
+  nodeKind.newTree(
+    ctx.declIdent(name, formName & " name"),
     newEmptyNode(),
     genericParamsNode,
     formalParams,
     pragmaNode,
     newEmptyNode(),
-    ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
+    bodyNode
   ).attachLineInfo(sx)
+
+proc emitProc(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitRoutine(sx, nnkProcDef, "proc")
+
+proc emitTemplate(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitRoutine(sx, nnkTemplateDef, "template")
+
+proc emitIterator(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitRoutine(sx, nnkIteratorDef, "iterator", stmtBody = true)
+
+proc emitYield(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits a `(yield expr)` form as `nnkYieldStmt`.
+  nnkYieldStmt.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
 
 proc emitDefvar(ctx: var EmitContext; sx: Syntax): NimNode =
   let formName = sx.items[0].sym
@@ -714,6 +746,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitSet(sx)
     elif sx.items[0].isSymbol("do"):
       ctx.emitLambda(sx)
+    elif sx.items[0].isSymbol("yield"):
+      ctx.emitYield(sx)
     elif sx.items[0].isSymbol("."):
       ctx.emitDot(sx)
     elif sx.items[0].isSymbol("at"):
@@ -738,6 +772,10 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("proc"):
       raiseCompilerError(sx.span, "proc is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("template"):
+      raiseCompilerError(sx.span, "template is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("iterator"):
+      raiseCompilerError(sx.span, "iterator is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("type"):
       raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
@@ -778,6 +816,12 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return emitImport(sx)
     if sx.items[0].isSymbol("proc"):
       return ctx.emitProc(sx)
+    if sx.items[0].isSymbol("template"):
+      return ctx.emitTemplate(sx)
+    if sx.items[0].isSymbol("iterator"):
+      return ctx.emitIterator(sx)
+    if sx.items[0].isSymbol("yield"):
+      return ctx.emitYield(sx)
     if sx.items[0].isSymbol("type"):
       return ctx.emitTypeDecl(sx)
   newCall(bindSym"nflStmt", ctx.emitExpr(sx)).attachLineInfo(sx)

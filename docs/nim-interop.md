@@ -162,6 +162,38 @@ Pragmas annotate declarations with Nim compiler hints. They are written as `{.na
 
 See `examples/pragmas.nfl` for a complete runnable demonstration.
 
+## NFL-defined templates and iterators from Nim
+
+When you export an NFL-defined template or iterator (with `*`), it is a real Nim symbol and can be called from Nim code that imports the compiled module, exactly like a hand-written Nim template or iterator.
+
+```lisp
+; In myfuncs.nfl — these are exported Nim symbols.
+(template square* ((x int)) (: int)
+  (* x x))
+
+(iterator upTo* ((n int)) (: int)
+  (for (i (.. 0 (- n 1)))
+    (yield i)))
+```
+
+From Nim:
+
+```nim
+# myapp.nim
+import myfuncs
+
+echo square(5)          # 25
+for x in upTo(3):
+  echo x                # 0 1 2
+```
+
+Templates and iterators support the same pragma and generic annotations as `proc`:
+
+```lisp
+(template square* {.inline.} ((x int)) (: int) (* x x))
+(iterator upTo* [T] ((n T)) (: T) ...)
+```
+
 ## Full interop example
 
 ```lisp
