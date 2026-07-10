@@ -169,6 +169,10 @@ nflModule """
 (const (typedConst int) 11)
 (const publicSize* 3)
 (defconstant defconstantAlias 99)
+; Typed defvar tests — with value, without value (zero-initialized), exported.
+(defvar (typedVar int) 11)
+(defvar (typedBlank int))
+(defvar (typedExported* int) 22)
 ; Pragma tests.
 ; {.discardable.} lets us call the proc as a statement without `discard`.
 (proc makeValue {.discardable.} () (: int)
@@ -378,6 +382,15 @@ suite "nfl module backend":
 
   test "typed const declaration":
     check typedConst == 11
+
+  test "typed defvar declaration":
+    check typedVar == 11
+
+  test "typed defvar without value is zero-initialized":
+    check typedBlank == 0
+
+  test "typed exported defvar is accessible under its base name":
+    check typedExported == 22
 
   test "exported const is accessible under its base name":
     check publicSize == 3

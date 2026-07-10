@@ -383,21 +383,35 @@ proc emitYield(ctx: var EmitContext; sx: Syntax): NimNode =
 
 proc emitDefvar(ctx: var EmitContext; sx: Syntax): NimNode =
   let formName = sx.items[0].sym
-  let name = sx.items[1]
-  if name.kind != sxSymbol:
-    raiseCompilerError(name.span, formName & " name must be a symbol")
-  # Optional pragma clause between name and value.
+  let nameTarget = sx.items[1]
+  # Determine name ident and optional type ident.
   var pragma: Syntax = nil
-  var valueIdx = 2
-  if sx.items.len == 4 and sx.items[2].isPragmaClause():
-    pragma = sx.items[2]
-    valueIdx = 3
+  var nameIdent: NimNode
+  var typeIdent: NimNode = newEmptyNode()
+  if nameTarget.kind == sxSymbol:
+    nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name")
+  elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
+       nameTarget.items[0].kind == sxSymbol and
+       (nameTarget.items[1].kind == sxSymbol or nameTarget.items[1].kind == sxVector):
+    nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name")
+    typeIdent = emitTypeRef(nameTarget.items[1])
+  else:
+    raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
+  # Parse the optional pragma clause and optional value expression.
+  var nextIdx = 2
+  if nextIdx < sx.items.len and sx.items[nextIdx].isPragmaClause():
+    pragma = sx.items[nextIdx]
+    nextIdx += 1
+    # Re-emit nameIdent now that pragma is known.
+    if nameTarget.kind == sxSymbol:
+      nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name")
+    else:
+      nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name")
+  let valueSlot: NimNode =
+    if nextIdx < sx.items.len: ctx.emitExpr(sx.items[nextIdx])
+    else: newEmptyNode()
   nnkVarSection.newTree(
-    nnkIdentDefs.newTree(
-      pragmaDeclIdent(ctx, name, pragma, formName & " name"),
-      newEmptyNode(),
-      ctx.emitExpr(sx.items[valueIdx])
-    ).attachLineInfo(sx)
+    nnkIdentDefs.newTree(nameIdent, typeIdent, valueSlot).attachLineInfo(sx)
   ).attachLineInfo(sx)
 
 proc emitConst(ctx: var EmitContext; sx: Syntax): NimNode =

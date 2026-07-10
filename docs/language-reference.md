@@ -24,9 +24,12 @@
 
 ```lisp
 (defvar name value)
-(defvar (name type) value)    ; with type annotation
+(defvar (name type) value)    ; with explicit type annotation and value
+(defvar (name type))          ; type annotation only — Nim zero-initializes
 (defvar name {.pragma.} value)
 ```
+
+A value is required when no type annotation is given.
 
 ### `var` — local mutable binding
 

@@ -307,23 +307,44 @@ proc lowerYield(ctx: var LowerContext; sx: Syntax) =
 proc lowerDefvar(ctx: var LowerContext; sx: Syntax) =
   let formName = sx.items[0].sym
   let nargs = sx.items.len - 1
-  if nargs < 2 or nargs > 3:
-    raiseCompilerError(sx.span, formName & " expects 2 arguments, got " & $nargs)
-  let name = sx.items[1]
-  if name.kind != sxSymbol:
-    raiseCompilerError(name.span, formName & " name must be a symbol")
-  # Validate the export marker and strip it so the binding is registered under
-  # the base name; references always use the bare name, not `name*`.
-  let baseName = name.validateExportedDecl(formName & " name")
-  # Optional pragma clause immediately after the name.
-  var valueIdx = 2
-  if nargs == 3:
-    if not sx.items[2].isPragmaClause():
-      raiseCompilerError(sx.items[2].span, "expected pragma clause between " & formName & " name and value")
-    validatePragma(sx.items[2])
-    valueIdx = 3
-  lowerExpr(ctx, sx.items[valueIdx])
-  declare(ctx, newSymbol(baseName, name.span), bkMutable)
+  if nargs < 1 or nargs > 3:
+    raiseCompilerError(sx.span, formName & " expects 1 to 3 arguments, got " & $nargs)
+  let nameTarget = sx.items[1]
+  var baseName: string
+  var nameSpan: Span
+  var hasType = false
+  # Accept `name` (plain symbol) or `(name type)` (typed form).
+  if nameTarget.kind == sxSymbol:
+    baseName = nameTarget.validateExportedDecl(formName & " name")
+    nameSpan = nameTarget.span
+  elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
+       nameTarget.items[0].kind == sxSymbol and
+       (nameTarget.items[1].kind == sxSymbol or nameTarget.items[1].kind == sxVector):
+    baseName = nameTarget.items[0].validateExportedDecl(formName & " name")
+    nameSpan = nameTarget.items[0].span
+    validateTypeReference(nameTarget.items[1], formName & " type")
+    hasType = true
+  else:
+    raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
+  # Parse the optional pragma clause and optional value expression.
+  var pragmaIdx = -1
+  var valueIdx = -1
+  var nextIdx = 2
+  if nextIdx <= nargs and sx.items[nextIdx].isPragmaClause():
+    pragmaIdx = nextIdx
+    validatePragma(sx.items[pragmaIdx])
+    nextIdx += 1
+  if nextIdx <= nargs:
+    valueIdx = nextIdx
+    nextIdx += 1
+  if nextIdx <= nargs:
+    raiseCompilerError(sx.items[nextIdx].span, "unexpected extra argument in " & formName)
+  # A value is required unless there is an explicit type annotation.
+  if valueIdx < 0 and not hasType:
+    raiseCompilerError(sx.span, formName & " without a type annotation requires a value")
+  if valueIdx >= 0:
+    lowerExpr(ctx, sx.items[valueIdx])
+  declare(ctx, newSymbol(baseName, nameSpan), bkMutable)
 
 proc lowerConst(ctx: var LowerContext; sx: Syntax) =
   let formName = sx.items[0].sym

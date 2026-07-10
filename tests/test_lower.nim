@@ -199,6 +199,27 @@ suite "lowering validation":
   test "rejects bare export marker as defvar name":
     expectLowerModuleError("(defvar * 1)", "exported name must have a base name")
 
+  test "allows typed defvar declaration":
+    discard lowerModule(readAll("(defvar (limit int) 100)", "lower-test.nfl"))
+    discard lowerModule(readAll("(defparameter (cap int) 5)", "lower-test.nfl"))
+
+  test "allows typed exported defvar":
+    discard lowerModule(readAll("(defvar (scale* int) 2)", "lower-test.nfl"))
+    discard lowerModule(readAll("(defparameter (cap* int) 10)", "lower-test.nfl"))
+
+  test "allows typed defvar with generic/vector type":
+    discard lowerModule(readAll("(defvar (xs [seq int]))", "lower-test.nfl"))
+
+  test "allows typed defvar without a value":
+    discard lowerModule(readAll("(defvar (buf int))", "lower-test.nfl"))
+    discard lowerModule(readAll("(defparameter (idx int))", "lower-test.nfl"))
+
+  test "rejects untyped defvar without a value":
+    expectLowerModuleError("(defvar x)", "without a type annotation requires a value")
+
+  test "rejects defvar with malformed typed name":
+    expectLowerModuleError("(defvar (1 int) 5)", "name must be a symbol or (name type)")
+
   test "allows const declaration":
     discard lowerModule(readAll("(const answer 42)", "lower-test.nfl"))
     discard lowerModule(readAll("(const greeting \"hello\")", "lower-test.nfl"))
