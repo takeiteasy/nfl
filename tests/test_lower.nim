@@ -140,10 +140,38 @@ suite "lowering validation":
     expectLowerModuleError("(type Mood (enum happy happy))", "duplicate enum value: happy")
     expectLowerModuleError("(type Mood (enum happy*))", "enum values cannot use export markers")
 
-  test "rejects reserved type forms until implemented":
-    expectLowerModuleError("(type Pair (tuple (left int)))", "tuple type declarations are not implemented yet")
-    expectLowerModuleError("(type UserId (distinct int))", "distinct type declarations are not implemented yet")
-    expectLowerModuleError("(type PersonRef (ref object (name string)))", "ref object type declarations are not implemented yet")
+  test "allows distinct type declaration":
+    discard lowerModule(readAll("(type UserId (distinct int))", "lower-test.nfl"))
+
+  test "rejects distinct with wrong arity":
+    expectLowerModuleError("(type UserId (distinct))", "distinct expects a base type")
+    expectLowerModuleError("(type UserId (distinct int string))", "distinct expects a base type")
+
+  test "allows tuple type declaration":
+    discard lowerModule(readAll("(type Point (tuple (x float) (y float)))", "lower-test.nfl"))
+
+  test "rejects tuple with no fields":
+    expectLowerModuleError("(type Empty (tuple))", "tuple type expects at least one field")
+
+  test "rejects tuple with malformed field":
+    expectLowerModuleError("(type Bad (tuple x))", "tuple field must be (name type)")
+    expectLowerModuleError("(type Bad (tuple (123 int)))", "tuple field name must be a symbol")
+
+  test "rejects duplicate tuple fields":
+    expectLowerModuleError("(type Bad (tuple (x int) (x int)))", "duplicate tuple field: x")
+
+  test "allows ref type declaration (ref symbol)":
+    discard lowerModule(readAll("(type NodeRef (ref Node))", "lower-test.nfl"))
+
+  test "allows ref type declaration (ref object)":
+    discard lowerModule(readAll("(type PersonRef (ref (object (name string))))", "lower-test.nfl"))
+
+  test "rejects ref with wrong arity":
+    expectLowerModuleError("(type Bad (ref))", "ref expects a base type")
+    expectLowerModuleError("(type Bad (ref int string))", "ref expects a base type")
+
+  test "rejects ref with invalid inner form":
+    expectLowerModuleError("(type Bad (ref (enum a b)))", "ref base must be a type symbol")
 
   test "allows exported proc":
     discard lowerModule(readAll("(proc greet* ((name string)) (: string) name)", "lower-test.nfl"))
@@ -500,3 +528,83 @@ suite "lowering validation":
 
   test "rejects yield with too many arguments":
     expectLowerError("(yield 1 2)", "yield expects exactly one expression")
+
+  # ---------------------------------------------------------------------------
+  # while / break / continue  (#24)
+  # ---------------------------------------------------------------------------
+
+  test "allows while loop":
+    discard lowerExpr(readOne("(while true (echo \"tick\"))", "lower-test.nfl"))
+
+  test "rejects while with missing body":
+    expectLowerError("(while true)", "while expects a condition and body")
+
+  test "rejects while with no arguments":
+    expectLowerError("(while)", "while expects a condition and body")
+
+  test "allows break in statement position":
+    discard lowerModule(readAll("(while true (break))", "lower-test.nfl"))
+
+  test "rejects break with arguments":
+    expectLowerModuleError("(while true (break 1))", "break expects no arguments")
+
+  test "allows continue in statement position":
+    discard lowerModule(readAll("(while true (continue))", "lower-test.nfl"))
+
+  test "rejects continue with arguments":
+    expectLowerModuleError("(while true (continue 1))", "continue expects no arguments")
+
+  # ---------------------------------------------------------------------------
+  # return  (#25)
+  # ---------------------------------------------------------------------------
+
+  test "allows return with value":
+    discard lowerModule(readAll("(proc f () (: int) (return 42))", "lower-test.nfl"))
+
+  test "allows bare return":
+    discard lowerModule(readAll("(proc f () (return))", "lower-test.nfl"))
+
+  test "allows return inside a proc body":
+    discard lowerModule(readAll("(proc f () (: int) (if true (return 1) 2))", "lower-test.nfl"))
+
+  test "rejects return with too many arguments":
+    expectLowerError("(return 1 2)", "return expects 0 or 1 arguments, got 2")
+
+  # ---------------------------------------------------------------------------
+  # discard  (#27)
+  # ---------------------------------------------------------------------------
+
+  test "allows discard with expression":
+    discard lowerModule(readAll("(discard (someCall))", "lower-test.nfl"))
+
+  test "allows bare discard":
+    discard lowerModule(readAll("(discard)", "lower-test.nfl"))
+
+  test "rejects discard with too many arguments":
+    expectLowerModuleError("(discard x y)", "discard expects 0 or 1 arguments, got 2")
+
+  # ---------------------------------------------------------------------------
+  # method  (#30)
+  # ---------------------------------------------------------------------------
+
+  test "allows method definition":
+    discard lowerModule(readAll("(method greet ((self string)) (: string) self)", "lower-test.nfl"))
+
+  test "rejects method in expression position":
+    expectLowerError("(method m () m)", "method is only allowed at statement/module scope")
+
+  # ---------------------------------------------------------------------------
+  # object inheritance  (#33)
+  # ---------------------------------------------------------------------------
+
+  test "allows object with inheritance clause":
+    discard lowerModule(readAll("(type Animal (ref (object (of RootObj) (name string))))", "lower-test.nfl"))
+
+  test "allows inheritance-only object (no extra fields)":
+    discard lowerModule(readAll("(type Base (object (of RootObj)))", "lower-test.nfl"))
+
+  test "rejects malformed inheritance clause (missing base)":
+    expectLowerModuleError("(type Bad (object (of) (x int)))", "object inheritance clause must be (of Base)")
+
+  test "rejects object with only the head and no fields or inheritance":
+    expectLowerModuleError("(type Bad (object))", "object type expects")

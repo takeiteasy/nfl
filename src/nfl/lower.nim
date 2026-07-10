@@ -65,6 +65,19 @@ proc declare(ctx: var LowerContext; name: Syntax; kind: BindingKind) =
     raiseCompilerError(name.span, "duplicate binding: " & name.sym)
   scope[][key] = kind
 
+proc declareRoutineName(ctx: var LowerContext; name: Syntax) =
+  ## Register a routine name (proc/method/template/iterator) as an immutable
+  ## binding.  Multiple declarations of the same name are silently allowed —
+  ## Nim permits overloaded procs and methods with distinct parameter types.
+  if name.kind != sxSymbol:
+    raiseCompilerError(name.span, "binding name must be a symbol")
+  if ctx.scopes.len == 0:
+    ctx.pushScope()
+  var scope = addr ctx.scopes[^1]
+  let key = name.symbolKey()
+  if not scope[].hasKey(key):
+    scope[][key] = bkImmutable
+
 proc lookup(ctx: LowerContext; name: Syntax): Option[BindingKind] =
   let key = name.symbolKey()
   for i in countdown(ctx.scopes.high, 0):
@@ -268,7 +281,9 @@ proc lowerRoutine(ctx: var LowerContext; sx: Syntax; formName: string;
   ctx.popScope()
   # Routine names resolve via Nim's own name resolution; we register under the
   # base name (stripped of any `*`) so local set!/lookup always finds it.
-  declare(ctx, newSymbol(baseName, name.span), bkImmutable)
+  # Overloaded names (same name, different parameters) are allowed; silently
+  # skip re-registration rather than raising "duplicate binding".
+  ctx.declareRoutineName(newSymbol(baseName, name.span))
 
 proc lowerProc(ctx: var LowerContext; sx: Syntax) =
   lowerRoutine(ctx, sx, "proc", requireReturnType = false)
@@ -278,6 +293,9 @@ proc lowerTemplate(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerIterator(ctx: var LowerContext; sx: Syntax) =
   lowerRoutine(ctx, sx, "iterator", requireReturnType = true)
+
+proc lowerMethod(ctx: var LowerContext; sx: Syntax) =
+  lowerRoutine(ctx, sx, "method", requireReturnType = false)
 
 proc lowerYield(ctx: var LowerContext; sx: Syntax) =
   ## Validates a `(yield expr)` form.  NFL does not enforce that yield only
@@ -468,6 +486,39 @@ proc lowerRaise(ctx: var LowerContext; sx: Syntax) =
   if nargs == 1:
     lowerExpr(ctx, sx.items[1])
 
+proc lowerReturn(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(return)` (void return) or `(return expr)`.
+  let nargs = sx.items.len - 1
+  if nargs > 1:
+    raiseCompilerError(sx.span, "return expects 0 or 1 arguments, got " & $nargs)
+  if nargs == 1:
+    lowerExpr(ctx, sx.items[1])
+
+proc lowerDiscard(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(discard)` or `(discard expr)`.
+  let nargs = sx.items.len - 1
+  if nargs > 1:
+    raiseCompilerError(sx.span, "discard expects 0 or 1 arguments, got " & $nargs)
+  if nargs == 1:
+    lowerExpr(ctx, sx.items[1])
+
+proc lowerWhile(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(while condition body…)`.
+  if sx.items.len < 3:
+    raiseCompilerError(sx.span, "while expects a condition and body")
+  lowerExpr(ctx, sx.items[1])
+  lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
+
+proc lowerBreak(sx: Syntax) =
+  ## Validates `(break)` — no arguments allowed.
+  if sx.items.len != 1:
+    raiseCompilerError(sx.span, "break expects no arguments, got " & $(sx.items.len - 1))
+
+proc lowerContinue(sx: Syntax) =
+  ## Validates `(continue)` — no arguments allowed.
+  if sx.items.len != 1:
+    raiseCompilerError(sx.span, "continue expects no arguments, got " & $(sx.items.len - 1))
+
 proc isExceptClause(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("except")
 
@@ -557,11 +608,51 @@ proc validateTypeReference(sx: Syntax; what: string) =
   if sx.sym.len == 0 or sx.sym[0] == '.' or sx.sym[^1] == '.' or sx.sym.contains(".."):
     raiseCompilerError(sx.span, "invalid type symbol: " & sx.sym)
 
-proc lowerObjectType(sx: Syntax) =
-  if sx.items.len == 1:
-    raiseCompilerError(sx.span, "object type expects fields")
+proc lowerDistinctType(sx: Syntax) =
+  ## Validates `(distinct BaseType)` — a newtype wrapper around a base type.
+  if sx.items.len != 2:
+    raiseCompilerError(sx.span, "distinct expects a base type, got " & $(sx.items.len - 1) & " arguments")
+  validateTypeReference(sx.items[1], "distinct base type")
+
+proc lowerTupleType(sx: Syntax) =
+  ## Validates `(tuple (name1 type1) …)` — structural record type.
+  if sx.items.len < 2:
+    raiseCompilerError(sx.span, "tuple type expects at least one field")
   var seen = initTable[string, bool]()
   for field in sx.items.toOpenArray(1, sx.items.high):
+    if field.kind != sxList or field.items.len != 2:
+      raiseCompilerError(field.span, "tuple field must be (name type)")
+    let name = field.items[0]
+    if name.kind != sxSymbol:
+      raiseCompilerError(name.span, "tuple field name must be a symbol")
+    let key = name.sym
+    if seen.hasKey(key):
+      raiseCompilerError(name.span, "duplicate tuple field: " & key)
+    seen[key] = true
+    validateTypeReference(field.items[1], "tuple field type")
+
+proc lowerObjectType(sx: Syntax) =
+  ## Validates `(object [of Base] (field type) …)`.
+  ## The optional `(of Base)` clause immediately after `object` declares a base
+  ## type for inheritance; all remaining items are field definitions.
+  if sx.items.len == 1:
+    raiseCompilerError(sx.span, "object type expects fields or an inheritance clause")
+  # Check for optional `(of Base)` inheritance clause at items[1].
+  var fieldStart = 1
+  if sx.items[1].kind == sxList and sx.items[1].items.len > 0 and
+     sx.items[1].items[0].isSymbol("of"):
+    # Validate arity: must be exactly `(of Base)`.
+    if sx.items[1].items.len != 2:
+      raiseCompilerError(sx.items[1].span,
+        "object inheritance clause must be (of Base), got " & $(sx.items[1].items.len - 1) & " argument(s)")
+    let baseType = sx.items[1].items[1]
+    validateTypeReference(baseType, "object base type")
+    fieldStart = 2
+    if sx.items.len == 2:
+      # Inheritance-only object with no fields is valid (e.g. pure vtable base).
+      return
+  var seen = initTable[string, bool]()
+  for field in sx.items.toOpenArray(fieldStart, sx.items.high):
     # Field form: `(name Type)` or `(name {.p.} Type)` — 2 or 3 items.
     if field.kind != sxList or (field.items.len != 2 and field.items.len != 3):
       raiseCompilerError(field.span, "object field must be (name Type)")
@@ -579,6 +670,23 @@ proc lowerObjectType(sx: Syntax) =
       validatePragma(field.items[1])
       typeIdx = 2
     validateTypeReference(field.items[typeIdx], "object field type")
+
+proc lowerRefType(sx: Syntax) =
+  ## Validates `(ref X)` where X is a type symbol or an `(object …)` / `(tuple …)` body.
+  if sx.items.len != 2:
+    raiseCompilerError(sx.span, "ref expects a base type, got " & $(sx.items.len - 1) & " arguments")
+  let inner = sx.items[1]
+  if inner.kind == sxSymbol or inner.kind == sxVector:
+    validateTypeReference(inner, "ref base type")
+  elif inner.kind == sxList and inner.items.len > 0:
+    if inner.items[0].isSymbol("object"):
+      lowerObjectType(inner)
+    elif inner.items[0].isSymbol("tuple"):
+      lowerTupleType(inner)
+    else:
+      raiseCompilerError(inner.span, "ref base must be a type symbol or (object …) or (tuple …) body")
+  else:
+    raiseCompilerError(inner.span, "ref base must be a type symbol or (object …) body")
 
 proc lowerEnumType(sx: Syntax) =
   if sx.items.len == 1:
@@ -622,11 +730,11 @@ proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
     elif body.items[0].isSymbol("enum"):
       lowerEnumType(body)
     elif body.items[0].isSymbol("tuple"):
-      raiseCompilerError(body.span, "tuple type declarations are not implemented yet")
+      lowerTupleType(body)
     elif body.items[0].isSymbol("distinct"):
-      raiseCompilerError(body.span, "distinct type declarations are not implemented yet")
+      lowerDistinctType(body)
     elif body.items[0].isSymbol("ref"):
-      raiseCompilerError(body.span, "ref object type declarations are not implemented yet")
+      lowerRefType(body)
     else:
       raiseCompilerError(body.items[0].span, "unknown type declaration form: " & formName(body.items[0]))
   else:
@@ -675,6 +783,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       raiseCompilerError(sx.span, "template is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("iterator"):
       raiseCompilerError(sx.span, "iterator is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("method"):
+      raiseCompilerError(sx.span, "method is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("type"):
       raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("."):
@@ -695,10 +805,14 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       raiseCompilerError(sx.span, "import is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("for"):
       lowerFor(ctx, sx)
+    elif sx.items[0].isSymbol("while"):
+      lowerWhile(ctx, sx)
     elif sx.items[0].isSymbol("case"):
       lowerCase(ctx, sx)
     elif sx.items[0].isSymbol("raise"):
       lowerRaise(ctx, sx)
+    elif sx.items[0].isSymbol("return"):
+      lowerReturn(ctx, sx)
     elif sx.items[0].isSymbol("try"):
       lowerTry(ctx, sx)
     elif sx.items[0].isSymbol("quote"):
@@ -732,6 +846,18 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
       return
     if sx.items[0].isSymbol("type"):
       lowerTypeDecl(ctx, sx)
+      return
+    if sx.items[0].isSymbol("method"):
+      lowerMethod(ctx, sx)
+      return
+    if sx.items[0].isSymbol("discard"):
+      lowerDiscard(ctx, sx)
+      return
+    if sx.items[0].isSymbol("break"):
+      lowerBreak(sx)
+      return
+    if sx.items[0].isSymbol("continue"):
+      lowerContinue(sx)
       return
   lowerExpr(ctx, sx)
 

@@ -169,11 +169,17 @@ Use `yield` inside the body to produce values:
 (yield expr)
 ```
 
+### `method` — dynamic dispatch
+
+See the [Types → method](#method--method-definition) section above.
+
 Valid only inside an `iterator` body. Nim's compiler enforces this restriction.
 
 ## Types
 
 ### `type` — type declaration
+
+**Object type:**
 
 ```lisp
 (type Name
@@ -188,6 +194,58 @@ With export and pragmas:
 (type Name* {.bycopy.}
   (object
     (field type)))
+```
+
+**Object inheritance** — the `(of Base)` clause immediately after `object` declares a base type:
+
+```lisp
+(type Animal (ref (object (of RootObj) (name string))))
+(type Dog    (ref (object (of Animal))))
+```
+
+**Distinct type** — a newtype wrapper that prevents accidental mixing:
+
+```lisp
+(type Metres (distinct float))
+(proc toMetres ((x float)) (: Metres) (Metres x))
+```
+
+**Tuple type** — a structural named-field record:
+
+```lisp
+(type Point (tuple (x float) (y float)))
+(proc getX ((p Point)) (: float) (. p x))
+```
+
+> Named tuples are constructed on the Nim side: `Point(x: 1.0, y: 2.0)`.
+
+**Ref object** — heap-allocated object managed by the garbage collector:
+
+```lisp
+(type Node (ref (object (val int))))
+(proc mkNode ((v int)) (: Node) (new Node (val v)))
+```
+
+The `(ref ...)` form composes with any type body, including inherited objects:
+
+```lisp
+(type Base (ref (object (of RootObj) (x int))))
+```
+
+### `method` — method definition
+
+Defines a Nim method with dynamic dispatch via the vtable. The syntax is identical to `proc`. Tag the base-type overload with `{.base.}`:
+
+```lisp
+(method speak {.base.} ((a Animal)) (: string) "...")
+(method speak ((d Dog)) (: string) "woof")
+```
+
+Dispatch is determined at runtime by the concrete type:
+
+```lisp
+(defvar base (toAnimal dog))
+(echo (speak base))  ; → "woof"
 ```
 
 ### `new` — object construction
@@ -266,6 +324,43 @@ Multi-variable (e.g. index + value via `pairs`):
 
 ```lisp
 (while condition body...)
+```
+
+### `break` and `continue`
+
+`(break)` exits the innermost loop. `(continue)` skips the rest of the current iteration:
+
+```lisp
+(while true
+  (if (>= i limit) (break) nil)
+  (set! i (+ i 1)))
+
+(while (< k 10)
+  (set! k (+ k 1))
+  (if (== 0 (mod k 2)) (continue) nil)
+  (echo "odd: " k))
+```
+
+## Control flow — early exit
+
+### `return`
+
+`(return expr)` exits the enclosing procedure with a value. `(return)` returns void:
+
+```lisp
+(proc clamp ((n int) (lo int) (hi int)) (: int)
+  (if (< n lo) (return lo) nil)
+  (if (> n hi) (return hi) nil)
+  n)
+```
+
+### `discard`
+
+`(discard expr)` discards the result of an expression, suppressing unused-result warnings. `(discard)` is a bare empty discard:
+
+```lisp
+(discard (sideEffect))
+(discard)
 ```
 
 ## Error handling

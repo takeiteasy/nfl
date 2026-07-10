@@ -374,6 +374,9 @@ proc emitTemplate(ctx: var EmitContext; sx: Syntax): NimNode =
 proc emitIterator(ctx: var EmitContext; sx: Syntax): NimNode =
   ctx.emitRoutine(sx, nnkIteratorDef, "iterator", stmtBody = true)
 
+proc emitMethod(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitRoutine(sx, nnkMethodDef, "method")
+
 proc emitYield(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits a `(yield expr)` form as `nnkYieldStmt`.
   nnkYieldStmt.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
@@ -427,8 +430,18 @@ proc emitImport(sx: Syntax): NimNode =
   nnkImportStmt.newTree(emitModulePath(sx.items[1])).attachLineInfo(sx)
 
 proc emitObjectType(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(object [of Base] (field type) …)` as `nnkObjectTy`.
+  ## The optional `(of Base)` clause at items[1] populates the inheritance slot.
+  var fieldStart = 1
+  var inheritNode: NimNode = newEmptyNode()
+  if sx.items.len > 1 and sx.items[1].kind == sxList and
+     sx.items[1].items.len == 2 and sx.items[1].items[0].isSymbol("of"):
+    inheritNode = nnkOfInherit.newTree(
+      emitTypeReference(sx.items[1].items[1])
+    ).attachLineInfo(sx.items[1])
+    fieldStart = 2
   var fields = nnkRecList.newTree().attachLineInfo(sx)
-  for field in sx.items.toOpenArray(1, sx.items.high):
+  for field in sx.items.toOpenArray(fieldStart, sx.items.high):
     # Field form: `(name Type)` or `(name {.p.} Type)` — 2 or 3 items.
     var pragma: Syntax = nil
     var typeIdx = 1
@@ -440,21 +453,37 @@ proc emitObjectType(ctx: var EmitContext; sx: Syntax): NimNode =
       emitTypeReference(field.items[typeIdx]),
       newEmptyNode()
     ).attachLineInfo(field)
-  nnkObjectTy.newTree(newEmptyNode(), newEmptyNode(), fields).attachLineInfo(sx)
+  nnkObjectTy.newTree(newEmptyNode(), inheritNode, fields).attachLineInfo(sx)
 
 proc emitEnumType(sx: Syntax): NimNode =
   result = nnkEnumTy.newTree(newEmptyNode()).attachLineInfo(sx)
   for value in sx.items.toOpenArray(1, sx.items.high):
     result.add identForTypeSymbol(value)
 
+proc emitTupleType(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(tuple (name1 type1) …)` as `nnkTupleTy`.
+  result = nnkTupleTy.newTree().attachLineInfo(sx)
+  for field in sx.items.toOpenArray(1, sx.items.high):
+    result.add nnkIdentDefs.newTree(
+      ctx.identForSymbol(field.items[0]),
+      emitTypeReference(field.items[1]),
+      newEmptyNode()
+    ).attachLineInfo(field)
+
 proc emitTypeBody(ctx: var EmitContext; sx: Syntax): NimNode =
-  if sx.kind == sxSymbol:
+  if sx.kind == sxSymbol or sx.kind == sxVector:
     return emitTypeReference(sx)
   if sx.kind == sxList and sx.items.len > 0:
     if sx.items[0].isSymbol("object"):
       return ctx.emitObjectType(sx)
     if sx.items[0].isSymbol("enum"):
       return emitEnumType(sx)
+    if sx.items[0].isSymbol("tuple"):
+      return ctx.emitTupleType(sx)
+    if sx.items[0].isSymbol("distinct"):
+      return nnkDistinctTy.newTree(emitTypeReference(sx.items[1])).attachLineInfo(sx)
+    if sx.items[0].isSymbol("ref"):
+      return nnkRefTy.newTree(ctx.emitTypeBody(sx.items[1])).attachLineInfo(sx)
   raiseCompilerError(sx.span, "unsupported type declaration")
 
 proc emitTypeDecl(ctx: var EmitContext; sx: Syntax): NimNode =
@@ -644,6 +673,26 @@ proc emitRaise(ctx: var EmitContext; sx: Syntax): NimNode =
   let operand = if nargs == 1: ctx.emitExpr(sx.items[1]) else: newEmptyNode()
   nnkRaiseStmt.newTree(operand).attachLineInfo(sx)
 
+proc emitReturn(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(return)` or `(return expr)` as `nnkReturnStmt`.
+  let nargs = sx.items.len - 1
+  let operand = if nargs == 1: ctx.emitExpr(sx.items[1]) else: newEmptyNode()
+  nnkReturnStmt.newTree(operand).attachLineInfo(sx)
+
+proc emitDiscard(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(discard)` or `(discard expr)` as `nnkDiscardStmt`.
+  let nargs = sx.items.len - 1
+  let operand = if nargs == 1: ctx.emitExpr(sx.items[1]) else: newEmptyNode()
+  nnkDiscardStmt.newTree(operand).attachLineInfo(sx)
+
+proc emitWhileCore(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Builds the `nnkWhileStmt` for `(while COND body…)`.
+  ## Always returns a statement node; wrap in `emitBlockExpr` for expr context.
+  var body = newStmtList()
+  for i in 2 ..< sx.items.len:
+    body.add ctx.emitStmt(sx.items[i])
+  nnkWhileStmt.newTree(ctx.emitExpr(sx.items[1]), body).attachLineInfo(sx)
+
 proc emitExceptBranch(ctx: var EmitContext; branch: Syntax; asExpr: bool): NimNode =
   ## Emits one `nnkExceptBranch` node.  `asExpr` controls whether the branch
   ## body is lowered as an expression or a statement list.
@@ -758,14 +807,24 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitNew(sx)
     elif sx.items[0].isSymbol("for"):
       emitBlockExpr(@[ctx.emitForCore(sx)], newNilLit()).attachLineInfo(sx)
+    elif sx.items[0].isSymbol("while"):
+      emitBlockExpr(@[ctx.emitWhileCore(sx)], newNilLit()).attachLineInfo(sx)
     elif sx.items[0].isSymbol("case"):
       ctx.emitCase(sx)
     elif sx.items[0].isSymbol("raise"):
       ctx.emitRaise(sx)
+    elif sx.items[0].isSymbol("return"):
+      ctx.emitReturn(sx)
     elif sx.items[0].isSymbol("try"):
       ctx.emitTry(sx)
     elif sx.items[0].isSymbol(":"):
       raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
+    elif sx.items[0].isSymbol("discard"):
+      raiseCompilerError(sx.span, "discard is only allowed at statement scope")
+    elif sx.items[0].isSymbol("break"):
+      raiseCompilerError(sx.span, "break is only allowed inside a loop body")
+    elif sx.items[0].isSymbol("continue"):
+      raiseCompilerError(sx.span, "continue is only allowed inside a loop body")
     elif sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
       raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("const"):
@@ -776,6 +835,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, "template is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("iterator"):
       raiseCompilerError(sx.span, "iterator is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("method"):
+      raiseCompilerError(sx.span, "method is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("type"):
       raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
@@ -797,10 +858,20 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return ctx.emitIfStmt(sx)
     if sx.items[0].isSymbol("for"):
       return ctx.emitForCore(sx)
+    if sx.items[0].isSymbol("while"):
+      return ctx.emitWhileCore(sx)
     if sx.items[0].isSymbol("case"):
       return ctx.emitCaseStmt(sx)
     if sx.items[0].isSymbol("raise"):
       return ctx.emitRaise(sx)
+    if sx.items[0].isSymbol("return"):
+      return ctx.emitReturn(sx)
+    if sx.items[0].isSymbol("discard"):
+      return ctx.emitDiscard(sx)
+    if sx.items[0].isSymbol("break"):
+      return nnkBreakStmt.newTree(newEmptyNode()).attachLineInfo(sx)
+    if sx.items[0].isSymbol("continue"):
+      return nnkContinueStmt.newTree(newEmptyNode()).attachLineInfo(sx)
     if sx.items[0].isSymbol("try"):
       return ctx.emitTryStmt(sx)
     if sx.items[0].isSymbol("block"):
@@ -820,6 +891,8 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return ctx.emitTemplate(sx)
     if sx.items[0].isSymbol("iterator"):
       return ctx.emitIterator(sx)
+    if sx.items[0].isSymbol("method"):
+      return ctx.emitMethod(sx)
     if sx.items[0].isSymbol("yield"):
       return ctx.emitYield(sx)
     if sx.items[0].isSymbol("type"):

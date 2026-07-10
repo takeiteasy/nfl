@@ -491,3 +491,140 @@ suite "nfl module backend — template / iterator":
     for x in range2(4):
       s += x
     check s == 6   # 0 + 1 + 2 + 3 = 6
+
+# ---------------------------------------------------------------------------
+# Behavioral tests for while/break/continue (#24), return (#25),
+# discard (#27), distinct/tuple/ref (#28), and method (#30 foundation).
+# ---------------------------------------------------------------------------
+
+nflModule """
+; --- while loop sums 0+1+2+3+4 = 10 (#24) ---
+(defvar whileSum
+  (block
+    (var ((i 0) (acc 0))
+      (while (< i 5)
+        (set! acc (+ acc i))
+        (set! i (+ i 1)))
+      acc)))
+
+; --- break exits early when i reaches 3 (#24) ---
+(defvar breakAt
+  (block
+    (var ((i 0))
+      (while true
+        (if (>= i 3) (break) nil)
+        (set! i (+ i 1)))
+      i)))
+
+; --- continue skips even increments; sums odd i: 1+3+5 = 9 (#24) ---
+(defvar continueSkips
+  (block
+    (var ((i 0) (acc 0))
+      (while (< i 5)
+        (set! i (+ i 1))
+        (if (== 0 (mod i 2))
+            (continue)
+            (set! acc (+ acc i))))
+      acc)))
+
+; --- return exits proc early (#25) ---
+(proc clamp ((n int) (lo int) (hi int)) (: int)
+  (if (< n lo) (return lo) nil)
+  (if (> n hi) (return hi) nil)
+  n)
+
+; --- discard suppresses unused-result warning (#27) ---
+(proc sideEffect () (: int) 42)
+(defvar discardRan
+  (block
+    (discard (sideEffect))
+    true))
+
+; --- distinct type wraps a base type (#28) ---
+(type Metres (distinct float))
+(proc toMetres ((x float)) (: Metres) (Metres x))
+(defvar metreDist (toMetres 5.0))
+
+; --- tuple structural type (#28) ---
+; Construction of named tuples uses Nim-side syntax (no (new ...) form for tuples).
+; We declare the type and procs in NFL; the test constructs the value in Nim.
+(type Point2D (tuple (x float) (y float)))
+(proc getPtX ((pt Point2D)) (: float) (. pt x))
+(proc getPtY ((pt Point2D)) (: float) (. pt y))
+
+; --- ref object heap allocation (#28) ---
+(type TreeNode (ref (object (val int))))
+(proc mkNode ((v int)) (: TreeNode)
+  (new TreeNode (val v)))
+(defvar aNode (mkNode 7))
+(defvar nodeVal (. aNode val))
+""", "new-forms-test.nfl"
+
+suite "nfl backend — while / break / continue / return / discard (#24-#27)":
+  test "while loop accumulates sum":
+    check whileSum == 10   # 0+1+2+3+4 = 10
+
+  test "while sums inline via nflExpr":
+    check nflExpr"(var ((i 0)(s 0)) (while (< i 5) (set! s (+ s i)) (set! i (+ i 1))) s)" == 10
+
+  test "break exits loop at target":
+    check breakAt == 3
+
+  test "continue skips even iterations":
+    check continueSkips == 9  # 1+3+5 = 9
+
+  test "return exits proc early — clamp low":
+    check clamp(-1, 0, 10) == 0
+
+  test "return exits proc early — clamp high":
+    check clamp(20, 0, 10) == 10
+
+  test "return falls through — clamp in range":
+    check clamp(5, 0, 10) == 5
+
+  test "discard suppresses unused-result warning":
+    check discardRan == true
+
+suite "nfl backend — distinct / tuple / ref types (#28)":
+  test "distinct type wraps base":
+    check float(metreDist) == 5.0
+
+  test "tuple type fields are accessible from NFL proc":
+    let pt: Point2D = (x: 3.0, y: 4.0)
+    check getPtX(pt) == 3.0
+    check getPtY(pt) == 4.0
+
+  test "ref object allocates on heap and field is readable":
+    check nodeVal == 7
+
+# ---------------------------------------------------------------------------
+# method + object inheritance (#30, #33)
+# ---------------------------------------------------------------------------
+
+nflModule """
+; Define a base ref type using object inheritance (#33).
+(type Shape (ref (object (of RootObj) (color string))))
+(type Circle (ref (object (of Shape) (radius float))))
+
+; method dispatches dynamically via vtable (#30).
+(method area ((s Shape)) (: float) 0.0)
+(method area ((c Circle)) (: float)
+  (* 3.14159 (* (. c radius) (. c radius))))
+
+(proc mkCircle ((r float) (col string)) (: Circle)
+  (new Circle (radius r) (color col)))
+
+(defvar circ (mkCircle 2.0 "red"))
+(defvar circColor (. circ color))
+""", "method-test.nfl"
+
+suite "nfl backend — method / object inheritance (#30, #33)":
+  test "object inheritance compiles and base field is accessible":
+    check circColor == "red"
+
+  test "method dynamic dispatch via base ref":
+    let s: Shape = circ
+    check s.area() > 12.0 and s.area() < 13.0   # π×2² ≈ 12.566
+
+  test "method dispatches on concrete type":
+    check circ.area() > 12.0 and circ.area() < 13.0

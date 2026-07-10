@@ -12,3 +12,28 @@
 
 (echo "person age: " (personAge ada))
 (echo "person age by named call: " (personAge (: p ada)))
+
+; distinct — newtype wrapper: prevents accidental mixing of units.
+(type Metres (distinct float))
+(proc toMetres ((x float)) (: Metres) (Metres x))
+(defvar dist (toMetres 42.0))
+(echo "distance: " (float dist) "m")
+
+; tuple — structural record type usable in proc signatures.
+; Named tuples are constructed on the Nim side: Vec2(x: 1.0, y: 2.0).
+(type Vec2 (tuple (x float) (y float)))
+(proc getX ((v Vec2)) (: float) (. v x))
+
+; ref object — heap-allocated with garbage collection.
+(type Node (ref (object (val int))))
+(proc mkNode ((v int)) (: Node) (new Node (val v)))
+(defvar n (mkNode 99))
+(echo "node value: " (. n val))
+
+; object inheritance — shared base type with dynamic dispatch.
+(type Animal (ref (object (of RootObj) (name string))))
+(type Dog    (ref (object (of Animal))))
+(method speak {.base.} ((a Animal)) (: string) "...")
+(method speak ((d Dog)) (: string) "woof")
+(defvar dog (new Dog (name "Rex")))
+(echo (. dog name) " says: " (speak dog))
