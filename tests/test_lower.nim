@@ -239,6 +239,21 @@ suite "lowering validation":
   test "still lowers local var-with-body binding list unchanged":
     discard lowerExpr(readOne("(var ((x 1) (y 2)) (+ x y))", "lower-test.nfl"))
 
+  test "allows value-less typed binding in var section":
+    discard lowerModule(readAll("(var (((x int))))", "lower-test.nfl"))
+
+  test "allows mix of value-less and valued typed bindings in var section":
+    discard lowerModule(readAll("(var (((x int)) ((y int) 1)))", "lower-test.nfl"))
+
+  test "rejects value-less untyped binding in var section":
+    expectLowerModuleError("(var ((x)))", "var section binding without a type annotation requires a value")
+
+  test "rejects value-less binding in const section even when typed":
+    expectLowerModuleError("(const (((a int))))", "const section binding requires a value")
+
+  test "allows value-less typed binding with pragma in var section":
+    discard lowerModule(readAll("(var (((x int) {.volatile.})))", "lower-test.nfl"))
+
   test "rejects const binding-list form with a body":
     expectLowerModuleError("(const ((a 1)) a)", "const does not support a local binding body")
 

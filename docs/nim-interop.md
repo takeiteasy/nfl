@@ -165,6 +165,14 @@ A pragma also composes with a typed name, with or without a value:
 (var (flag int) {.volatile.} 42)
 ```
 
+A pragma can annotate individual bindings inside a `var`/`const` section too,
+including a value-less typed binding:
+
+```lisp
+(var (((flag int) {.volatile.})           ; zero-initialized, pragma-annotated
+      ((counter int) {.used.} 0)))        ; pragma-annotated, with a value
+```
+
 ### Local binding pragmas
 
 ```lisp

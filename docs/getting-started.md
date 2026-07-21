@@ -108,6 +108,15 @@ reusing the same binding-list syntax as the local mutable-binding form above:
         (e 2.71828)))
 ```
 
+Bindings inside a `var` section can also omit the value when typed
+(zero-initialized), same as a single typed `var` declaration. `const`
+bindings always require a value:
+
+```lisp
+(var (((width int))         ; zero-initialized
+      ((height int) 480)))  ; explicit value
+```
+
 ### Procedures
 
 `proc` declares a typed procedure:

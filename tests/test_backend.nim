@@ -198,6 +198,12 @@ nflModule """
 ; Multi-binding var/const sections.
 (var (((multiA int) 1) ((multiB int) 2)))
 (const ((multiConstA 3) (multiConstB 4)))
+; Value-less typed bindings within a var section (zero-initialized), mixed
+; with a valued binding and a pragma-annotated value-less binding.
+(var (((sectionBlank int)) ((sectionValued int) 5)))
+(var (((sectionPragmaBlank int) {.volatile.})))
+; Pragma on a valued binding within a var section (#39 follow-up coverage).
+(var (((sectionPragmaValued int) {.volatile.} 9) (sectionPlain 3)))
 ; Value pragma: {.deprecated: "msg".} is usable without external linkage.
 (proc oldHelper {.deprecated: "use newHelper instead".} () (: int)
   99)
@@ -432,6 +438,17 @@ suite "nfl module backend":
   test "multi-binding const section":
     check multiConstA == 3
     check multiConstB == 4
+
+  test "value-less typed binding in var section is zero-initialized":
+    check sectionBlank == 0
+    check sectionValued == 5
+
+  test "value-less typed binding with pragma in var section is zero-initialized":
+    check sectionPragmaBlank == 0
+
+  test "pragma on a valued binding within a var section":
+    check sectionPragmaValued == 9
+    check sectionPlain == 3
 
   test "value pragma {.deprecated: msg.} compiles and proc is callable":
     {.push warnings: off.}

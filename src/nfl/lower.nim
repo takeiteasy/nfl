@@ -161,16 +161,61 @@ proc isVarSectionForm(sx: Syntax): bool =
   ## arity — `(var (bindings…) body…)` has 3+ items, a section has exactly 2.
   sx.items.len == 2 and not isDefvarForm(sx)
 
+proc sectionBindingParts(binding: Syntax; mutable: bool): tuple[target: Syntax, valueIdx: int] =
+  ## Parses a single binding within a `var`/`const` section — a target,
+  ## optional pragma, and optional value: `(target)`, `(target value)`,
+  ## `(target {.pragma.})`, `(target {.pragma.} value)`. Unlike the local
+  ## mutable-binding form (`bindingName`), a value may be omitted when the
+  ## target carries an explicit type — but only for `var` sections; `const`
+  ## always requires a value, mirroring `lowerConst`.
+  if binding.kind != sxList or binding.items.len notin {1, 2, 3}:
+    raiseCompilerError(binding.span, "binding must be a target, optional pragma, and optional value")
+  let target = binding.items[0]
+  var hasType = false
+  var baseTarget: Syntax
+  if target.kind == sxSymbol:
+    baseTarget = target
+  elif target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and
+      (target.items[1].kind == sxSymbol or target.items[1].kind == sxVector):
+    baseTarget = target.items[0]
+    validateTypeReference(target.items[1], "binding type")
+    hasType = true
+  else:
+    raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
+  var pragmaIdx = -1
+  var valueIdx = -1
+  if binding.items.len == 2:
+    if binding.items[1].isPragmaClause():
+      pragmaIdx = 1
+    else:
+      valueIdx = 1
+  elif binding.items.len == 3:
+    if not binding.items[1].isPragmaClause():
+      raiseCompilerError(binding.items[1].span, "expected pragma clause between binding target and value")
+    pragmaIdx = 1
+    valueIdx = 2
+  if pragmaIdx >= 0:
+    validatePragma(binding.items[pragmaIdx])
+  if valueIdx < 0:
+    if not mutable:
+      raiseCompilerError(binding.span, "const section binding requires a value")
+    if not hasType:
+      raiseCompilerError(binding.span, "var section binding without a type annotation requires a value")
+  result = (baseTarget, valueIdx)
+
 proc lowerVarSection(ctx: var LowerContext; sx: Syntax; mutable: bool) =
   let bindings = sx.items[1]
   if bindings.kind != sxList or bindings.items.len == 0:
     raiseCompilerError(bindings.span, formName(sx.items[0]) & " section expects at least one binding")
+  var targets: seq[Syntax] = @[]
   for binding in bindings.items:
-    discard binding.bindingName()                      # validates structure + optional pragma
-    lowerExpr(ctx, binding.items[binding.items.high])   # value is always the last item
+    let parts = sectionBindingParts(binding, mutable)
+    if parts.valueIdx >= 0:
+      lowerExpr(ctx, binding.items[parts.valueIdx])
+    targets.add parts.target
   let kind = if mutable: bkMutable else: bkImmutable
-  for binding in bindings.items:
-    declare(ctx, binding.bindingName(), kind)
+  for target in targets:
+    declare(ctx, target, kind)
 
 proc lowerIf(ctx: var LowerContext; sx: Syntax) =
   expectArity(sx, "if", sx.items.len - 1, 3)

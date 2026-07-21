@@ -245,18 +245,62 @@ proc isVarSectionForm(sx: Syntax): bool =
   ## list grammar with no body: `(var ((x 1) (y 2)))`.
   sx.items.len == 2 and not isDefvarForm(sx)
 
+proc emitSectionBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable: bool): NimNode =
+  ## Mirrors lower.nim's sectionBindingParts. Unlike emitBindingIdentDefs
+  ## (used by the local mutable-binding form, which always requires a
+  ## value), a `var` section binding may omit the value when the target
+  ## carries an explicit type — the value slot is then emitted empty
+  ## (zero-initialized), matching emitVarDecl's single-declaration behavior.
+  ## `const` sections always require a value.
+  if binding.kind != sxList or binding.items.len notin {1, 2, 3}:
+    raiseCompilerError(binding.span, "binding must be a target, optional pragma, and optional value")
+  let target = binding.items[0]
+  var nameSx: Syntax
+  var typeIdent: NimNode = newEmptyNode()
+  var hasType = false
+  if target.kind == sxSymbol:
+    nameSx = target
+  elif target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and
+      (target.items[1].kind == sxSymbol or target.items[1].kind == sxVector):
+    nameSx = target.items[0]
+    typeIdent = emitTypeRef(target.items[1])
+    hasType = true
+  else:
+    raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
+  var pragma: Syntax = nil
+  var valueIdx = -1
+  if binding.items.len == 2:
+    if binding.items[1].isPragmaClause():
+      pragma = binding.items[1]
+    else:
+      valueIdx = 1
+  elif binding.items.len == 3:
+    pragma = binding.items[1]
+    valueIdx = 2
+  if valueIdx < 0:
+    if not mutable:
+      raiseCompilerError(binding.span, "const section binding requires a value")
+    if not hasType:
+      raiseCompilerError(binding.span, "var section binding without a type annotation requires a value")
+  let valueNode = if valueIdx >= 0: ctx.emitExpr(binding.items[valueIdx]) else: newEmptyNode()
+  nnkIdentDefs.newTree(
+    ctx.pragmaDeclIdent(nameSx, pragma, "binding name"),
+    typeIdent,
+    valueNode
+  ).attachLineInfo(binding)
+
 proc emitVarSection(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
   let bindings = sx.items[1]
   if bindings.kind != sxList or bindings.items.len == 0:
     raiseCompilerError(bindings.span, formName(sx.items[0]) & " section expects at least one binding")
   var section = if mutable: nnkVarSection.newTree() else: nnkConstSection.newTree()
   for binding in bindings.items:
-    let identDefs = ctx.emitBindingIdentDefs(binding)
+    let identDefs = ctx.emitSectionBindingIdentDefs(binding, mutable)
     if mutable:
       section.add identDefs
     else:
       # const sections use nnkConstDef rather than nnkIdentDefs; reuse the
-      # same (name, type, value) children emitBindingIdentDefs already built.
+      # same (name, type, value) children emitSectionBindingIdentDefs built.
       section.add nnkConstDef.newTree(
         identDefs[0], identDefs[1], identDefs[2]
       ).attachLineInfo(binding)
