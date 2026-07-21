@@ -1,12 +1,12 @@
-(defvar nums (@ [1 2 3 4]))
+(var nums (@ [1 2 3 4]))
 
-(defvar doubled
+(var doubled
   (map nums (do ((x int64)) (* x 2))))
 
-(defvar small
+(var small
   (filter nums (do ((x int64)) (< x 4))))
 
-(defvar total
+(var total
   (foldl nums 0 (do ((acc int64) (x int64)) (+ acc x))))
 
 (echo (first doubled))

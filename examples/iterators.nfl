@@ -19,7 +19,7 @@
   (echo "  " x))
 
 ; Accumulate the sum of upTo(6) = 0+1+2+3+4+5 = 15.
-(defvar total
+(var total
   (block
     (var ((acc 0))
       (for (x (upTo 6))

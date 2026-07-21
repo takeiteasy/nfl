@@ -176,13 +176,12 @@ suite "lowering validation":
   test "allows exported proc":
     discard lowerModule(readAll("(proc greet* ((name string)) (: string) name)", "lower-test.nfl"))
 
-  test "allows exported defvar":
-    discard lowerModule(readAll("(defvar version* \"1.0\")", "lower-test.nfl"))
-    discard lowerModule(readAll("(defparameter limit* 100)", "lower-test.nfl"))
+  test "allows exported var declaration":
+    discard lowerModule(readAll("(var version* \"1.0\")", "lower-test.nfl"))
 
-  test "exported defvar binding resolves under base name":
+  test "exported var declaration binding resolves under base name":
     # The binding is registered as `x`, not `x*`, so references without `*` work.
-    discard lowerModule(readAll("(defvar x* 1)\n(defvar y (+ x* 0))", "lower-test.nfl"))
+    discard lowerModule(readAll("(var x* 1)\n(var y (+ x* 0))", "lower-test.nfl"))
 
   test "allows exported type and object fields":
     discard lowerModule(readAll("(type Person* (object (name* string) (age int)))", "lower-test.nfl"))
@@ -193,32 +192,37 @@ suite "lowering validation":
   test "rejects bare export marker as proc name":
     expectLowerModuleError("(proc * ((name string)) name)", "exported name must have a base name")
 
-  test "rejects export marker in defvar name mid-position":
-    expectLowerModuleError("(defvar x*y 1)", "export marker is only allowed at the end of a name")
+  test "rejects export marker in var name mid-position":
+    expectLowerModuleError("(var x*y 1)", "export marker is only allowed at the end of a name")
 
-  test "rejects bare export marker as defvar name":
-    expectLowerModuleError("(defvar * 1)", "exported name must have a base name")
+  test "rejects bare export marker as var name":
+    expectLowerModuleError("(var * 1)", "exported name must have a base name")
 
-  test "allows typed defvar declaration":
-    discard lowerModule(readAll("(defvar (limit int) 100)", "lower-test.nfl"))
-    discard lowerModule(readAll("(defparameter (cap int) 5)", "lower-test.nfl"))
+  test "allows typed var declaration":
+    discard lowerModule(readAll("(var (limit int) 100)", "lower-test.nfl"))
 
-  test "allows typed exported defvar":
-    discard lowerModule(readAll("(defvar (scale* int) 2)", "lower-test.nfl"))
-    discard lowerModule(readAll("(defparameter (cap* int) 10)", "lower-test.nfl"))
+  test "allows typed exported var declaration":
+    discard lowerModule(readAll("(var (scale* int) 2)", "lower-test.nfl"))
 
-  test "allows typed defvar with generic/vector type":
-    discard lowerModule(readAll("(defvar (xs [seq int]))", "lower-test.nfl"))
+  test "allows typed var declaration with generic/vector type":
+    discard lowerModule(readAll("(var (xs [seq int]))", "lower-test.nfl"))
 
-  test "allows typed defvar without a value":
-    discard lowerModule(readAll("(defvar (buf int))", "lower-test.nfl"))
-    discard lowerModule(readAll("(defparameter (idx int))", "lower-test.nfl"))
+  test "allows typed var declaration without a value":
+    discard lowerModule(readAll("(var (buf int))", "lower-test.nfl"))
 
-  test "rejects untyped defvar without a value":
-    expectLowerModuleError("(defvar x)", "without a type annotation requires a value")
+  test "rejects untyped var declaration without a value":
+    expectLowerModuleError("(var x)", "without a type annotation requires a value")
 
-  test "rejects defvar with malformed typed name":
-    expectLowerModuleError("(defvar (1 int) 5)", "name must be a symbol or (name type)")
+  test "rejects var declaration with malformed typed name":
+    expectLowerModuleError("(var (1 int) 5)", "name must be a symbol or (name type)")
+
+  test "rejects var declaration form in expression scope":
+    expectLowerError("(let ((x (var y 1))) x)", "var is only allowed at statement/module scope")
+
+  test "distinguishes local var-with-body from module-level var declaration by shape":
+    discard lowerExpr(readOne("(var ((x 1)) x)", "lower-test.nfl"))
+    discard lowerModule(readAll("(var x 1)", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (x int) 1)", "lower-test.nfl"))
 
   test "allows const declaration":
     discard lowerModule(readAll("(const answer 42)", "lower-test.nfl"))
@@ -230,9 +234,6 @@ suite "lowering validation":
   test "allows exported const":
     discard lowerModule(readAll("(const maxCoord* 1000)", "lower-test.nfl"))
     discard lowerModule(readAll("(const (scale* int) 2)", "lower-test.nfl"))
-
-  test "allows defconstant alias":
-    discard lowerModule(readAll("(defconstant answer 42)", "lower-test.nfl"))
 
   test "exported const binding resolves under base name":
     discard lowerModule(readAll("(const x* 1)\n(const y (+ x* 0))", "lower-test.nfl"))
@@ -250,7 +251,7 @@ suite "lowering validation":
     expectLowerModuleError("(const * 1)", "exported name must have a base name")
 
   test "rejects set! on const binding":
-    expectLowerModuleError("(const c 1)\n(defvar d (block (set! c 2) c))", "immutable binding")
+    expectLowerModuleError("(const c 1)\n(var d (block (set! c 2) c))", "immutable binding")
 
   test "rejects const in expression scope":
     expectLowerError("(let ((x (const a 1))) x)", "const is only allowed at statement/module scope")
@@ -273,11 +274,8 @@ suite "lowering validation":
   test "allows pragma on object field":
     discard lowerModule(readAll("(type Person (object (name {.exportc.} string)))", "lower-test.nfl"))
 
-  test "allows pragma on defvar":
-    discard lowerModule(readAll("(defvar x {.volatile.} 1)", "lower-test.nfl"))
-
-  test "allows pragma on defparameter":
-    discard lowerModule(readAll("(defparameter y {.used.} 2)", "lower-test.nfl"))
+  test "allows pragma on var declaration":
+    discard lowerModule(readAll("(var x {.volatile.} 1)", "lower-test.nfl"))
 
   test "allows pragma on const":
     discard lowerModule(readAll("(const x {.used.} 1)", "lower-test.nfl"))
@@ -299,8 +297,8 @@ suite "lowering validation":
   test "allows value pragma on proc":
     discard lowerModule(readAll("(proc cFoo {.importc: \"foo\", cdecl.} () (: int) 0)", "lower-test.nfl"))
 
-  test "allows value pragma on defvar":
-    discard lowerModule(readAll("(defvar x {.importc: \"gFoo\".} int)", "lower-test.nfl"))
+  test "allows value pragma on var declaration":
+    discard lowerModule(readAll("(var x {.importc: \"gFoo\".} int)", "lower-test.nfl"))
 
   test "rejects export marker in value pragma key":
     expectLowerModuleError("(proc add (pragma (: foo* 1)) ((x int)) x)", "pragma key must be a non-empty symbol")
@@ -337,7 +335,7 @@ suite "lowering validation":
   test "allows generic type reference in new":
     discard lowerModule(readAll("""
 (type Box [T] (object (value T)))
-(defvar b (new [Box int] (value 5)))
+(var b (new [Box int] (value 5)))
 """, "lower-test.nfl"))
 
   test "rejects empty generic parameter list":

@@ -127,10 +127,10 @@ nflModule """
 (proc shout ((name string)) (: string)
   (name.toUpperAscii))
 (when true nil)
-(defvar shouted (toUpperAscii "nfl"))
-(defvar shoutedAgain (greet "macro"))
-(defvar shoutedByMethod (shout "method"))
-(defvar hygienicResult (hygienic))
+(var shouted (toUpperAscii "nfl"))
+(var shoutedAgain (greet "macro"))
+(var shoutedByMethod (shout "method"))
+(var hygienicResult (hygienic))
 (type Count int)
 (type Person
   (object
@@ -144,35 +144,34 @@ nflModule """
   (. p age))
 (proc personNamedAge ((p Person) (expected int)) (: bool)
   (== (. p age) expected))
-(defvar counted (incCount 2))
-(defvar defaultPerson (default Person))
-(defvar defaultAge (personAge defaultPerson))
-(defvar ada (new Person (name "Ada") (age 36)))
-(defvar adaName (. ada name))
-(defvar adaAge (personAge ada))
-(defvar adaHasExpectedAge (personNamedAge ada 36))
-(defvar adaHasExpectedNamedAge (personNamedAge (: expected 36) (: p ada)))
-(defvar favoriteMood happy)
+(var counted (incCount 2))
+(var defaultPerson (default Person))
+(var defaultAge (personAge defaultPerson))
+(var ada (new Person (name "Ada") (age 36)))
+(var adaName (. ada name))
+(var adaAge (personAge ada))
+(var adaHasExpectedAge (personNamedAge ada 36))
+(var adaHasExpectedNamedAge (personNamedAge (: expected 36) (: p ada)))
+(var favoriteMood happy)
 (+ 1)
 (block (+ 1 2) nil)
-; Export marker tests — public proc, exported defvar, exported type with mixed fields.
+; Export marker tests — public proc, exported var declaration, exported type with mixed fields.
 (proc publicGreet* ((name string)) (: string)
   (name.toUpperAscii))
-(defvar publicVersion* "2.0")
+(var publicVersion* "2.0")
 (type PublicPoint*
   (object
     (x* int)
     (y int)))
-(defvar testPoint (new PublicPoint (x 3) (y 4)))
+(var testPoint (new PublicPoint (x 3) (y 4)))
 ; Const tests — plain, typed, exported.
 (const privateConst 7)
 (const (typedConst int) 11)
 (const publicSize* 3)
-(defconstant defconstantAlias 99)
-; Typed defvar tests — with value, without value (zero-initialized), exported.
-(defvar (typedVar int) 11)
-(defvar (typedBlank int))
-(defvar (typedExported* int) 22)
+; Typed var declaration tests — with value, without value (zero-initialized), exported.
+(var (typedVar int) 11)
+(var (typedBlank int))
+(var (typedExported* int) 22)
 ; Pragma tests.
 ; {.discardable.} lets us call the proc as a statement without `discard`.
 (proc makeValue {.discardable.} () (: int)
@@ -189,8 +188,8 @@ nflModule """
   (object
     (value int)
     (tag {.used.} string)))
-; Pragma on defvar.
-(defvar pragmaVar {.used.} 77)
+; Pragma on var declaration.
+(var pragmaVar {.used.} 77)
 ; Pragma on const.
 (const pragmaConst {.used.} 13)
 ; Value pragma: {.deprecated: "msg".} is usable without external linkage.
@@ -200,10 +199,10 @@ nflModule """
 (proc noRaises {.raises: [].} () (: int)
   42)
 ; Local let binding pragma.
-(defvar localPragmaResult
+(var localPragmaResult
   (let ((x {.used.} 7)) x))
 ; Local let binding with type and pragma.
-(defvar localTypedPragmaResult
+(var localTypedPragmaResult
   (let (((x int) {.used.} 12)) x))
 ; Generic declarations.
 ; Simple generic proc — inference-based call.
@@ -220,13 +219,13 @@ nflModule """
 (proc unbox [T] ((b [Box T])) (: T)
   (. b value))
 ; Instantiate the generic type with explicit [Box int].
-(defvar intBox (new [Box int] (value 42)))
+(var intBox (new [Box int] (value 42)))
 ; Call via inference.
-(defvar identResult (identity 99))
+(var identResult (identity 99))
 ; Two-param call via inference.
-(defvar firstResult (pickFst 7 "ignored"))
+(var firstResult (pickFst 7 "ignored"))
 ; Unbox round-trip.
-(defvar unboxResult (unbox intBox))
+(var unboxResult (unbox intBox))
 ; Generic proc with pragma.
 (proc inlinedId [T] {.inline.} ((x T)) (: T)
   x)
@@ -236,21 +235,21 @@ nflModule """
     (val T)))
 ; --- For loop tests ---
 ; Sum elements of an array literal with a for loop.
-(defvar forSeqSum
+(var forSeqSum
   (block
     (var ((acc 0))
       (for (x [1 2 3 4 5])
         (set! acc (+ acc x)))
       acc)))
 ; Sum of range 1..5 using the `..` range operator.
-(defvar forRangeSum
+(var forRangeSum
   (block
     (var ((acc 0))
       (for (i (.. 1 5))
         (set! acc (+ acc i)))
       acc)))
 ; Multi-var iteration over array pairs.
-(defvar forPairsSum
+(var forPairsSum
   (block
     (var ((acc 0))
       (for ((i x) (. [10 20 30] pairs))
@@ -263,7 +262,7 @@ nflModule """
     (of 1 "one")
     (else "many")))
 ; Case as statement — side effect via mutable var.
-(defvar caseStmtRan
+(var caseStmtRan
   (block
     (var ((x "unset"))
       (case 1
@@ -287,7 +286,7 @@ nflModule """
     (except (e ValueError)
       (. e msg))))
 ; try: finally block runs even on the success path.
-(defvar finallyRan
+(var finallyRan
   (block
     (var ((ran false))
       (try
@@ -309,11 +308,11 @@ nflModule """
 ; Template with bare-symbol (untyped) param — e.g. used for code injection.
 (template inject (body)
   body)
-; Use templates via defvar.
-(defvar templateResult (square 7))
-(defvar injectResult (inject 99))
+; Use templates via var declaration.
+(var templateResult (square 7))
+(var injectResult (inject 99))
 ; --- Iterator tests ---
-; Unexported iterator yielding 0..n-1 used for the defvar sum.
+; Unexported iterator yielding 0..n-1 used for the var declaration sum.
 (iterator upTo ((n int)) (: int)
   (for (i (.. 0 (- n 1)))
     (yield i)))
@@ -322,7 +321,7 @@ nflModule """
   (for (i (.. 0 (- n 1)))
     (yield i)))
 ; Sum all values produced by the unexported iterator.
-(defvar iterSum
+(var iterSum
   (block
     (var ((acc 0))
       (for (x (upTo 5))
@@ -331,7 +330,7 @@ nflModule """
 """, "module-test.nfl"
 
 suite "nfl module backend":
-  test "import and defvar":
+  test "import and var declaration":
     check shouted == "NFL"
 
   test "proc definition":
@@ -360,7 +359,7 @@ suite "nfl module backend":
   test "exported proc is callable under its base name":
     check publicGreet("world") == "WORLD"
 
-  test "exported defvar is accessible under its base name":
+  test "exported var declaration is accessible under its base name":
     check publicVersion == "2.0"
 
   test "exported type and mixed-export fields work":
@@ -383,13 +382,13 @@ suite "nfl module backend":
   test "typed const declaration":
     check typedConst == 11
 
-  test "typed defvar declaration":
+  test "typed var declaration":
     check typedVar == 11
 
-  test "typed defvar without value is zero-initialized":
+  test "typed var declaration without value is zero-initialized":
     check typedBlank == 0
 
-  test "typed exported defvar is accessible under its base name":
+  test "typed exported var declaration is accessible under its base name":
     check typedExported == 22
 
   test "exported const is accessible under its base name":
@@ -408,7 +407,7 @@ suite "nfl module backend":
     let t = Tagged(value: 3, tag: "hi")
     check t.value == 3
 
-  test "pragma on defvar compiles":
+  test "pragma on var declaration compiles":
     check pragmaVar == 77
 
   test "pragma on const compiles":
@@ -512,7 +511,7 @@ suite "nfl module backend — template / iterator":
 
 nflModule """
 ; --- while loop sums 0+1+2+3+4 = 10 (#24) ---
-(defvar whileSum
+(var whileSum
   (block
     (var ((i 0) (acc 0))
       (while (< i 5)
@@ -521,7 +520,7 @@ nflModule """
       acc)))
 
 ; --- break exits early when i reaches 3 (#24) ---
-(defvar breakAt
+(var breakAt
   (block
     (var ((i 0))
       (while true
@@ -530,7 +529,7 @@ nflModule """
       i)))
 
 ; --- continue skips even increments; sums odd i: 1+3+5 = 9 (#24) ---
-(defvar continueSkips
+(var continueSkips
   (block
     (var ((i 0) (acc 0))
       (while (< i 5)
@@ -548,7 +547,7 @@ nflModule """
 
 ; --- discard suppresses unused-result warning (#27) ---
 (proc sideEffect () (: int) 42)
-(defvar discardRan
+(var discardRan
   (block
     (discard (sideEffect))
     true))
@@ -556,7 +555,7 @@ nflModule """
 ; --- distinct type wraps a base type (#28) ---
 (type Metres (distinct float))
 (proc toMetres ((x float)) (: Metres) (Metres x))
-(defvar metreDist (toMetres 5.0))
+(var metreDist (toMetres 5.0))
 
 ; --- tuple structural type (#28) ---
 ; Construction of named tuples uses Nim-side syntax (no (new ...) form for tuples).
@@ -569,8 +568,8 @@ nflModule """
 (type TreeNode (ref (object (val int))))
 (proc mkNode ((v int)) (: TreeNode)
   (new TreeNode (val v)))
-(defvar aNode (mkNode 7))
-(defvar nodeVal (. aNode val))
+(var aNode (mkNode 7))
+(var nodeVal (. aNode val))
 """, "new-forms-test.nfl"
 
 suite "nfl backend — while / break / continue / return / discard (#24-#27)":
@@ -627,8 +626,8 @@ nflModule """
 (proc mkCircle ((r float) (col string)) (: Circle)
   (new Circle (radius r) (color col)))
 
-(defvar circ (mkCircle 2.0 "red"))
-(defvar circColor (. circ color))
+(var circ (mkCircle 2.0 "red"))
+(var circColor (. circ color))
 """, "method-test.nfl"
 
 suite "nfl backend — method / object inheritance (#30, #33)":

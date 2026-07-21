@@ -18,6 +18,23 @@ proc isSymbol(sx: Syntax; name: string): bool =
 proc isPragmaClause(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("pragma")
 
+proc isDefvarForm(sx: Syntax): bool =
+  ## `var` is overloaded: `(var name value)` / `(var (name type) value)` is a
+  ## module/statement-level declaration, while `(var ((name value) …) body…)`
+  ## is the local mutable-binding form (like `let`, but mutable). The two are
+  ## distinguished by shape: a local binding list is always a list of lists
+  ## (each entry a `(name value)` pair or `(name {.pragma.} value)` triple),
+  ## while a declaration's name slot is never further nested that way — it is
+  ## a bare symbol, or a flat `(name type)` pair whose first element is not
+  ## itself a list. Anything not clearly a bindings list is treated as an
+  ## (possibly malformed) declaration, so bad declarations still get
+  ## declaration-shaped diagnostics instead of confusing "bad binding" errors.
+  if sx.items.len < 2:
+    return false
+  let nameTarget = sx.items[1]
+  not (nameTarget.kind == sxList and
+       (nameTarget.items.len == 0 or nameTarget.items[0].kind == sxList))
+
 proc validatePragma(sx: Syntax) =
   ## Validates a pragma clause `(pragma m1 m2 …)`.  Each entry after the head
   ## must be either:
@@ -304,7 +321,7 @@ proc lowerYield(ctx: var LowerContext; sx: Syntax) =
     raiseCompilerError(sx.span, "yield expects exactly one expression")
   lowerExpr(ctx, sx.items[1])
 
-proc lowerDefvar(ctx: var LowerContext; sx: Syntax) =
+proc lowerVarDecl(ctx: var LowerContext; sx: Syntax) =
   let formName = sx.items[0].sym
   let nargs = sx.items.len - 1
   if nargs < 1 or nargs > 3:
@@ -791,7 +808,10 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
     elif sx.items[0].isSymbol("let"):
       lowerLetLike(ctx, sx, false)
     elif sx.items[0].isSymbol("var"):
-      lowerLetLike(ctx, sx, true)
+      if isDefvarForm(sx):
+        raiseCompilerError(sx.span, "var is only allowed at statement/module scope")
+      else:
+        lowerLetLike(ctx, sx, true)
     elif sx.items[0].isSymbol("set!"):
       lowerSet(ctx, sx)
     elif sx.items[0].isSymbol("do"):
@@ -818,8 +838,6 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerNew(ctx, sx)
     elif sx.items[0].isSymbol(":"):
       raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
-    elif sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
-      raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("const"):
       raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
@@ -847,8 +865,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
   if sx.kind == sxList and sx.items.len > 0:
-    if sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
-      lowerDefvar(ctx, sx)
+    if sx.items[0].isSymbol("var") and isDefvarForm(sx):
+      lowerVarDecl(ctx, sx)
       return
     if sx.items[0].isSymbol("const"):
       lowerConst(ctx, sx)

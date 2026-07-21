@@ -80,7 +80,6 @@ The NFL preamble (`src/nfl/preamble.nfl`) is loaded before every file and provid
 |-------|-----------|
 | `(when test body...)` | `(if test (block body...) nil)` |
 | `(unless test body...)` | `(if test nil (block body...))` |
-| `(defconstant name value)` | `(const name value)` |
 | `(and args...)` | short-circuit `if` chain |
 | `(or args...)` | short-circuit `if` chain with `gensym` |
 | `(cond clauses...)` | nested `if` chain |

@@ -16,6 +16,23 @@ proc isSymbol(sx: Syntax; name: string): bool =
 proc isPragmaClause(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("pragma")
 
+proc isDefvarForm(sx: Syntax): bool =
+  ## `var` is overloaded: `(var name value)` / `(var (name type) value)` is a
+  ## module/statement-level declaration, while `(var ((name value) …) body…)`
+  ## is the local mutable-binding form (like `let`, but mutable). The two are
+  ## distinguished by shape: a local binding list is always a list of lists
+  ## (each entry a `(name value)` pair or `(name {.pragma.} value)` triple),
+  ## while a declaration's name slot is never further nested that way — it is
+  ## a bare symbol, or a flat `(name type)` pair whose first element is not
+  ## itself a list. Anything not clearly a bindings list is treated as an
+  ## (possibly malformed) declaration, so bad declarations still get
+  ## declaration-shaped diagnostics instead of confusing "bad binding" errors.
+  if sx.items.len < 2:
+    return false
+  let nameTarget = sx.items[1]
+  not (nameTarget.kind == sxList and
+       (nameTarget.items.len == 0 or nameTarget.items[0].kind == sxList))
+
 proc procGenericIdx(sx: Syntax): int =
   ## Returns the index of the optional generic-params vector in a `proc` or `type`
   ## form, or -1 if none is present.  Generic params appear as a `sxVector`
@@ -381,7 +398,7 @@ proc emitYield(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits a `(yield expr)` form as `nnkYieldStmt`.
   nnkYieldStmt.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
 
-proc emitDefvar(ctx: var EmitContext; sx: Syntax): NimNode =
+proc emitVarDecl(ctx: var EmitContext; sx: Syntax): NimNode =
   let formName = sx.items[0].sym
   let nameTarget = sx.items[1]
   # Determine name ident and optional type ident.
@@ -804,7 +821,10 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
     elif sx.items[0].isSymbol("let"):
       ctx.emitLetLike(sx, false)
     elif sx.items[0].isSymbol("var"):
-      ctx.emitLetLike(sx, true)
+      if isDefvarForm(sx):
+        raiseCompilerError(sx.span, "var is only allowed at statement/module scope")
+      else:
+        ctx.emitLetLike(sx, true)
     elif sx.items[0].isSymbol("set!"):
       ctx.emitSet(sx)
     elif sx.items[0].isSymbol("do"):
@@ -839,8 +859,6 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, "break is only allowed inside a loop body")
     elif sx.items[0].isSymbol("continue"):
       raiseCompilerError(sx.span, "continue is only allowed inside a loop body")
-    elif sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
-      raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("const"):
       raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("proc"):
@@ -893,8 +911,8 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       for i in 1 ..< sx.items.len:
         result.add ctx.emitStmt(sx.items[i])
       return
-    if sx.items[0].isSymbol("defvar") or sx.items[0].isSymbol("defparameter"):
-      return ctx.emitDefvar(sx)
+    if sx.items[0].isSymbol("var") and isDefvarForm(sx):
+      return ctx.emitVarDecl(sx)
     if sx.items[0].isSymbol("const"):
       return ctx.emitConst(sx)
     if sx.items[0].isSymbol("import"):

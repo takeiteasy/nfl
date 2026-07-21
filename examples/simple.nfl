@@ -1,6 +1,6 @@
 (import std/strutils)
 
-(defvar greet
+(var greet
   (do ((name string))
     (echo (toUpperAscii name))))
 

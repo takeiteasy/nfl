@@ -101,11 +101,11 @@ suite "nfl cli":
     check not output.contains("defmacro")
 
   test "reader errors point at nfl source":
-    let file = writeTempNfl("nfl cli reader diagnostic", "reader error.nfl", "\n(defvar x \"unterminated\n")
+    let file = writeTempNfl("nfl cli reader diagnostic", "reader error.nfl", "\n(var x \"unterminated\n")
 
     let (output, exitCode) = runCommand(cliExe, @["check", file])
     check exitCode != 0
-    check output.contains(file & ":2:11")
+    check output.contains(file & ":2:8")
     check output.contains("unterminated string literal")
 
   test "lowering errors point at nfl source":
@@ -126,15 +126,15 @@ suite "nfl cli":
     check output.contains("boom")
 
   test "nim type errors point at nfl source":
-    let file = writeTempNfl("nfl cli type diagnostic", "type error.nfl", "\n\n(defvar x (+ 1 \"bad\"))\n")
+    let file = writeTempNfl("nfl cli type diagnostic", "type error.nfl", "\n\n(var x (+ 1 \"bad\"))\n")
 
     let (output, exitCode) = runCommand(cliExe, @["check", file])
     check exitCode != 0
-    check output.contains(file & "(3, 12)")
+    check output.contains(file & "(3, 9)")
     check output.contains("type mismatch")
 
   test "unknown symbols point at nfl source":
-    let file = writeTempNfl("nfl cli unknown symbol diagnostic", "unknown symbol.nfl", "(defvar x missingSymbol)\n")
+    let file = writeTempNfl("nfl cli unknown symbol diagnostic", "unknown symbol.nfl", "(var x missingSymbol)\n")
 
     let (output, exitCode) = runCommand(cliExe, @["check", file])
     check exitCode != 0
@@ -183,8 +183,8 @@ suite "nfl cli":
       let file = writeTempNim("nfl cli helper warning", "two_modules.nim", """
 import nfl/compiler
 
-nflModule "(defvar firstValue (first [1 2]))", "first-module.nfl"
-nflModule "(defvar secondValue (first [3 4]))", "second-module.nfl"
+nflModule "(var firstValue (first [1 2]))", "first-module.nfl"
+nflModule "(var secondValue (first [3 4]))", "second-module.nfl"
 """)
 
       let (output, exitCode) = runCommand(nimExe, @["check", "--path:src", file])

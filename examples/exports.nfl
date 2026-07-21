@@ -25,10 +25,10 @@
   (if (< v lo) lo (if (> v hi) hi v)))
 
 ; Public constant-like variable.
-(defvar origin* (makePoint 0 0))
+(var origin* (makePoint 0 0))
 
 ; Private implementation detail.
-(defvar maxCoord 1000)
+(var maxCoord 1000)
 
 ; References always use the base name (without `*`).
 (echo "origin: " (. origin x) " " (. origin y))

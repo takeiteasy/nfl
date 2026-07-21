@@ -8,8 +8,7 @@
 ; An optional type annotation using the (name type) form.
 (const (bufferSize int) 1024)
 
-; The defconstant alias behaves identically.
-(defconstant version* 2)
+(const version* 2)
 
 ; References always use the base name (without `*`).
 (echo "maxItems: " maxItems)

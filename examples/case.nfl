@@ -13,7 +13,7 @@
 (echo (describeInt 7))
 
 ; Case as a statement — dispatch without returning a value.
-(defvar score 85)
+(var score 85)
 (case score
   (of 100 (echo "Perfect!"))
   (else (echo "Score: " score)))

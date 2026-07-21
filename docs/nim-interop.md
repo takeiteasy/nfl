@@ -97,7 +97,7 @@ Append `*` to a name to export it from the compiled module, making it accessible
 Use `(@  ...)` to create a Nim array (fixed-size) rather than a `seq`:
 
 ```lisp
-(defvar arr (@ [1 2 3]))
+(var arr (@ [1 2 3]))
 ```
 
 ## Bracket operator
@@ -105,7 +105,7 @@ Use `(@  ...)` to create a Nim array (fixed-size) rather than a `seq`:
 `(|[]| collection index)` maps to Nim's `[]` operator:
 
 ```lisp
-(defvar names (@ ["a" "b" "c"]))
+(var names (@ ["a" "b" "c"]))
 (echo (|[]| names 1))    ; b
 ```
 
@@ -146,7 +146,7 @@ Pragmas annotate declarations with Nim compiler hints. They are written as `{.na
 (type Point {.bycopy.}
   (object (x int) (y int)))
 
-(defvar counter {.used.} 0)
+(var counter {.used.} 0)
 (const maxItems {.used.} 100)
 ```
 
@@ -207,7 +207,7 @@ Templates and iterators support the same pragma and generic annotations as `proc
 (proc hypotenuse ((a float) (b float)) (: float)
   (sqrt (+ (* a a) (* b b))))
 
-(defvar currentDir (getCurrentDir))
+(var currentDir (getCurrentDir))
 (echo (shout (lastPathPart currentDir)))
 (echo (hypotenuse 3.0 4.0))
 ```

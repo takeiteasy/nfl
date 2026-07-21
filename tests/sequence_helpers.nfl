@@ -1,26 +1,26 @@
-(defvar nums (@ [1 2 3 4]))
-(defvar words (@ ["a" "bb" "ccc"]))
+(var nums (@ [1 2 3 4]))
+(var words (@ ["a" "bb" "ccc"]))
 
-(defvar firstValue (first nums))
-(defvar restValues (rest nums))
-(defvar emptyValues (empty? (@ [])))
-(defvar appendedValues (append nums (@ [5 6])))
+(var firstValue (first nums))
+(var restValues (rest nums))
+(var emptyValues (empty? (@ [])))
+(var appendedValues (append nums (@ [5 6])))
 
-(defvar mappedValues
+(var mappedValues
   (map nums (do ((x int64)) (* x 2))))
 
-(defvar mappedWithCapture
+(var mappedWithCapture
   (let ((offset 10))
     (map nums (do ((x int64)) (+ x offset)))))
 
-(defvar filteredValues
+(var filteredValues
   (filter nums (do ((x int64)) (< x 4))))
 
-(defvar foldedLeft
+(var foldedLeft
   (foldl nums 0 (do ((acc int64) (x int64)) (- acc x))))
 
-(defvar foldedRight
+(var foldedRight
   (foldr nums 0 (do ((x int64) (acc int64)) (- x acc))))
 
-(defvar mappedStrings
+(var mappedStrings
   (map words (do ((s string)) (. s len))))

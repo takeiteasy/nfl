@@ -20,18 +20,22 @@
 
 ## Variables
 
-### `defvar` — module-level binding
+### `var` — module-level declaration or local mutable binding
+
+`var` is two grammars distinguished by shape. A bare name or a flat
+`(name type)` pair is a module/statement-level declaration:
 
 ```lisp
-(defvar name value)
-(defvar (name type) value)    ; with explicit type annotation and value
-(defvar (name type))          ; type annotation only — Nim zero-initializes
-(defvar name {.pragma.} value)
+(var name value)
+(var (name type) value)    ; with explicit type annotation and value
+(var (name type))          ; type annotation only — Nim zero-initializes
+(var name {.pragma.} value)
 ```
 
 A value is required when no type annotation is given.
 
-### `var` — local mutable binding
+A parenthesized list of bindings followed by a body is the local
+mutable-binding form (like `let`, but mutable):
 
 ```lisp
 (var ((name value)) body...)
@@ -65,7 +69,6 @@ Multiple bindings in one `var`:
 (const name value)
 (const name* value)            ; exported
 (const (name type) value)      ; with type annotation
-(defconstant name value)       ; alias for const
 ```
 
 ## Procedures
@@ -105,7 +108,7 @@ Omit the return type for void procedures:
 ```
 
 ```lisp
-(defvar double
+(var double
   (do ((n int)) (: int)
     (* n 2)))
 ```
@@ -247,7 +250,7 @@ Defines a Nim method with dynamic dispatch via the vtable. The syntax is identic
 Dispatch is determined at runtime by the concrete type:
 
 ```lisp
-(defvar base (toAnimal dog))
+(var base (toAnimal dog))
 (echo (speak base))  ; → "woof"
 ```
 
@@ -260,7 +263,7 @@ Dispatch is determined at runtime by the concrete type:
 ```
 
 ```lisp
-(defvar p (new Person
+(var p (new Person
   (name "Ada")
   (age  36)))
 ```

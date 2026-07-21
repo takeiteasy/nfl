@@ -6,7 +6,7 @@
       (raise (newException ValueError "division by zero"))
       (div a b)))
 
-(defvar result
+(var result
   (try
     (safeDivide 10 2)
     (except ValueError 0)))

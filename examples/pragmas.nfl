@@ -38,8 +38,8 @@
     (value int)
     (label {.used.} string)))
 
-; Pragma on defvar.
-(defvar counter {.used.} 0)
+; Pragma on var declaration.
+(var counter {.used.} 0)
 
 ; Pragma on const.
 (const maxItems {.used.} 100)
@@ -62,12 +62,12 @@
 
 ; Pragmas can annotate local let/var bindings inside expressions.
 ; The pragma sits between the binding target and the value.
-(defvar letResult
+(var letResult
   (let ((x {.used.} 10))
     x))
 
 ; Typed local binding with a pragma.
-(defvar typedLetResult
+(var typedLetResult
   (let (((n int) {.used.} 5))
     n))
 

@@ -55,14 +55,15 @@ Semicolons start line comments.
 
 ### Variables
 
-`defvar` binds a name at module scope:
+`var` binds a name at module scope:
 
 ```lisp
-(defvar x 42)
-(defvar greeting "hello")
+(var x 42)
+(var greeting "hello")
 ```
 
-`var` creates a local variable with a scope body:
+`var` with a parenthesized binding list and a body instead creates a local
+mutable variable scoped to that body:
 
 ```lisp
 (var ((count 0))
@@ -98,7 +99,7 @@ Type annotations use the `(name type)` pair form:
 `do` defines an anonymous procedure (lambda):
 
 ```lisp
-(defvar double
+(var double
   (do ((n int)) (: int)
     (* n 2)))
 
@@ -125,7 +126,7 @@ Type annotations use the `(name type)` pair form:
 Square brackets construct sequences:
 
 ```lisp
-(defvar nums [1 2 3 4 5])
+(var nums [1 2 3 4 5])
 (echo (at nums 0))        ; 1
 (echo (. nums len))       ; 5
 ```

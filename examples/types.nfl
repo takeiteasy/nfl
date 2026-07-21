@@ -6,7 +6,7 @@
 (proc personAge ((p Person)) (: int)
   (. p age))
 
-(defvar ada (new Person
+(var ada (new Person
   (name "Ada")
   (age 36)))
 
@@ -16,7 +16,7 @@
 ; distinct — newtype wrapper: prevents accidental mixing of units.
 (type Metres (distinct float))
 (proc toMetres ((x float)) (: Metres) (Metres x))
-(defvar dist (toMetres 42.0))
+(var dist (toMetres 42.0))
 (echo "distance: " (float dist) "m")
 
 ; tuple — structural record type usable in proc signatures.
@@ -27,7 +27,7 @@
 ; ref object — heap-allocated with garbage collection.
 (type Node (ref (object (val int))))
 (proc mkNode ((v int)) (: Node) (new Node (val v)))
-(defvar n (mkNode 99))
+(var n (mkNode 99))
 (echo "node value: " (. n val))
 
 ; object inheritance — shared base type with dynamic dispatch.
@@ -35,5 +35,5 @@
 (type Dog    (ref (object (of Animal))))
 (method speak {.base.} ((a Animal)) (: string) "...")
 (method speak ((d Dog)) (: string) "woof")
-(defvar dog (new Dog (name "Rex")))
+(var dog (new Dog (name "Rex")))
 (echo (. dog name) " says: " (speak dog))

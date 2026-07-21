@@ -8,9 +8,9 @@
 (proc hypotenuse ((a float) (b float)) (: float)
   (sqrt (+ (* a a) (* b b))))
 
-(defvar names (@ ["nfl" "macro" "nim"]))
-(defvar currentDir (getCurrentDir))
-(defvar baseName (lastPathPart currentDir))
+(var names (@ ["nfl" "macro" "nim"]))
+(var currentDir (getCurrentDir))
+(var baseName (lastPathPart currentDir))
 
 (echo (shout "hello"))
 (echo (shout baseName))
