@@ -554,6 +554,28 @@ proc lowerFor(ctx: var LowerContext; sx: Syntax) =
   lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
   ctx.popScope()
 
+proc lowerRangeForm(ctx: var LowerContext; sx: Syntax) =
+  ## Validates and lowers a `(.. lo hi)` range form used as a case of-value.
+  if not sx.isRangeForm:
+    raiseCompilerError(sx.span, "case range branch expects (.. lo hi)")
+  lowerExpr(ctx, sx.items[1])
+  lowerExpr(ctx, sx.items[2])
+
+proc lowerCaseOfValue(ctx: var LowerContext; sx: Syntax) =
+  ## Lowers the value form of a single `of` branch: a range `(.. lo hi)`, a
+  ## multi-value/mixed list `(1 (.. 3 5) 7)`, or a single (possibly compound)
+  ## expression — see `isCaseValueList` for the disambiguation rule.
+  if sx.isRangeShaped:
+    lowerRangeForm(ctx, sx)
+  elif sx.isCaseValueList:
+    for item in sx.items:
+      if item.isRangeForm:
+        lowerRangeForm(ctx, item)
+      else:
+        lowerExpr(ctx, item)
+  else:
+    lowerExpr(ctx, sx)
+
 proc lowerCase(ctx: var LowerContext; sx: Syntax) =
   ## Validates `(case VALUE (of LIT body…)… [(else body…)])`.
   ## `of` and `else` are recognized positionally inside case only.
@@ -570,7 +592,7 @@ proc lowerCase(ctx: var LowerContext; sx: Syntax) =
     if branch.items[0].isSymbol("of"):
       if branch.items.len < 3:
         raiseCompilerError(branch.span, "case of branch expects a value and body")
-      lowerExpr(ctx, branch.items[1])
+      lowerCaseOfValue(ctx, branch.items[1])
       lowerBody(ctx, branch.items.toOpenArray(2, branch.items.high), branch)
     elif branch.items[0].isSymbol("else"):
       if branch.items.len < 2:

@@ -449,6 +449,27 @@ suite "lowering validation":
   test "rejects case else with missing body":
     expectLowerError("(case n (else))", "case else branch expects a body")
 
+  test "allows case with multi-value of branch":
+    discard lowerExpr(readOne("(case n (of (1 2 3) \"low\") (else \"other\"))", "lower-test.nfl"))
+
+  test "allows case with range of branch":
+    discard lowerExpr(readOne("(case n (of (.. 1 9) \"low\") (else \"other\"))", "lower-test.nfl"))
+
+  test "allows case with mixed value/range of branch":
+    discard lowerExpr(readOne("(case n (of (1 (.. 3 5) 7) \"mixed\") (else \"other\"))", "lower-test.nfl"))
+
+  test "allows case with wrapped single compound-expression of value":
+    # A bare `(of (+ 1 2) …)` is read as a value list `+, 1, 2` (see
+    # isCaseValueList) — a single computed value must be wrapped in an
+    # extra list: `(of ((+ 1 2)) …)`.
+    discard lowerExpr(readOne("(case n (of ((+ 1 2)) \"three\") (else \"other\"))", "lower-test.nfl"))
+
+  test "rejects case range of branch with wrong arity":
+    expectLowerError("(case n (of (.. 1) \"low\"))", "case range branch expects (.. lo hi)")
+
+  test "rejects case of branch with empty value list":
+    expectLowerError("(case n (of () \"low\"))", "empty list is not an expression")
+
   # ---------------------------------------------------------------------------
   # raise
   # ---------------------------------------------------------------------------

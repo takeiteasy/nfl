@@ -728,16 +728,40 @@ proc emitForCore(ctx: var EmitContext; sx: Syntax): NimNode =
   result.add body
   result = result.attachLineInfo(sx)
 
+proc emitRangeForm(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits a `(.. lo hi)` range form as `nnkInfix(.., lo, hi)` — the same
+  ## node shape Nim's own parser produces for `lo..hi`, so it drops straight
+  ## into a case-branch value list.
+  nnkInfix.newTree(ident(".."), ctx.emitExpr(sx.items[1]), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)
+
+proc emitOfValues(ctx: var EmitContext; sx: Syntax): seq[NimNode] =
+  ## Emits the value(s) of a single `of` branch's leading form: a range
+  ## `(.. lo hi)`, a multi-value/mixed list `(1 (.. 3 5) 7)`, or a single
+  ## (possibly compound) expression — mirrors `lowerCaseOfValue`.
+  if sx.isRangeShaped:
+    @[ctx.emitRangeForm(sx)]
+  elif sx.isCaseValueList:
+    var values: seq[NimNode] = @[]
+    for item in sx.items:
+      if item.isRangeForm:
+        values.add ctx.emitRangeForm(item)
+      else:
+        values.add ctx.emitExpr(item)
+    values
+  else:
+    @[ctx.emitExpr(sx)]
+
 proc emitCase(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits `nnkCaseStmt` with branch bodies as expressions (for expr context).
   result = nnkCaseStmt.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
   for i in 2 ..< sx.items.len:
     let branch = sx.items[i]
     if branch.items[0].isSymbol("of"):
-      result.add nnkOfBranch.newTree(
-        ctx.emitExpr(branch.items[1]),
-        ctx.emitBodyExpr(branch.items.toOpenArray(2, branch.items.high), branch)
-      ).attachLineInfo(branch)
+      var ofBranch = nnkOfBranch.newTree()
+      for value in ctx.emitOfValues(branch.items[1]):
+        ofBranch.add value
+      ofBranch.add ctx.emitBodyExpr(branch.items.toOpenArray(2, branch.items.high), branch)
+      result.add ofBranch.attachLineInfo(branch)
     else: # else branch
       result.add nnkElse.newTree(
         ctx.emitBodyExpr(branch.items.toOpenArray(1, branch.items.high), branch)
@@ -752,10 +776,11 @@ proc emitCaseStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       var body = newStmtList()
       for j in 2 ..< branch.items.len:
         body.add ctx.emitStmt(branch.items[j])
-      result.add nnkOfBranch.newTree(
-        ctx.emitExpr(branch.items[1]),
-        body
-      ).attachLineInfo(branch)
+      var ofBranch = nnkOfBranch.newTree()
+      for value in ctx.emitOfValues(branch.items[1]):
+        ofBranch.add value
+      ofBranch.add body
+      result.add ofBranch.attachLineInfo(branch)
     else:
       var body = newStmtList()
       for j in 1 ..< branch.items.len:

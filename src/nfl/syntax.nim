@@ -88,6 +88,30 @@ proc withSpan*(sx: Syntax; span: Span): Syntax =
 proc isSymbol*(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
 
+proc isRangeShaped*(sx: Syntax): bool =
+  ## True for any list headed by the `..` symbol, regardless of arity. Used
+  ## to recognize (and validate the arity of) an intended range form —
+  ## distinct from `isRangeForm`, which also checks the arity is exactly 2.
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("..")
+
+proc isRangeForm*(sx: Syntax): bool =
+  ## True for `(.. lo hi)` — the range form used by `for` loops and, per
+  ## ticket #22, `case` of-branches (`(of (.. lo hi) body…)`).
+  sx.isRangeShaped and sx.items.len == 3
+
+proc isCaseValueList*(sx: Syntax): bool =
+  ## True when a parenthesized form after `of` should be read as a
+  ## multi-value / mixed value-and-range list (`(of (1 (.. 3 5) 7) body…)`)
+  ## rather than a range (`(of (.. lo hi) body…)`).
+  ##
+  ## There is no syntactic way to distinguish a value list from a compound
+  ## call expression — `(+ 1 2)` and `(1 2)` have the same shape, and a
+  ## value list of symbols (e.g. `(Red Green)` enum labels) looks exactly
+  ## like a call. Per the ticket, any non-empty, non-range-shaped list after
+  ## `of` is read as a value list; a single computed value must be wrapped,
+  ## e.g. `(of ((+ 1 2)) body…)`.
+  sx.kind == sxList and sx.items.len > 0 and not sx.isRangeShaped
+
 proc sameSyntax*(a, b: Syntax): bool =
   if a.kind != b.kind:
     return false

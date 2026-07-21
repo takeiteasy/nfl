@@ -12,6 +12,21 @@
 (echo (describeInt 1))
 (echo (describeInt 7))
 
+; Multi-value and range of-branches — an of-branch's value form can be a
+; single value, a parenthesized list of values, a range `(.. lo hi)`, or a
+; mix of both.
+(proc describeDigit ((n int)) (: string)
+  (case n
+    (of (1 3 5 7 9) "odd digit")
+    (of (0 2 4 6 8) "even digit")
+    (of (.. 10 99) "two digits")
+    (else "out of range")))
+
+(echo (describeDigit 3))
+(echo (describeDigit 4))
+(echo (describeDigit 42))
+(echo (describeDigit -1))
+
 ; Case as a statement — dispatch without returning a value.
 (var score 85)
 (case score

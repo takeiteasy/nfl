@@ -301,6 +301,17 @@ Dispatch is determined at runtime by the concrete type:
   (else body...))
 ```
 
+An `of` branch's value form can also be a parenthesized list of values, a
+range, or a mix of both:
+
+```lisp
+(case n
+  (of (1 3 5 7 9) "odd digit")       ; multi-value -> of 1, 3, 5, 7, 9:
+  (of (.. 10 99) "two digits")       ; range       -> of 10..99:
+  (of (0 (.. 20 29) 100) "mixed")    ; mixed       -> of 0, 20..29, 100:
+  (else "other"))
+```
+
 ### `block`
 
 ```lisp

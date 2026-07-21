@@ -107,6 +107,26 @@ suite "nfl backend — for / case / raise / try":
     check nflExpr"(case 1 (of 0 10) (of 1 20) (else 99))" == 20
     check nflExpr"(case 2 (of 0 10) (of 1 20) (else 99))" == 99
 
+  test "case expression with multi-value of branch":
+    check nflExpr"(case 2 (of (1 2 3) 10) (else 0))" == 10
+    check nflExpr"(case 4 (of (1 2 3) 10) (else 0))" == 0
+
+  test "case expression with range of branch":
+    check nflExpr"(case 5 (of (.. 1 9) 1) (else 0))" == 1
+    check nflExpr"(case 1 (of (.. 1 9) 1) (else 0))" == 1
+    check nflExpr"(case 9 (of (.. 1 9) 1) (else 0))" == 1
+    check nflExpr"(case 10 (of (.. 1 9) 1) (else 0))" == 0
+
+  test "case expression with mixed value/range of branch":
+    check nflExpr"(case 4 (of (1 (.. 3 5) 7) 1) (else 0))" == 1
+    check nflExpr"(case 7 (of (1 (.. 3 5) 7) 1) (else 0))" == 1
+    check nflExpr"(case 6 (of (1 (.. 3 5) 7) 1) (else 0))" == 0
+
+  test "case expression with wrapped single compound-expression of value":
+    # A bare `(of (+ 1 2) …)` reads as the value list `+, 1, 2`; a single
+    # computed value must be wrapped: `(of ((+ 1 2)) …)`.
+    check nflExpr"(case 3 (of ((+ 1 2)) 10) (else 0))" == 10
+
   test "raise caught by enclosing try":
     check nflExpr("(try (raise (newException ValueError \"boom\")) (except ValueError \"caught\"))") == "caught"
 
@@ -280,6 +300,14 @@ nflModule """
       (case 1
         (of 0 (set! x "zero"))
         (of 1 (set! x "one"))
+        (else (set! x "other")))
+      x)))
+; Case as statement — range of-branch dispatch.
+(var caseStmtRange
+  (block
+    (var ((x "unset"))
+      (case 5
+        (of (.. 1 9) (set! x "low"))
         (else (set! x "other")))
       x)))
 ; --- Error handling tests ---
@@ -506,6 +534,9 @@ suite "nfl module backend — for / case / raise / try":
 
   test "case as statement — side effect executes correct branch":
     check caseStmtRan == "one"
+
+  test "case as statement — range of-branch executes correct branch":
+    check caseStmtRange == "low"
 
   test "try — successful path returns body value":
     check trySafe(1) == "ok"
