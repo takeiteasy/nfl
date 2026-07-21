@@ -687,3 +687,22 @@ suite "lowering validation":
 
   test "rejects object with only the head and no fields or inheritance":
     expectLowerModuleError("(type Bad (object))", "object type expects")
+
+  # ---------------------------------------------------------------------------
+  # implicit result variable  (#36)
+  # ---------------------------------------------------------------------------
+
+  test "allows set! result in a proc with a return type":
+    discard lowerModule(readAll("(proc f () (: int) (set! result 5))", "lower-test.nfl"))
+
+  test "allows set! result in a method with a return type":
+    discard lowerModule(readAll("(method f ((self string)) (: int) (set! result 5))", "lower-test.nfl"))
+
+  test "rejects set! result in a void proc":
+    expectLowerModuleError("(proc f () (set! result 5))", "not a mutable local")
+
+  test "rejects set! result in a template":
+    expectLowerModuleError("(template f () (set! result 5))", "not a mutable local")
+
+  test "rejects set! result in an iterator":
+    expectLowerModuleError("(iterator f () (: int) (set! result 5))", "not a mutable local")

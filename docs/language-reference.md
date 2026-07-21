@@ -100,6 +100,21 @@ Omit the return type for void procedures:
   (echo "Hello, " name))
 ```
 
+### Implicit `result`
+
+Any `proc` or `method` with a return type gets a mutable `result` variable, initialised to the type's default value. Assign to it with `set!` and it is returned automatically when the body falls through — no explicit `return` required:
+
+```lisp
+(proc sumTo ((n int)) (: int)
+  (set! result 0)
+  (for (i (.. 1 n))
+    (set! result (+ result i))))
+```
+
+`result` is not available in `template` or `iterator` bodies, and a proc without a return type has no `result` binding — `set!`ing it there is an error.
+
+Avoid ending a body with a bare `result` read once it has been assigned earlier — Nim rejects that as a redundant expression. Either let the body fall through on an assignment (as above), or return explicitly with `(return result)`.
+
 ### `do` — anonymous procedure
 
 ```lisp
@@ -370,6 +385,8 @@ Multi-variable (e.g. index + value via `pairs`):
   (if (> n hi) (return hi) nil)
   n)
 ```
+
+The implicit `result` variable (see [Implicit `result`](#implicit-result)) is an alternative to explicit `return`: assign to `result` and let the body fall through instead of returning a value directly.
 
 ### `discard`
 

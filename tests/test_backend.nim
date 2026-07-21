@@ -708,3 +708,41 @@ suite "nfl backend — method / object inheritance (#30, #33)":
 
   test "method dispatches on concrete type":
     check circ.area() > 12.0 and circ.area() < 13.0
+
+# ---------------------------------------------------------------------------
+# implicit result variable  (#36)
+# ---------------------------------------------------------------------------
+
+nflModule """
+; Body is only a set! of result — Nim auto-returns result, no explicit return.
+(proc justResult () (: int)
+  (set! result 5))
+
+; Assign result, run further statements, then bail early with a bare return.
+(proc sumTo ((n int)) (: int)
+  (set! result 0)
+  (for (i (.. 1 n))
+    (set! result (+ result i)))
+  (if (> n 100)
+      (return)
+      (return result)))
+
+; method also gets an implicit result.
+(type Doubler (object (factor int)))
+(method resultDouble ((d Doubler) (n int)) (: int)
+  (set! result n)
+  (set! result (* result (. d factor))))
+""", "result-test.nfl"
+
+suite "nfl backend — implicit result variable (#36)":
+  test "set! result as the only body form returns it":
+    check justResult() == 5
+
+  test "result accumulates across statements":
+    check sumTo(5) == 15
+
+  test "bare return exits early, returning result already accumulated":
+    check sumTo(200) == 20100  # 200*201/2, returned via bare `return`
+
+  test "method gets an implicit result too":
+    check resultDouble(Doubler(factor: 2), 3) == 6

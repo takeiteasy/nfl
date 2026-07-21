@@ -356,6 +356,11 @@ proc lowerRoutine(ctx: var LowerContext; sx: Syntax; formName: string;
   if bodyStart > sx.items.high:
     raiseCompilerError(sx.span, formName & " expects body expression")
   ctx.pushScope()
+  # `proc`/`method` forms with an explicit return type get Nim's implicit
+  # mutable `result` variable; declared before params so a param named
+  # `result` raises the same "duplicate binding" error Nim itself would.
+  if (formName == "proc" or formName == "method") and bodyStart == paramsIdx + 2:
+    declare(ctx, newSymbol("result", sx.items[paramsIdx + 1].span), bkMutable)
   for param in params.items:
     lowerParam(ctx, param)
   lowerBody(ctx, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
