@@ -85,6 +85,29 @@ Type annotations use the `(name type)` pair form:
   (echo count))
 ```
 
+Module-level `var` declarations can also be typed, and the value can be
+omitted (the variable is then zero-initialized):
+
+```lisp
+(var (limit int) 100)
+(var (buf int))          ; zero-initialized
+```
+
+A binding list with no body declares several module-level variables at once,
+reusing the same binding-list syntax as the local mutable-binding form above:
+
+```lisp
+(var (((width int) 640)
+      ((height int) 480)))
+```
+
+`const` supports the same multi-binding form:
+
+```lisp
+(const ((pi 3.14159)
+        (e 2.71828)))
+```
+
 ### Procedures
 
 `proc` declares a typed procedure:

@@ -239,6 +239,29 @@ proc emitLetLike(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
 
   emitBlockExpr(@[section.attachLineInfo(sx)], ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)).attachLineInfo(sx)
 
+proc isVarSectionForm(sx: Syntax): bool =
+  ## Mirrors lower.nim's isVarSectionForm: a `var`/`const` section form
+  ## declares multiple bindings at statement/module scope using the binding-
+  ## list grammar with no body: `(var ((x 1) (y 2)))`.
+  sx.items.len == 2 and not isDefvarForm(sx)
+
+proc emitVarSection(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
+  let bindings = sx.items[1]
+  if bindings.kind != sxList or bindings.items.len == 0:
+    raiseCompilerError(bindings.span, formName(sx.items[0]) & " section expects at least one binding")
+  var section = if mutable: nnkVarSection.newTree() else: nnkConstSection.newTree()
+  for binding in bindings.items:
+    let identDefs = ctx.emitBindingIdentDefs(binding)
+    if mutable:
+      section.add identDefs
+    else:
+      # const sections use nnkConstDef rather than nnkIdentDefs; reuse the
+      # same (name, type, value) children emitBindingIdentDefs already built.
+      section.add nnkConstDef.newTree(
+        identDefs[0], identDefs[1], identDefs[2]
+      ).attachLineInfo(binding)
+  section.attachLineInfo(sx)
+
 proc emitIf(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "if", sx.items.len - 1, 3)
   nnkIfExpr.newTree(
@@ -911,9 +934,18 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       for i in 1 ..< sx.items.len:
         result.add ctx.emitStmt(sx.items[i])
       return
-    if sx.items[0].isSymbol("var") and isDefvarForm(sx):
-      return ctx.emitVarDecl(sx)
+    if sx.items[0].isSymbol("var"):
+      if isDefvarForm(sx):
+        return ctx.emitVarDecl(sx)
+      if isVarSectionForm(sx):
+        return ctx.emitVarSection(sx, mutable = true)
+      # Binding-list shape with a body falls through to the local
+      # mutable-binding block form below, unchanged.
     if sx.items[0].isSymbol("const"):
+      if isVarSectionForm(sx):
+        return ctx.emitVarSection(sx, mutable = false)
+      if not isDefvarForm(sx):
+        raiseCompilerError(sx.span, "const does not support a local binding body")
       return ctx.emitConst(sx)
     if sx.items[0].isSymbol("import"):
       return emitImport(sx)

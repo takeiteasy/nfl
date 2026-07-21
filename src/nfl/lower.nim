@@ -153,6 +153,25 @@ proc lowerLetLike(ctx: var LowerContext; sx: Syntax; mutable: bool) =
   lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
   ctx.popScope()
 
+proc isVarSectionForm(sx: Syntax): bool =
+  ## A `var`/`const` section form declares multiple bindings at
+  ## statement/module scope using the same binding-list grammar as the local
+  ## mutable-binding form, but with no body: `(var ((x 1) (y 2)))`. This is
+  ## distinguished from the local form (which requires a body) purely by
+  ## arity — `(var (bindings…) body…)` has 3+ items, a section has exactly 2.
+  sx.items.len == 2 and not isDefvarForm(sx)
+
+proc lowerVarSection(ctx: var LowerContext; sx: Syntax; mutable: bool) =
+  let bindings = sx.items[1]
+  if bindings.kind != sxList or bindings.items.len == 0:
+    raiseCompilerError(bindings.span, formName(sx.items[0]) & " section expects at least one binding")
+  for binding in bindings.items:
+    discard binding.bindingName()                      # validates structure + optional pragma
+    lowerExpr(ctx, binding.items[binding.items.high])   # value is always the last item
+  let kind = if mutable: bkMutable else: bkImmutable
+  for binding in bindings.items:
+    declare(ctx, binding.bindingName(), kind)
+
 proc lowerIf(ctx: var LowerContext; sx: Syntax) =
   expectArity(sx, "if", sx.items.len - 1, 3)
   lowerExpr(ctx, sx.items[1])
@@ -865,10 +884,21 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
   if sx.kind == sxList and sx.items.len > 0:
-    if sx.items[0].isSymbol("var") and isDefvarForm(sx):
-      lowerVarDecl(ctx, sx)
-      return
+    if sx.items[0].isSymbol("var"):
+      if isDefvarForm(sx):
+        lowerVarDecl(ctx, sx)
+        return
+      if isVarSectionForm(sx):
+        lowerVarSection(ctx, sx, mutable = true)
+        return
+      # Binding-list shape with a body: falls through to the local
+      # mutable-binding block form via lowerExpr, unchanged.
     if sx.items[0].isSymbol("const"):
+      if isVarSectionForm(sx):
+        lowerVarSection(ctx, sx, mutable = false)
+        return
+      if not isDefvarForm(sx):
+        raiseCompilerError(sx.span, "const does not support a local binding body")
       lowerConst(ctx, sx)
       return
     if sx.items[0].isSymbol("import"):

@@ -76,6 +76,14 @@ Local bindings can be typed with `(name type)` inside `var` / `let`:
   (echo count))
 ```
 
+Module-level `var` declarations can be typed too, and the value is optional
+(the variable is zero-initialized when omitted):
+
+```lisp
+(var (limit int) 100)
+(var (buf int))
+```
+
 ## Exports
 
 Append `*` to a name to export it from the compiled module, making it accessible from Nim:
@@ -148,6 +156,13 @@ Pragmas annotate declarations with Nim compiler hints. They are written as `{.na
 
 (var counter {.used.} 0)
 (const maxItems {.used.} 100)
+```
+
+A pragma also composes with a typed name, with or without a value:
+
+```lisp
+(var (flag int) {.volatile.})
+(var (flag int) {.volatile.} 42)
 ```
 
 ### Local binding pragmas

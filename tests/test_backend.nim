@@ -192,6 +192,12 @@ nflModule """
 (var pragmaVar {.used.} 77)
 ; Pragma on const.
 (const pragmaConst {.used.} 13)
+; Typed var declaration with pragma — value-less and with a value.
+(var (typedPragmaBlank int) {.volatile.})
+(var (typedPragmaValue int) {.volatile.} 42)
+; Multi-binding var/const sections.
+(var (((multiA int) 1) ((multiB int) 2)))
+(const ((multiConstA 3) (multiConstB 4)))
 ; Value pragma: {.deprecated: "msg".} is usable without external linkage.
 (proc oldHelper {.deprecated: "use newHelper instead".} () (: int)
   99)
@@ -412,6 +418,20 @@ suite "nfl module backend":
 
   test "pragma on const compiles":
     check pragmaConst == 13
+
+  test "typed var declaration with pragma and no value is zero-initialized":
+    check typedPragmaBlank == 0
+
+  test "typed var declaration with pragma and value":
+    check typedPragmaValue == 42
+
+  test "multi-binding var section":
+    check multiA == 1
+    check multiB == 2
+
+  test "multi-binding const section":
+    check multiConstA == 3
+    check multiConstB == 4
 
   test "value pragma {.deprecated: msg.} compiles and proc is callable":
     {.push warnings: off.}

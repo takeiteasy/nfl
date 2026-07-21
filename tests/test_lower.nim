@@ -224,6 +224,24 @@ suite "lowering validation":
     discard lowerModule(readAll("(var x 1)", "lower-test.nfl"))
     discard lowerModule(readAll("(var (x int) 1)", "lower-test.nfl"))
 
+  test "allows multi-binding var section":
+    discard lowerModule(readAll("(var ((x 1) (y 2)))", "lower-test.nfl"))
+
+  test "allows typed multi-binding var section":
+    discard lowerModule(readAll("(var (((x int) 1) ((y int) 2)))", "lower-test.nfl"))
+
+  test "allows multi-binding const section":
+    discard lowerModule(readAll("(const ((a 1) (b 2)))", "lower-test.nfl"))
+
+  test "rejects empty var section":
+    expectLowerModuleError("(var ())", "expects at least one binding")
+
+  test "still lowers local var-with-body binding list unchanged":
+    discard lowerExpr(readOne("(var ((x 1) (y 2)) (+ x y))", "lower-test.nfl"))
+
+  test "rejects const binding-list form with a body":
+    expectLowerModuleError("(const ((a 1)) a)", "const does not support a local binding body")
+
   test "allows const declaration":
     discard lowerModule(readAll("(const answer 42)", "lower-test.nfl"))
     discard lowerModule(readAll("(const greeting \"hello\")", "lower-test.nfl"))
@@ -299,6 +317,12 @@ suite "lowering validation":
 
   test "allows value pragma on var declaration":
     discard lowerModule(readAll("(var x {.importc: \"gFoo\".} int)", "lower-test.nfl"))
+
+  test "allows typed var declaration with pragma and no value":
+    discard lowerModule(readAll("(var (x int) {.volatile.})", "lower-test.nfl"))
+
+  test "allows typed var declaration with pragma and value":
+    discard lowerModule(readAll("(var (x int) {.volatile.} 42)", "lower-test.nfl"))
 
   test "rejects export marker in value pragma key":
     expectLowerModuleError("(proc add (pragma (: foo* 1)) ((x int)) x)", "pragma key must be a non-empty symbol")
