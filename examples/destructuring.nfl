@@ -1,0 +1,30 @@
+; Destructuring bindings (#12) — a `let`/`var` binding target may be a
+; vector pattern that pulls values out of a tuple, array, or seq by
+; position.
+
+(type Point2D (tuple (x float) (y float)))
+
+; Positional bind against a named tuple.
+(let (([x y] (tuple-new Point2D (x 3.0) (y 4.0))))
+  (echo "x: " x ", y: " y))
+
+; Positional bind against a plain array.
+(let (([a b c] [1 2 3]))
+  (echo "sum: " (+ a (+ b c))))
+
+; & captures the remaining elements as a slice.
+(let (([head & rest] (@ [1 2 3 4])))
+  (echo "head: " head ", rest: " rest))
+
+; Nested patterns destructure inner vectors too.
+(let (([[a b] [c d]] [[1 2] [3 4]]))
+  (echo "diag sum: " (+ a d)))
+
+; _ discards a position you don't need.
+(let (([_ b] [10 20]))
+  (echo "second: " b))
+
+; A destructuring target in `var` makes every bound name mutable.
+(var (([a b] [1 2]))
+  (set! a (+ a 100))
+  (echo "mutated: " a " " b))

@@ -38,6 +38,51 @@ suite "lowering validation":
   test "rejects duplicate bindings":
     expectLowerError("(let ((x 1) (x 2)) x)", "duplicate binding")
 
+  test "allows list/tuple destructuring bindings (#12)":
+    discard lowerExpr(readOne("(let (([a b] pair)) (+ a b))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(var (([a b] pair)) (set! a 1) a)", "lower-test.nfl"))
+
+  test "allows rest-capture destructuring":
+    discard lowerExpr(readOne("(let (([head & rest] xs)) head)", "lower-test.nfl"))
+
+  test "allows nested destructuring":
+    discard lowerExpr(readOne("(let (([a [b c]] nested)) (+ a (+ b c)))", "lower-test.nfl"))
+
+  test "destructuring skips _ placeholders":
+    # `_` is never declared, so repeated `_` in a pattern is not a duplicate
+    # binding — lowering doesn't track undeclared-identifier references
+    # (that's left to Nim's own compile pass), so this only checks that
+    # lowering itself succeeds.
+    discard lowerExpr(readOne("(let (([_ b] pair)) b)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (([_ _] pair)) 1)", "lower-test.nfl"))
+
+  test "rejects duplicate names across a destructuring pattern":
+    expectLowerError("(let (([a a] pair)) a)", "duplicate binding: a")
+
+  test "rejects empty destructuring pattern":
+    expectLowerError("(let (([] pair)) pair)", "destructuring pattern must not be empty")
+
+  test "rejects non-symbol destructuring element":
+    expectLowerError("(let (([1 b] pair)) b)", "destructuring pattern element must be a symbol")
+
+  test "rejects more than one rest capture":
+    expectLowerError("(let (([a & b & c] xs)) a)", "destructuring pattern allows only one")
+
+  test "rejects & not immediately before the final binding":
+    expectLowerError("(let (([a & b c] xs)) a)", "& must be immediately followed by the final rest binding")
+
+  test "rejects non-symbol rest binding":
+    expectLowerError("(let (([a & [b c]] xs)) a)", "destructuring rest binding must be a symbol")
+
+  test "rejects pragma clause on a destructuring binding":
+    expectLowerError("(let (([a b] {.used.} pair)) (+ a b))", "destructuring pattern cannot carry a pragma clause")
+
+  test "rejects destructuring in var/const sections":
+    expectLowerModuleError("(var (([a b])))", "destructuring is not supported in var/const sections")
+
+  test "rejects destructuring in do parameters":
+    expectLowerError("(do ([a b]) a)", "destructuring is not supported in do/proc parameters")
+
   test "rejects malformed typed bindings":
     expectLowerError("(let (((x 1) 2)) x)", "binding name must be a symbol or (name type)")
 

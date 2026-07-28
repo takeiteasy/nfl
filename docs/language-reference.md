@@ -57,6 +57,33 @@ Multiple bindings in one `var`:
 (let ((name {.pragma.} value)) body...)
 ```
 
+### Destructuring
+
+A binding target — in `let` and the local `var` form only — may be a
+vector pattern that destructures a tuple or indexable value by position:
+
+```lisp
+(let (([a b] pair)) (+ a b))            ; positional bind
+(let (([head & rest] xs)) ...)          ; & captures the remaining slice
+(let (([a [b c]] nested)) ...)          ; nested patterns
+(let (([_ b] pair)) b)                  ; _ discards a position
+```
+
+`var` with a destructuring target makes every bound name mutable:
+
+```lisp
+(var (([a b] pair)) (set! a (+ a 1)) a)
+```
+
+At most one `& rest` capture is allowed per pattern, and it must be the
+last two elements. Arity mismatches are not diagnosed by NFL: for a tuple
+value, a pattern with too many/few elements is a Nim compile error; for a
+seq or array, an out-of-range index is a runtime error.
+
+Destructuring is not supported in `var`/`const` sections, `do`/`proc`
+parameters, or macro parameters — see the tracker for follow-up scope.
+Object/record field destructuring is not supported.
+
 ### `set!` — mutation
 
 ```lisp

@@ -113,9 +113,53 @@ proc validateTypeReference(sx: Syntax; what: string)
 proc isNamedArg(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol(":")
 
-proc bindingName(binding: Syntax): Syntax =
-  ## Returns the name symbol from a binding pair `(target value)` or
-  ## an annotated binding triple `(target {.pragma.} value)`.
+proc validateVectorPattern(pattern: Syntax; names: var seq[Syntax])
+
+proc validateVectorPatternElem(elem: Syntax; names: var seq[Syntax]) =
+  case elem.kind
+  of sxSymbol:
+    if elem.sym != "_":
+      names.add elem
+  of sxVector:
+    validateVectorPattern(elem, names)
+  else:
+    raiseCompilerError(elem.span, "destructuring pattern element must be a symbol, _, or a nested vector pattern")
+
+proc validateVectorPattern(pattern: Syntax; names: var seq[Syntax]) =
+  ## Validates a destructuring vector pattern (#12) — `[a b]`, `[head &
+  ## rest]`, or a nested pattern like `[a [b c]]` — and collects every name
+  ## that must be declared, skipping `_` (the discard placeholder).
+  ## `&` marks the final element as a rest capture binding the remaining
+  ## slice; at most one is allowed, and it must be the second-to-last
+  ## element (immediately before the rest-binding name).
+  if pattern.items.len == 0:
+    raiseCompilerError(pattern.span, "destructuring pattern must not be empty")
+  var ampersands: seq[Syntax] = @[]
+  for elem in pattern.items:
+    if elem.kind == sxSymbol and elem.sym == "&":
+      ampersands.add elem
+  if ampersands.len > 1:
+    raiseCompilerError(ampersands[1].span, "destructuring pattern allows only one & rest capture")
+  if ampersands.len == 1:
+    if not (pattern.items[^2].kind == sxSymbol and pattern.items[^2].sym == "&"):
+      raiseCompilerError(ampersands[0].span, "& must be immediately followed by the final rest binding")
+    let restName = pattern.items[^1]
+    if restName.kind != sxSymbol:
+      raiseCompilerError(restName.span, "destructuring rest binding must be a symbol")
+    if restName.sym != "_":
+      names.add restName
+    for i in 0 ..< pattern.items.len - 2:
+      validateVectorPatternElem(pattern.items[i], names)
+    return
+  for elem in pattern.items:
+    validateVectorPatternElem(elem, names)
+
+proc bindingTargets(binding: Syntax): seq[Syntax] =
+  ## Returns the name symbol(s) to declare for a binding pair `(target
+  ## value)` or an annotated binding triple `(target {.pragma.} value)`.
+  ## `target` is a bare symbol, a typed `(name type)` pair, or — per #12 — a
+  ## destructuring vector pattern `[a b]` / `[head & rest]`, optionally
+  ## nested, in which case every name bound by the pattern is returned.
   if binding.kind != sxList or binding.items.len notin {2, 3}:
     raiseCompilerError(binding.span, "binding must be a pair or annotated triple")
   if binding.items.len == 3:
@@ -124,12 +168,17 @@ proc bindingName(binding: Syntax): Syntax =
     validatePragma(binding.items[1])
   let target = binding.items[0]
   if target.kind == sxSymbol:
-    return target
+    return @[target]
   # `(name type)` where type may be a symbol or a generic type vector `[Head T…]`
   if target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and
       (target.items[1].kind == sxSymbol or target.items[1].kind == sxVector):
-    return target.items[0]
-  raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
+    return @[target.items[0]]
+  if target.kind == sxVector:
+    if binding.items.len == 3:
+      raiseCompilerError(binding.items[1].span, "destructuring pattern cannot carry a pragma clause")
+    validateVectorPattern(target, result)
+    return
+  raiseCompilerError(target.span, "binding name must be a symbol or (name type), or a destructuring pattern")
 
 proc lowerBody(ctx: var LowerContext; items: openArray[Syntax]; owner: Syntax) =
   if items.len == 0:
@@ -144,13 +193,14 @@ proc lowerBindings(ctx: var LowerContext; bindings: Syntax; mutable: bool) =
     raiseCompilerError(bindings.span, "bindings must be a list")
 
   for binding in bindings.items:
-    discard binding.bindingName()                  # validates structure + optional pragma
+    discard binding.bindingTargets()                # validates structure + optional pragma
     lowerExpr(ctx, binding.items[binding.items.high])  # value is always the last item
 
   ctx.pushScope()
   let kind = if mutable: bkMutable else: bkImmutable
   for binding in bindings.items:
-    declare(ctx, binding.bindingName(), kind)
+    for name in binding.bindingTargets():
+      declare(ctx, name, kind)
 
 proc lowerLetLike(ctx: var LowerContext; sx: Syntax; mutable: bool) =
   if sx.items.len < 3:
@@ -186,6 +236,8 @@ proc sectionBindingParts(binding: Syntax; mutable: bool): tuple[target: Syntax, 
     baseTarget = target.items[0]
     validateTypeReference(target.items[1], "binding type")
     hasType = true
+  elif target.kind == sxVector:
+    raiseCompilerError(target.span, "destructuring is not supported in var/const sections; use a local let/var binding instead")
   else:
     raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
   var pragmaIdx = -1
@@ -253,6 +305,8 @@ proc lowerParam(ctx: var LowerContext; param: Syntax) =
       (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
     validateTypeReference(param.items[1], "parameter type")
     declare(ctx, param.items[0], bkImmutable)
+  elif param.kind == sxVector:
+    raiseCompilerError(param.span, "destructuring is not supported in do/proc parameters; use a local let binding in the body instead")
   else:
     raiseCompilerError(param.span, "do parameter must be a symbol or (name type)")
 

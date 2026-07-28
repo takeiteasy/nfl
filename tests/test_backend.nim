@@ -25,6 +25,23 @@ suite "nfl backend":
   test "typed let expression":
     check nflExpr"(let (((x int) 1)) (+ x 2))" == 3
 
+  test "list/tuple destructuring binding (#12)":
+    check nflExpr"(let (([a b] (@ [1 2]))) (+ a b))" == 3
+    check nflExpr"(let (([a b] [1 2])) (+ a b))" == 3
+
+  test "rest-capture destructuring":
+    check nflExpr"(let (([head & rest] (@ [1 2 3]))) head)" == 1
+    check nflExpr"(let (([head & rest] (@ [1 2 3]))) (. rest len))" == 2
+
+  test "nested destructuring":
+    check nflExpr"(let (([[a b] [c d]] [[1 2] [3 4]])) (+ (+ a b) (+ c d)))" == 10
+
+  test "destructuring skips _ placeholders":
+    check nflExpr"(let (([_ b] [1 2])) b)" == 2
+
+  test "mutable destructuring binding":
+    check nflExpr"(var (([a b] [1 2])) (set! a (+ a 10)) (+ a b))" == 13
+
   test "var and set expression":
     check nflExpr"(var ((x 1)) (set! x (+ x 2)) x)" == 3
 
