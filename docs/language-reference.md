@@ -481,6 +481,38 @@ range, or a mix of both:
   (else "other"))
 ```
 
+### `match`
+
+Structural pattern matching, separate from `case`: `case` matches a value
+against literals/ranges, `match` additionally destructures and binds.
+
+```lisp
+(match shape
+  (0                "zero")                 ; literal
+  ('Red             "stop")                 ; 'sym — equality (enum labels, consts)
+  ([h & t] :when (> h 10)  "big head")      ; vector pattern (#12) + guard
+  (n                (* n 2))                ; bare symbol — binds
+  (_                "other"))               ; wildcard
+```
+
+Pattern kinds:
+
+- a literal (`nil`/`true`/`false`/int/float/string) matches by equality
+- `_` matches anything and binds nothing
+- any other bare symbol matches anything and binds the scrutinee to that name
+- `'sym` (the reader's quote sugar) matches by equality against the symbol
+  `sym` — for an enum label or a module-level const
+- a vector pattern (`[a b]`, `[head & rest]`, nested) destructures like a
+  `let`/`var` [destructuring pattern](#destructuring)
+
+A clause may carry a guard, recognized positionally right after the
+pattern: `(PATTERN :when guard-expr body…)`. The guard can reference names
+the pattern just bound.
+
+If no clause matches, `match` raises `ValueError` at runtime — there is no
+static exhaustiveness check. Object-variant/constructor patterns (matching
+by type, e.g. `(Circle r)`) are not yet supported; see the tracker.
+
 ### `block`
 
 ```lisp

@@ -550,6 +550,40 @@ suite "lowering validation":
     expectLowerError("(case n (of () \"low\"))", "empty list is not an expression")
 
   # ---------------------------------------------------------------------------
+  # match (#13)
+  # ---------------------------------------------------------------------------
+
+  test "allows match with literal, wildcard, and bind patterns":
+    discard lowerExpr(readOne("(match n (0 \"zero\") (m (+ m 1)) (_ \"other\"))", "lower-test.nfl"))
+
+  test "allows match with quoted symbol pattern":
+    discard lowerExpr(readOne("(match n ('Red \"stop\") (_ \"go\"))", "lower-test.nfl"))
+
+  test "allows match with vector pattern and guard":
+    discard lowerExpr(readOne("(match n ([a b] :when (> a b) a) (_ 0))", "lower-test.nfl"))
+
+  test "rejects match with no clauses":
+    expectLowerError("(match n)", "match expects a value and at least one clause")
+
+  test "rejects match clause that is not a list":
+    expectLowerError("(match n 42)", "match clause must be")
+
+  test "rejects match clause with no body":
+    expectLowerError("(match n (0))", "match clause must be")
+
+  test "rejects match :when with no guard expression":
+    expectLowerError("(match n (a :when))", "match :when expects a guard expression")
+
+  test "rejects match :when with no body after the guard":
+    expectLowerError("(match n (a :when true))", "match clause expects a body")
+
+  test "rejects unsupported match pattern shape":
+    expectLowerError("(match n ((+ 1 2) \"nope\"))", "unsupported match pattern")
+
+  test "rejects malformed destructuring pattern inside match":
+    expectLowerError("(match n ([1 b] b))", "destructuring pattern element must be a symbol")
+
+  # ---------------------------------------------------------------------------
   # raise
   # ---------------------------------------------------------------------------
 

@@ -1,0 +1,43 @@
+; Pattern matching (#13) — a (match ...) form separate from `case`: it adds
+; structural destructuring and binding on top of case's literal/range
+; matching.
+
+(type Colour (enum Red Amber Green))
+
+(proc describeColour ((c Colour)) (: string)
+  (match c
+    ('Red   "stop")
+    ('Amber "wait")
+    ('Green "go")))
+
+(echo (describeColour Red))
+(echo (describeColour Green))
+
+; Literal, bare-symbol (bind), and wildcard patterns.
+(proc describeNumber ((n int)) (: string)
+  (match n
+    (0 "zero")
+    (1 "one")
+    (n (& "many: " ($ n)))))
+
+(echo (describeNumber 0))
+(echo (describeNumber 7))
+
+; Vector pattern destructuring plus a guard. The empty case uses a `_`
+; bind with a length guard, since a destructuring pattern must have at
+; least one element.
+(proc describeList ((xs [seq int64])) (: string)
+  (match xs
+    (_ :when (== (. xs len) 0) "empty")
+    ([_] "one element")
+    ([h & _] :when (> h 10) "big head, rest follows")
+    ([_ & _] "head then rest")))
+
+(echo (describeList (@ [])))
+(echo (describeList (@ [5])))
+(echo (describeList (@ [20 1 2])))
+(echo (describeList (@ [3 4 5])))
+
+(echo (match 0 (0 "zero") (1 "one") (_ "other")))
+(echo (match [1 2] ([a b] (+ a b)) (_ 0)))
+(echo (match (@ [11 2 3]) ([h & _] :when (> h 10) "big") (_ "small")))

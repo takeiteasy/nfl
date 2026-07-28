@@ -50,6 +50,19 @@ template nflStmt*(body: untyped) =
   else:
     body
 
+template nflMatchArity*(x: untyped; n: static[int]; exact: static[bool]): bool =
+  ## Arity test for a `match` (#13) vector pattern against a tuple, array, or
+  ## seq scrutinee. Tuples have no `.len`, so `compiles(len(x))` picks
+  ## between the two: an indexable-but-lenless value (a tuple) always passes
+  ## — its arity was already fixed by its type, so Nim itself would reject
+  ## an out-of-range accessor at compile time — while a seq/array is
+  ## checked for at least (or exactly, for a pattern with no `& rest`) `n`
+  ## elements.
+  when compiles(len(x)):
+    when exact: len(x) == n else: len(x) >= n
+  else:
+    true
+
 proc nflSeqMap*[T, U](items: openArray[T]; op: proc(item: T): U {.nimcall.}): seq[U] =
   for item in items:
     result.add op(item)

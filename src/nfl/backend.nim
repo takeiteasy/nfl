@@ -891,6 +891,132 @@ proc emitCaseStmt(ctx: var EmitContext; sx: Syntax): NimNode =
         body.add ctx.emitStmt(branch.items[j])
       result.add nnkElse.newTree(body).attachLineInfo(branch)
 
+# ---------------------------------------------------------------------------
+# match (#13)
+# ---------------------------------------------------------------------------
+
+proc emitMatchTest(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): NimNode =
+  ## Builds the boolean test for one match pattern against `tmp`. Mirrors
+  ## lower.nim's `lowerMatchPattern` — see #43 for the general
+  ## lower.nim/backend.nim shape-duplication this follows.
+  case pattern.kind
+  of sxNil:
+    nnkInfix.newTree(ident("=="), tmp.copyNimTree(), newNilLit()).attachLineInfo(pattern)
+  of sxBool:
+    nnkInfix.newTree(ident("=="), tmp.copyNimTree(), newLit(pattern.boolVal)).attachLineInfo(pattern)
+  of sxInt:
+    nnkInfix.newTree(ident("=="), tmp.copyNimTree(), newLit(pattern.intVal)).attachLineInfo(pattern)
+  of sxFloat:
+    nnkInfix.newTree(ident("=="), tmp.copyNimTree(), newLit(pattern.floatVal)).attachLineInfo(pattern)
+  of sxString:
+    nnkInfix.newTree(ident("=="), tmp.copyNimTree(), newLit(pattern.strVal)).attachLineInfo(pattern)
+  of sxSymbol:
+    # `_` (wildcard) and any other bare symbol (bind) both match
+    # unconditionally — the difference is only whether a binding is emitted.
+    newLit(true).attachLineInfo(pattern)
+  of sxVector:
+    var restIdx = -1
+    for i, elem in pattern.items:
+      if elem.kind == sxSymbol and elem.sym == "&":
+        restIdx = i
+        break
+    let headCount = if restIdx >= 0: restIdx else: pattern.items.len
+    newCall(bindSym"nflMatchArity", tmp.copyNimTree(), newLit(headCount), newLit(restIdx < 0)).attachLineInfo(pattern)
+  of sxList:
+    if pattern.items.len == 2 and pattern.items[0].isSymbol("quote") and pattern.items[1].kind == sxSymbol:
+      # 'sym — equality against the symbol's value (an enum label, a const, …).
+      nnkInfix.newTree(ident("=="), tmp.copyNimTree(), ctx.identForSymbol(pattern.items[1])).attachLineInfo(pattern)
+    else:
+      raiseCompilerError(pattern.span, "unsupported match pattern")
+
+proc emitMatchBindings(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): seq[NimNode] =
+  ## Emits the accessor `nnkIdentDefs` a match pattern binds against `tmp` —
+  ## a bare symbol binds the whole scrutinee; a vector pattern destructures
+  ## it via #12's `emitVectorPatternIdentDefs`; every other pattern kind
+  ## (literals, `_`, `'sym`) binds nothing.
+  case pattern.kind
+  of sxSymbol:
+    if pattern.sym != "_":
+      result = @[nnkIdentDefs.newTree(ctx.identForSymbol(pattern), newEmptyNode(), tmp.copyNimTree()).attachLineInfo(pattern)]
+  of sxVector:
+    ctx.emitVectorPatternIdentDefs(pattern, tmp.copyNimTree(), false, result)
+  else:
+    discard
+
+proc emitMatchCondition(ctx: var EmitContext; clause: Syntax; tmp: NimNode): NimNode =
+  ## The full branch condition: the pattern test, `and`ed with the `:when`
+  ## guard (if any) evaluated in a block that has the pattern's bindings in
+  ## scope, so a guard can reference names the pattern just bound.
+  let pattern = clause.items[0]
+  let patternTest = ctx.emitMatchTest(pattern, tmp)
+  if clause.items[1].isSymbol(":when"):
+    let bindings = ctx.emitMatchBindings(pattern, tmp)
+    var stmts: seq[NimNode] = @[]
+    if bindings.len > 0:
+      stmts.add nnkLetSection.newTree(bindings).attachLineInfo(clause)
+    let guardBlock = emitBlockExpr(stmts, ctx.emitExpr(clause.items[2])).attachLineInfo(clause)
+    nnkInfix.newTree(ident("and"), patternTest, guardBlock).attachLineInfo(clause)
+  else:
+    patternTest
+
+proc emitMatchBody(ctx: var EmitContext; clause: Syntax; tmp: NimNode; asExpr: bool): NimNode =
+  ## Emits one clause's body, with the pattern's bindings (re-emitted — they
+  ## are cheap index expressions on `tmp`, and the `:when` guard's copy above
+  ## is in a separate scope) declared ahead of it.
+  let pattern = clause.items[0]
+  let bodyStart = if clause.items[1].isSymbol(":when"): 3 else: 1
+  let bindings = ctx.emitMatchBindings(pattern, tmp)
+  var stmts: seq[NimNode] = @[]
+  if bindings.len > 0:
+    stmts.add nnkLetSection.newTree(bindings).attachLineInfo(clause)
+  if asExpr:
+    result = emitBlockExpr(stmts, ctx.emitBodyExpr(clause.items.toOpenArray(bodyStart, clause.items.high), clause)).attachLineInfo(clause)
+  else:
+    result = newStmtList()
+    for s in stmts:
+      result.add s
+    for i in bodyStart ..< clause.items.len:
+      result.add ctx.emitStmt(clause.items[i])
+
+proc emitMatchCore(ctx: var EmitContext; sx: Syntax; asExpr: bool): NimNode =
+  ## Emits:
+  ##   block:
+  ##     let tmp = <scrutinee>
+  ##     if <test1>:   block: <bindings1>; <body1>
+  ##     elif <test2>: block: <bindings2>; <body2>
+  ##     else:         raise newException(ValueError, "match: no branch matched")
+  if sx.items.len < 3:
+    raiseCompilerError(sx.span, "match expects a value and at least one clause")
+  let tmp = genSym(nskLet, "m")
+  let letSec = nnkLetSection.newTree(
+    nnkIdentDefs.newTree(tmp, newEmptyNode(), ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
+  ).attachLineInfo(sx)
+  var ifNode = (if asExpr: nnkIfExpr.newTree() else: nnkIfStmt.newTree())
+  for i in 2 ..< sx.items.len:
+    let clause = sx.items[i]
+    if clause.kind != sxList or clause.items.len < 2:
+      raiseCompilerError(clause.span, "match clause must be (pattern body…) or (pattern :when guard body…)")
+    let cond = ctx.emitMatchCondition(clause, tmp)
+    let body = ctx.emitMatchBody(clause, tmp, asExpr)
+    if asExpr:
+      ifNode.add nnkElifExpr.newTree(cond, body).attachLineInfo(clause)
+    else:
+      ifNode.add nnkElifBranch.newTree(cond, body).attachLineInfo(clause)
+  let raiseNode = nnkRaiseStmt.newTree(
+    newCall(ident("newException"), ident("ValueError"), newLit("match: no branch matched"))
+  ).attachLineInfo(sx)
+  if asExpr:
+    ifNode.add nnkElseExpr.newTree(raiseNode).attachLineInfo(sx)
+  else:
+    ifNode.add nnkElse.newTree(newStmtList(raiseNode)).attachLineInfo(sx)
+  emitBlockExpr(@[letSec], ifNode).attachLineInfo(sx)
+
+proc emitMatch(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitMatchCore(sx, true)
+
+proc emitMatchStmt(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitMatchCore(sx, false)
+
 proc emitRaise(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits `nnkRaiseStmt`.  Nim accepts `raise` in expression position as a
   ## noreturn expression (e.g. in the branch of an `if` expression).
@@ -1050,6 +1176,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       emitBlockExpr(@[ctx.emitWhileCore(sx)], newNilLit()).attachLineInfo(sx)
     elif sx.items[0].isSymbol("case"):
       ctx.emitCase(sx)
+    elif sx.items[0].isSymbol("match"):
+      ctx.emitMatch(sx)
     elif sx.items[0].isSymbol("raise"):
       ctx.emitRaise(sx)
     elif sx.items[0].isSymbol("return"):
@@ -1105,6 +1233,8 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return ctx.emitWhileCore(sx)
     if sx.items[0].isSymbol("case"):
       return ctx.emitCaseStmt(sx)
+    if sx.items[0].isSymbol("match"):
+      return ctx.emitMatchStmt(sx)
     if sx.items[0].isSymbol("raise"):
       return ctx.emitRaise(sx)
     if sx.items[0].isSymbol("return"):

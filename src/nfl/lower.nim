@@ -717,6 +717,60 @@ proc lowerCase(ctx: var LowerContext; sx: Syntax) =
     else:
       raiseCompilerError(branch.items[0].span, "case branch must be headed by of or else")
 
+proc lowerMatchPattern(ctx: var LowerContext; pattern: Syntax) =
+  ## Validates a single `match` pattern and declares any names it binds.
+  ## Mirrors backend.nim's `emitMatchTest`/`emitMatchBindings` (see #43 for
+  ## the general lower.nim/backend.nim shape-duplication this follows).
+  ##
+  ## Pattern kinds (#13): a literal (nil/bool/int/float/string) matches by
+  ## equality and binds nothing; `_` matches anything and binds nothing; any
+  ## other bare symbol matches anything and binds that name; `'sym` (the
+  ## reader's quote sugar) matches by equality against the symbol `sym` —
+  ## e.g. an enum label or a module-level const; a vector pattern
+  ## destructures like #12's `let`/`var` patterns, reusing
+  ## `validateVectorPattern`.
+  case pattern.kind
+  of sxNil, sxBool, sxInt, sxFloat, sxString:
+    discard
+  of sxSymbol:
+    if pattern.sym != "_":
+      declare(ctx, pattern, bkImmutable)
+  of sxVector:
+    var names: seq[Syntax] = @[]
+    validateVectorPattern(pattern, names)
+    for name in names:
+      declare(ctx, name, bkImmutable)
+  of sxList:
+    if pattern.items.len == 2 and pattern.items[0].isSymbol("quote") and pattern.items[1].kind == sxSymbol:
+      discard
+    else:
+      raiseCompilerError(pattern.span, "unsupported match pattern")
+
+proc lowerMatch(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(match VALUE (PATTERN body…)… )`, where a clause may carry a
+  ## guard: `(PATTERN :when guard body…)`. `:when` is recognized
+  ## positionally right after the pattern, inside `match` clauses only —
+  ## the same technique `lowerCase` uses for `of`/`else`.
+  if sx.items.len < 3:
+    raiseCompilerError(sx.span, "match expects a value and at least one clause")
+  lowerExpr(ctx, sx.items[1])
+  for i in 2 ..< sx.items.len:
+    let clause = sx.items[i]
+    if clause.kind != sxList or clause.items.len < 2:
+      raiseCompilerError(clause.span, "match clause must be (pattern body…) or (pattern :when guard body…)")
+    ctx.pushScope()
+    lowerMatchPattern(ctx, clause.items[0])
+    var bodyStart = 1
+    if clause.items[1].isSymbol(":when"):
+      if clause.items.len < 3:
+        raiseCompilerError(clause.span, "match :when expects a guard expression")
+      lowerExpr(ctx, clause.items[2])
+      bodyStart = 3
+    if bodyStart > clause.items.high:
+      raiseCompilerError(clause.span, "match clause expects a body")
+    lowerBody(ctx, clause.items.toOpenArray(bodyStart, clause.items.high), clause)
+    ctx.popScope()
+
 proc lowerRaise(ctx: var LowerContext; sx: Syntax) =
   ## Validates `(raise)` (re-raise) or `(raise expr)`.
   let nargs = sx.items.len - 1
@@ -1065,6 +1119,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerWhile(ctx, sx)
     elif sx.items[0].isSymbol("case"):
       lowerCase(ctx, sx)
+    elif sx.items[0].isSymbol("match"):
+      lowerMatch(ctx, sx)
     elif sx.items[0].isSymbol("raise"):
       lowerRaise(ctx, sx)
     elif sx.items[0].isSymbol("return"):

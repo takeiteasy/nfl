@@ -6,6 +6,9 @@ type ImportedPerson = object
   name: string
   age: int
 
+type MatchColour = enum
+  mcRed, mcGreen, mcBlue
+
 proc importedPersonAge(p: ImportedPerson): int =
   p.age
 
@@ -143,6 +146,38 @@ suite "nfl backend — for / case / raise / try":
     # A bare `(of (+ 1 2) …)` reads as the value list `+, 1, 2`; a single
     # computed value must be wrapped: `(of ((+ 1 2)) …)`.
     check nflExpr"(case 3 (of ((+ 1 2)) 10) (else 0))" == 10
+
+  test "match — literal patterns":
+    check nflExpr"""(match 0 (0 "zero") (1 "one") (_ "other"))""" == "zero"
+    check nflExpr"""(match 1 (0 "zero") (1 "one") (_ "other"))""" == "one"
+    check nflExpr"""(match 9 (0 "zero") (1 "one") (_ "other"))""" == "other"
+
+  test "match — bare symbol pattern binds the scrutinee":
+    check nflExpr"(match 41 (n (+ n 1)))" == 42
+
+  test "match — quoted symbol pattern compares by equality":
+    check nflExpr"""(match mcRed ('mcRed "stop") ('mcGreen "go") (_ "?"))""" == "stop"
+
+  test "match — vector pattern destructures":
+    check nflExpr"(match [1 2] ([a b] (+ a b)) (_ 0))" == 3
+
+  test "match — rest-capture vector pattern":
+    check nflExpr"(match (@ [1 2 3]) ([h & t] (+ h (. t len))) (_ 0))" == 3
+
+  test "match — vector pattern arity picks the right clause":
+    check nflExpr"(match (@ [1]) ([a b] 2) ([a] 1) (_ 0))" == 1
+    check nflExpr"(match (@ [1 2]) ([a b] 2) ([a] 1) (_ 0))" == 2
+
+  test "match — guard clause":
+    check nflExpr"(match 11 (n :when (> n 10) 100) (n 0))" == 100
+    check nflExpr"(match 5 (n :when (> n 10) 100) (n 0))" == 0
+
+  test "match — guard clause references pattern bindings":
+    check nflExpr"(match [3 4] ([a b] :when (> (+ a b) 5) (+ a b)) (_ 0))" == 7
+
+  test "match — no branch matched raises":
+    expect(ValueError):
+      discard nflExpr"(match 9 (0 0) (1 1))"
 
   test "raise caught by enclosing try":
     check nflExpr("(try (raise (newException ValueError \"boom\")) (except ValueError \"caught\"))") == "caught"
