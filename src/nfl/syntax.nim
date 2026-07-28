@@ -1,3 +1,5 @@
+import std/strutils
+
 type
   Span* = object
     file*: string
@@ -23,6 +25,9 @@ type
     of sxSymbol:
       sym*: string
       hygieneId*: int
+      escaped*: bool  ## true when read via the reader's `|...|` escaped-symbol
+                       ## syntax — marks `sym` as literal, so a trailing `*`
+                       ## is never interpreted as an export marker (#46).
     of sxList, sxVector:
       items*: seq[Syntax]
 
@@ -47,8 +52,8 @@ proc newFloat*(value: BiggestFloat; span: Span): Syntax =
 proc newString*(value: string; span: Span): Syntax =
   Syntax(kind: sxString, span: span, strVal: value)
 
-proc newSymbol*(value: string; span: Span; hygieneId = 0): Syntax =
-  Syntax(kind: sxSymbol, span: span, sym: value, hygieneId: hygieneId)
+proc newSymbol*(value: string; span: Span; hygieneId = 0; escaped = false): Syntax =
+  Syntax(kind: sxSymbol, span: span, sym: value, hygieneId: hygieneId, escaped: escaped)
 
 proc newList*(items: seq[Syntax]; span: Span): Syntax =
   Syntax(kind: sxList, span: span, items: items)
@@ -69,7 +74,7 @@ proc copySyntax*(sx: Syntax): Syntax =
   of sxString:
     newString(sx.strVal, sx.span)
   of sxSymbol:
-    newSymbol(sx.sym, sx.span, sx.hygieneId)
+    newSymbol(sx.sym, sx.span, sx.hygieneId, sx.escaped)
   of sxList:
     var items: seq[Syntax] = @[]
     for item in sx.items:
@@ -126,6 +131,47 @@ proc isValidRoutineName*(s: string): bool =
     isPlainIdentifier(s[0 ..< s.high])
   else:
     isPlainIdentifier(s)
+
+proc splitExportMarker*(sym: string; escaped, allowOperator: bool):
+    tuple[base: string, exported: bool, err: string] =
+  ## Determines whether `sym`'s trailing `*` is an export marker or part of
+  ## the name itself, and splits accordingly. `err` is non-empty when the
+  ## name is malformed; callers attach a span and raise.
+  ## (Named `err`, not `error` — `error` collides with `diagnostics.error`,
+  ## the proc that builds a `Diagnostic`, imported into every caller.)
+  ##
+  ## `escaped` is true for a name read via the reader's `|...|` syntax
+  ## (#46) — inside `|...|` a trailing `*` is never an export marker, so
+  ## `|**|` is the unexported two-char operator `**` rather than exported
+  ## `*`. An escaped non-operator name ending in `*` (e.g. `|foo*|`) is
+  ## rejected: there is no way to apply an export marker inside `|...|`.
+  ##
+  ## `allowOperator` (routine names only — see #29) additionally accepts
+  ## operator names (`+`, `+*`, `**`, …) when unescaped, which are made
+  ## entirely of operator characters, so a trailing `*` is ambiguous between
+  ## "the operator itself" and "export marker". The marker only applies when
+  ## stripping it leaves a nonempty operator name — `+*` is exported `+`,
+  ## `**` is exported `*`, but a bare `*` is the unexported `*` operator.
+  if escaped:
+    if allowOperator and sym.isOperatorName:
+      return (sym, false, "")
+    if sym.endsWith("*"):
+      return ("", false, "export marker is not applied inside |...|")
+    return (sym, false, "")
+  if allowOperator and sym.isOperatorName:
+    if sym.len > 1 and sym.endsWith("*"):
+      return (sym[0 ..< sym.high], true, "")
+    return (sym, false, "")
+  if sym.endsWith("*"):
+    let base = sym[0 ..< sym.high]
+    if base.len == 0:
+      return ("", false, "exported name must have a base name")
+    if base.contains("*"):
+      return ("", false, "export marker is only allowed at the end of a name")
+    return (base, true, "")
+  if sym.contains("*"):
+    return ("", false, "export marker is only allowed at the end of a name")
+  return (sym, false, "")
 
 proc isRangeShaped*(sx: Syntax): bool =
   ## True for any list headed by the `..` symbol, regardless of arity. Used
@@ -185,8 +231,9 @@ proc isNumberLikeSymbol(value: string): bool =
     return value.len > 1 and value[1] in {'0' .. '9'}
   value[0] in {'0' .. '9'}
 
-proc renderSymbol(value: string): string =
-  var needsEscape = value.len == 0 or value in ["nil", "true", "false"] or value.isNumberLikeSymbol()
+proc renderSymbol(value: string; escaped = false): string =
+  var needsEscape = escaped or value.len == 0 or value in ["nil", "true", "false"] or
+    value.isNumberLikeSymbol()
   for c in value:
     if c.isRenderDelimiter:
       needsEscape = true
@@ -225,7 +272,7 @@ proc renderSyntax*(sx: Syntax): string =
       else: result.add c
     result.add '"'
   of sxSymbol:
-    result = renderSymbol(sx.sym)
+    result = renderSymbol(sx.sym, sx.escaped)
   of sxList:
     result = "("
     for i, item in sx.items:

@@ -100,7 +100,7 @@ proc readEscapedSymbol(r: var Reader): Syntax =
     of '|':
       if value.len == 0:
         raiseReaderError(start, "escaped symbol cannot be empty")
-      return newSymbol(value, start.withEnd(r.line, r.col))
+      return newSymbol(value, start.withEnd(r.line, r.col), escaped = true)
     of '\\':
       if r.atEnd:
         raiseReaderError(start, "unterminated escaped symbol")

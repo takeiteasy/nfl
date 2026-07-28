@@ -65,9 +65,27 @@ suite "reader valid syntax":
     check forms[2].sym == "has|pipe"
     check forms[2].renderSyntax() == "|has\\|pipe|"
     check forms[3].sym == "has\\slash"
-    check forms[3].renderSyntax() == "has\\slash"
+    # `\` is not a render delimiter on its own, but the symbol was read via
+    # `|...|` — renderSyntax preserves that (#46) rather than dropping the
+    # pipes, so re-expanded NFL source round-trips faithfully.
+    check forms[3].renderSyntax() == "|has\\\\slash|"
     for form in forms:
+      check form.escaped
       checkSpans(form)
+
+  test "escaped symbols round-trip through renderSyntax regardless of shape (#46)":
+    # `**` alone reads as a bare (unescaped) symbol, so it renders bare too —
+    # renderSymbol's own ambiguity rules decide that case, not `escaped`.
+    let bareStar = readAll("**", "bare.nfl")
+    check not bareStar[0].escaped
+    check bareStar[0].renderSyntax() == "**"
+    # `|**|` is read escaped; renderSyntax preserves the `|...|` form even
+    # though the underlying symbol has no delimiter characters requiring it,
+    # so re-expanded source keeps the unexported-operator meaning (#46).
+    let escapedStar = readAll("|**|", "escaped.nfl")
+    check escapedStar[0].escaped
+    check escapedStar[0].sym == "**"
+    check escapedStar[0].renderSyntax() == "|**|"
 
   test "skips line and block comments":
     let forms = readAll("; ignore me\n1 #| ignore\nme |# 2", "comments.nfl")

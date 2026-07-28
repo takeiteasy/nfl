@@ -326,34 +326,16 @@ proc validateExportedDecl(name: Syntax; what: string; allowOperator = false): st
   ## Validates a declaration name that may optionally carry a trailing `*`
   ## export marker. Returns the base name with the marker stripped.
   ## Raises a CompilerError if the marker is malformed or the symbol is
-  ## hygienic (hygienic symbols have no stable public name).
-  ##
-  ## `allowOperator` (routine names only — see #29) additionally accepts
-  ## operator names (`+`, `+*`, `**`, …), which are made entirely of
-  ## operator characters, so a trailing `*` is ambiguous between "the
-  ## operator itself" and "export marker". The marker only applies when
-  ## stripping it leaves a nonempty operator name — `+*` is exported `+`,
-  ## `**` is exported `*`, but a bare `*` is the unexported `*` operator (an
-  ## unexported `**` is therefore not expressible; see the #29 follow-up
-  ## ticket).
+  ## hygienic (hygienic symbols have no stable public name). See
+  ## `splitExportMarker` (syntax.nim) for the marker/operator/escape rules.
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, what & " must be a symbol")
-  let sym = name.sym
-  if allowOperator and sym.isOperatorName:
-    if sym.len > 1 and sym.endsWith("*"):
-      if name.hygieneId != 0:
-        raiseCompilerError(name.span, "exported name cannot be a hygienic symbol")
-      return sym[0 ..< sym.high]
-    return sym
-  result = sym
-  if result.endsWith("*"):
-    if name.hygieneId != 0:
-      raiseCompilerError(name.span, "exported name cannot be a hygienic symbol")
-    result = result[0 ..< result.high]
-    if result.len == 0:
-      raiseCompilerError(name.span, "exported name must have a base name")
-  if result.contains("*"):
-    raiseCompilerError(name.span, "export marker is only allowed at the end of a name")
+  let split = splitExportMarker(name.sym, name.escaped, allowOperator)
+  if split.err.len > 0:
+    raiseCompilerError(name.span, split.err)
+  if split.exported and name.hygieneId != 0:
+    raiseCompilerError(name.span, "exported name cannot be a hygienic symbol")
+  result = split.base
 
 proc procGenericIdx(sx: Syntax): int =
   ## Returns the index of the optional generic-params vector in a `proc` or `type`

@@ -150,15 +150,21 @@ is ambiguous with the operator itself — `*` both an operator character and
 the export marker. The rule: the marker only applies when stripping it
 leaves a *nonempty* operator name.
 
-| Name    | Meaning                     |
-|---------|------------------------------|
-| `\|+\|`   | operator `+`, unexported     |
-| `+*`    | operator `+`, exported       |
-| `\|*\|`   | operator `*`, unexported     |
-| `**`    | operator `*`, exported       |
+The `|…|` escaped-symbol syntax suppresses this rule entirely — inside
+`|…|` a trailing `*` is always part of the name, never an export marker.
+This is how an otherwise-inexpressible unexported name is written, at the
+cost of also being able to write an unexported name with a trailing `*`
+that differs in meaning from its unescaped form:
 
-An unexported `**` is not expressible this way — see the tracker for a
-follow-up.
+| Name    | Meaning                       |
+|---------|-------------------------------|
+| `\|+\|`   | operator `+`, unexported      |
+| `+*`    | operator `+`, exported        |
+| `\|*\|`   | operator `*`, unexported      |
+| `**`    | operator `*`, exported        |
+| `\|**\|`  | operator `**`, unexported     |
+| `***`   | operator `**`, exported       |
+| `\|+*\|`  | operator `+*`, unexported (a different name from unescaped `+*`, which is exported `+`) |
 
 ### `func` — side-effect-free procedure
 

@@ -277,6 +277,26 @@ suite "lowering validation":
   test "rejects bare export marker as var name":
     expectLowerModuleError("(var * 1)", "exported name must have a base name")
 
+  test "allows unexported |**| operator proc name (#46)":
+    discard lowerModule(readAll(
+      "(type MyInt (distinct int))\n(proc |**| ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+
+  test "allows exported *** operator proc name, strips to ** (#46)":
+    discard lowerModule(readAll(
+      "(type MyInt (distinct int))\n(proc *** ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+
+  test "allows unexported |+*| operator proc name (#46)":
+    # Escaping suppresses marker-stripping entirely, so `|+*|` is the
+    # unexported two-char operator `+*` — a different meaning from the
+    # unescaped `+*`, which is exported `+` (see #29).
+    discard lowerModule(readAll(
+      "(type MyInt (distinct int))\n(proc |+*| ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+
+  test "rejects export marker inside escaped non-operator name (#46)":
+    expectLowerModuleError(
+      "(proc |foo*| ((name string)) (: string) name)",
+      "export marker is not applied inside |...|")
+
   test "allows typed var declaration":
     discard lowerModule(readAll("(var (limit int) 100)", "lower-test.nfl"))
 
