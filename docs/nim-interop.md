@@ -219,6 +219,14 @@ as `proc` — as do `func` and `converter`:
 (func identity* [T] ((x T)) (: T) x)
 ```
 
+`converter` is useful at interop boundaries where values arrive as a domain
+type (e.g. a `distinct` wrapper) but a stdlib or foreign Nim proc expects the
+underlying type — see `examples/interop.nfl` for a `Meters` wrapper converted
+to `float` before being passed to a `sqrt`-based proc. Since converters are
+called explicitly (see [`converter`](language-reference.md#converter--implicit-type-conversion)
+above), this reads the same as calling any other conversion proc, just with
+Nim's `converter` semantics on the Nim side.
+
 ## Full interop example
 
 ```lisp

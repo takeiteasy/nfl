@@ -670,7 +670,7 @@ suite "nfl module backend — func / converter (#21 follow-on)":
     check genericSquare(6) == 36
     check genericSquareResult == 36
 
-  test "converter applies automatically at expected-type context":
+  test "converter is callable via an explicit call":
     check converterResult == 3.5
 
 # ---------------------------------------------------------------------------

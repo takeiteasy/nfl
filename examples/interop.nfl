@@ -8,6 +8,20 @@
 (proc hypotenuse ((a float) (b float)) (: float)
   (sqrt (+ (* a a) (* b b))))
 
+; A distinct wrapper type plus a converter to its underlying Nim type — the
+; concrete interop shape a converter is for: values arrive as a domain type
+; (`Meters`) but the stdlib proc (`hypotenuse`, via `sqrt`) expects `float`.
+; NFL modules are emitted through a macro, so Nim does not apply the
+; converter implicitly the way it would in a normal Nim module — call it
+; explicitly at the interop boundary.
+(type Meters (distinct float))
+
+(converter metersToFloat ((m Meters)) (: float)
+  (float m))
+
+(proc hypotenuseMeters ((a Meters) (b Meters)) (: float)
+  (hypotenuse (metersToFloat a) (metersToFloat b)))
+
 (var names (@ ["nfl" "macro" "nim"]))
 (var currentDir (getCurrentDir))
 (var baseName (lastPathPart currentDir))
@@ -15,6 +29,7 @@
 (echo (shout "hello"))
 (echo (shout baseName))
 (echo (hypotenuse 3.0 4.0))
+(echo (hypotenuseMeters (Meters 3.0) (Meters 4.0)))
 (echo
   (let (((index int) 1))
     (|[]| names index)))
