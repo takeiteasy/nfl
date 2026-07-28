@@ -429,6 +429,19 @@ nflModule """
       (for (x (upTo 5))
         (set! acc (+ acc x)))
       acc)))
+; --- Operator proc tests (#29) ---
+(type OpInt (distinct int))
+; Unexported operator proc, called infix from Nim.
+(proc |+| ((a OpInt) (b OpInt)) (: OpInt)
+  (OpInt (+ (int a) (int b))))
+; Exported operator proc — `-*` strips to exported `-`.
+(proc -* ((a OpInt) (b OpInt)) (: OpInt)
+  (OpInt (- (int a) (int b))))
+; Multi-char exported operator — `**` strips to exported `*`.
+(proc ** ((a OpInt) (b OpInt)) (: OpInt)
+  (OpInt (* (int a) (int b))))
+(var opSum (int (+ (OpInt 3) (OpInt 4))))
+(var opProduct (int (* (OpInt 3) (OpInt 4))))
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -660,6 +673,16 @@ suite "nfl module backend — template / iterator":
     for x in range2(4):
       s += x
     check s == 6   # 0 + 1 + 2 + 3 = 6
+
+suite "nfl module backend — operator procs (#29)":
+  test "unexported operator proc — dispatches via NFL prefix call":
+    check opSum == 7
+
+  test "exported multi-char operator proc — ** strips to exported *":
+    check opProduct == 12
+
+  test "exported operator proc callable infix from plain Nim":
+    check int(OpInt(9) - OpInt(4)) == 5
 
 suite "nfl module backend — func / converter (#21 follow-on)":
   test "func compiles and is callable":

@@ -268,14 +268,30 @@ proc lowerLambda(ctx: var LowerContext; sx: Syntax) =
   lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
   ctx.popScope()
 
-proc validateExportedDecl(name: Syntax; what: string): string =
+proc validateExportedDecl(name: Syntax; what: string; allowOperator = false): string =
   ## Validates a declaration name that may optionally carry a trailing `*`
   ## export marker. Returns the base name with the marker stripped.
   ## Raises a CompilerError if the marker is malformed or the symbol is
   ## hygienic (hygienic symbols have no stable public name).
+  ##
+  ## `allowOperator` (routine names only — see #29) additionally accepts
+  ## operator names (`+`, `+*`, `**`, …), which are made entirely of
+  ## operator characters, so a trailing `*` is ambiguous between "the
+  ## operator itself" and "export marker". The marker only applies when
+  ## stripping it leaves a nonempty operator name — `+*` is exported `+`,
+  ## `**` is exported `*`, but a bare `*` is the unexported `*` operator (an
+  ## unexported `**` is therefore not expressible; see the #29 follow-up
+  ## ticket).
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, what & " must be a symbol")
-  result = name.sym
+  let sym = name.sym
+  if allowOperator and sym.isOperatorName:
+    if sym.len > 1 and sym.endsWith("*"):
+      if name.hygieneId != 0:
+        raiseCompilerError(name.span, "exported name cannot be a hygienic symbol")
+      return sym[0 ..< sym.high]
+    return sym
+  result = sym
   if result.endsWith("*"):
     if name.hygieneId != 0:
       raiseCompilerError(name.span, "exported name cannot be a hygienic symbol")
@@ -341,8 +357,10 @@ proc lowerRoutine(ctx: var LowerContext; sx: Syntax; formName: string;
   let name = sx.items[1]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, formName & " name must be a symbol")
+  if not name.sym.isValidRoutineName:
+    raiseCompilerError(name.span, formName & " name must be a plain identifier or an operator (e.g. |+|), not a mix of both: " & name.sym)
   # Validate the export marker early so errors point at the name, not the body.
-  let baseName = name.validateExportedDecl(formName & " name")
+  let baseName = name.validateExportedDecl(formName & " name", allowOperator = true)
   # Optional generic-params vector immediately after the name.
   let genIdx = procGenericIdx(sx)
   if genIdx >= 0:

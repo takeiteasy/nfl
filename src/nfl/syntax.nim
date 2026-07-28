@@ -88,6 +88,45 @@ proc withSpan*(sx: Syntax; span: Span): Syntax =
 proc isSymbol*(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
 
+const operatorChars = {'=', '+', '-', '*', '/', '<', '>', '@', '$', '~', '&', '%', '|', '!', '?', '^', '.', ':'}
+
+proc isOperatorName*(s: string): bool =
+  ## True when `s` is non-empty and every character is a Nim operator
+  ## character — the shape Nim requires an accent-quoted proc name
+  ## (`` `+` ``) for, as opposed to a plain identifier.
+  if s.len == 0:
+    return false
+  for c in s:
+    if c notin operatorChars:
+      return false
+  true
+
+proc isPlainIdentifierChar(c: char; first: bool): bool =
+  if first: c in {'a' .. 'z', 'A' .. 'Z', '_'}
+  else: c in {'a' .. 'z', 'A' .. 'Z', '0' .. '9', '_'}
+
+proc isPlainIdentifier*(s: string): bool =
+  ## True for an ordinary Nim-style identifier: starts with a letter or
+  ## underscore, followed by letters/digits/underscores.
+  if s.len == 0 or not isPlainIdentifierChar(s[0], first = true):
+    return false
+  for i in 1 ..< s.len:
+    if not isPlainIdentifierChar(s[i], first = false):
+      return false
+  true
+
+proc isValidRoutineName*(s: string): bool =
+  ## A routine (proc/method/func/…) name must be a plain identifier
+  ## (optionally with a trailing `*` export marker) or entirely operator
+  ## characters (see #29) — not a mix of the two, which Nim cannot express
+  ## as either an `ident` or an `nnkAccQuoted` operator.
+  if isOperatorName(s):
+    return true
+  if s.len > 0 and s[^1] == '*':
+    isPlainIdentifier(s[0 ..< s.high])
+  else:
+    isPlainIdentifier(s)
+
 proc isRangeShaped*(sx: Syntax): bool =
   ## True for any list headed by the `..` symbol, regardless of arity. Used
   ## to recognize (and validate the arity of) an intended range form —

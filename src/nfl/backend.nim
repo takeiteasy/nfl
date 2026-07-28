@@ -119,12 +119,31 @@ proc identForTypeSymbol(sx: Syntax): NimNode =
     raiseCompilerError(sx.span, "expected symbol")
   ident(sx.sym).attachLineInfo(sx)
 
-proc declIdent(ctx: var EmitContext; sx: Syntax; what: string): NimNode =
+proc declIdent(ctx: var EmitContext; sx: Syntax; what: string; allowOperator = false): NimNode =
   ## Build the declaration-site identifier for a symbol, handling both the
   ## export postfix (`name*` → `nnkPostfix(*, ident(name))`) and hygiene.
   ## Hygienic symbols cannot carry `*` — they have no stable public name.
+  ##
+  ## `allowOperator` (routine names only — see #29) mirrors lower.nim's
+  ## `validateExportedDecl`: an operator name (`+`, `+*`, `**`, …) is made
+  ## entirely of operator characters, so a trailing `*` only means "export
+  ## marker" when stripping it leaves a nonempty operator name. A plain
+  ## `ident(...)` node is emitted either way — Nim's parser tokenizes any
+  ## run of operator characters as a single operator, so no `nnkAccQuoted`
+  ## wrapping is needed at the declaration site (verified: `nnkProcDef` with
+  ## a plain `ident("+")` name, including multi-char and exported forms,
+  ## compiles and is callable infix).
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, what & " must be a symbol")
+  if allowOperator and sx.sym.isOperatorName:
+    if sx.sym.len > 1 and sx.sym.endsWith("*"):
+      if sx.hygieneId != 0:
+        raiseCompilerError(sx.span, "exported name cannot be a hygienic symbol")
+      return nnkPostfix.newTree(
+        ident("*"),
+        ident(sx.sym[0 ..< sx.sym.high]).attachLineInfo(sx)
+      ).attachLineInfo(sx)
+    return ident(sx.sym).attachLineInfo(sx)
   if sx.sym.endsWith("*"):
     if sx.hygieneId != 0:
       raiseCompilerError(sx.span, "exported name cannot be a hygienic symbol")
@@ -453,7 +472,7 @@ proc emitRoutine(ctx: var EmitContext; sx: Syntax; nodeKind: NimNodeKind;
       ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
 
   nodeKind.newTree(
-    ctx.declIdent(name, formName & " name"),
+    ctx.declIdent(name, formName & " name", allowOperator = true),
     newEmptyNode(),
     genericParamsNode,
     formalParams,

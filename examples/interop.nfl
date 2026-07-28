@@ -22,6 +22,13 @@
 (proc hypotenuseMeters ((a Meters) (b Meters)) (: float)
   (hypotenuse (metersToFloat a) (metersToFloat b)))
 
+; Custom operator proc (#29) — `|op|` names a proc after the operator
+; symbol; a trailing `*` exports it. `+*` here defines an exported `+`
+; overload for `Meters`, callable both from NFL (prefix, like any call) and
+; infix from plain Nim.
+(proc +* ((a Meters) (b Meters)) (: Meters)
+  (Meters (+ (float a) (float b))))
+
 (var names (@ ["nfl" "macro" "nim"]))
 (var currentDir (getCurrentDir))
 (var baseName (lastPathPart currentDir))
@@ -30,6 +37,7 @@
 (echo (shout baseName))
 (echo (hypotenuse 3.0 4.0))
 (echo (hypotenuseMeters (Meters 3.0) (Meters 4.0)))
+(echo (float (+ (Meters 3.0) (Meters 4.0))))
 (echo
   (let (((index int) 1))
     (|[]| names index)))

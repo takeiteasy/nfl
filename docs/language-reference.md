@@ -100,6 +100,39 @@ Omit the return type for void procedures:
   (echo "Hello, " name))
 ```
 
+### Operator proc names
+
+A `proc` (or `method`/`func`/`converter`/`template`/`iterator`) name may be
+an operator instead of a plain identifier — the reader's `|…|`
+escaped-symbol syntax reads a name containing operator characters, and bare
+operator names that don't collide with reader delimiters (`+`, `-`, `<=`,
+`<=>`, …) read unescaped:
+
+```lisp
+(type MyInt (distinct int))
+
+(proc |+| ((a MyInt) (b MyInt)) (: MyInt)
+  (MyInt (+ (int a) (int b))))
+```
+
+The defined operator can be called like any proc from NFL (`(+ x y)`) and
+infix from plain Nim (`x + y`).
+
+A trailing `*` still marks a proc as exported, but for an operator name it
+is ambiguous with the operator itself — `*` both an operator character and
+the export marker. The rule: the marker only applies when stripping it
+leaves a *nonempty* operator name.
+
+| Name    | Meaning                     |
+|---------|------------------------------|
+| `\|+\|`   | operator `+`, unexported     |
+| `+*`    | operator `+`, exported       |
+| `\|*\|`   | operator `*`, unexported     |
+| `**`    | operator `*`, exported       |
+
+An unexported `**` is not expressible this way — see the tracker for a
+follow-up.
+
 ### `func` — side-effect-free procedure
 
 Identical syntax to `proc`, but the body must not perform side effects
@@ -580,3 +613,6 @@ NFL uses standard infix operators in prefix position:
 (and a b) (or a b)  (not a)
 (.. a b)            ; range
 ```
+
+To define your own operator for a custom type, see
+[Operator proc names](#operator-proc-names).

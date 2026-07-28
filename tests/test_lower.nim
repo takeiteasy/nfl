@@ -176,6 +176,23 @@ suite "lowering validation":
   test "allows exported proc":
     discard lowerModule(readAll("(proc greet* ((name string)) (: string) name)", "lower-test.nfl"))
 
+  test "allows unexported operator proc name":
+    discard lowerModule(readAll(
+      "(type MyInt (distinct int))\n(proc |+| ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+
+  test "allows exported operator proc name":
+    discard lowerModule(readAll(
+      "(type MyInt (distinct int))\n(proc +* ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+
+  test "allows exported multi-char operator proc name (** strips to *)":
+    discard lowerModule(readAll(
+      "(type MyInt (distinct int))\n(proc ** ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+
+  test "rejects operator proc name mixing identifier and operator characters":
+    expectLowerModuleError(
+      "(type MyInt (distinct int))\n(proc |a+b| ((a MyInt) (b MyInt)) (: MyInt) a)",
+      "must be a plain identifier or an operator")
+
   test "allows exported var declaration":
     discard lowerModule(readAll("(var version* \"1.0\")", "lower-test.nfl"))
 
@@ -187,10 +204,14 @@ suite "lowering validation":
     discard lowerModule(readAll("(type Person* (object (name* string) (age int)))", "lower-test.nfl"))
 
   test "rejects export marker in proc name mid-position":
-    expectLowerModuleError("(proc gre*et ((name string)) name)", "export marker is only allowed at the end of a name")
+    expectLowerModuleError("(proc gre*et ((name string)) name)", "must be a plain identifier or an operator")
 
-  test "rejects bare export marker as proc name":
-    expectLowerModuleError("(proc * ((name string)) name)", "exported name must have a base name")
+  test "allows bare operator as unexported proc name":
+    # Per #29, a bare `*` is the unexported `*` operator, not an export marker
+    # with an empty base — an operator name is made entirely of operator
+    # characters, so the two meanings are only disambiguated by whether
+    # stripping the trailing `*` leaves a nonempty operator name.
+    discard lowerModule(readAll("(proc * ((name string)) name)", "lower-test.nfl"))
 
   test "rejects export marker in var name mid-position":
     expectLowerModuleError("(var x*y 1)", "export marker is only allowed at the end of a name")
@@ -583,7 +604,7 @@ suite "lowering validation":
     expectLowerError("(template t () 1)", "template is only allowed at statement/module scope")
 
   test "rejects export marker in template name mid-position":
-    expectLowerModuleError("(template te*mpl ((x int)) x)", "export marker is only allowed at the end of a name")
+    expectLowerModuleError("(template te*mpl ((x int)) x)", "must be a plain identifier or an operator")
 
   # ---------------------------------------------------------------------------
   # iterator
@@ -615,7 +636,7 @@ suite "lowering validation":
     expectLowerError("(iterator it () (: int) (yield 1))", "iterator is only allowed at statement/module scope")
 
   test "rejects export marker in iterator name mid-position":
-    expectLowerModuleError("(iterator up*To ((n int)) (: int) (yield n))", "export marker is only allowed at the end of a name")
+    expectLowerModuleError("(iterator up*To ((n int)) (: int) (yield n))", "must be a plain identifier or an operator")
 
   # ---------------------------------------------------------------------------
   # yield
