@@ -210,11 +210,13 @@ for x in upTo(3):
   echo x                # 0 1 2
 ```
 
-Templates and iterators support the same pragma and generic annotations as `proc`:
+Templates and iterators support the same pragma and generic (`[T]`) annotations
+as `proc` — as do `func` and `converter`:
 
 ```lisp
 (template square* {.inline.} ((x int)) (: int) (* x x))
-(iterator upTo* [T] ((n T)) (: T) ...)
+(iterator upTo* [T] ((n T)) (: T) (yield n))
+(func identity* [T] ((x T)) (: T) x)
 ```
 
 ## Full interop example

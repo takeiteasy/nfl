@@ -265,6 +265,48 @@ nflModule """
 (type BoxPure [T] {.pure.}
   (object
     (val T)))
+; Generic template — inference-based call (#21).
+(template genericIdent [T] ((x T)) (: T)
+  x)
+; Exported generic template — callable under base name.
+(template genericIdent2* [T] ((x T)) (: T)
+  x)
+; Generic template consuming a generic type — [Box T] in parameter position.
+(template genericUnbox [T] ((b [Box T])) (: T)
+  (. b value))
+(var genericTemplateResult (genericIdent 77))
+(var genericTemplateResult2 (genericIdent2 88))
+(var genericUnboxResult (genericUnbox intBox))
+; Generic iterator — single type param (#21).
+(iterator genericTwice [T] ((x T)) (: T)
+  (yield x)
+  (yield x))
+; Generic iterator — two type params.
+(iterator genericFirstTwice [T U] ((a T) (b U)) (: T)
+  (yield a)
+  (yield a))
+(var genericIterSum
+  (block
+    (var ((acc 0))
+      (for (x (genericTwice 5))
+        (set! acc (+ acc x)))
+      acc)))
+(var genericIterSum2
+  (block
+    (var ((acc 0))
+      (for (x (genericFirstTwice 3 "ignored"))
+        (set! acc (+ acc x)))
+      acc)))
+; --- func / converter tests (#21 follow-on) ---
+(func doublePure ((x int)) (: int)
+  (* x 2))
+(func genericSquare* [T] ((x T)) (: T)
+  (* x x))
+(converter toFloatConv ((x int)) (: float)
+  (float x))
+(var funcResult (doublePure 21))
+(var genericSquareResult (genericSquare 6))
+(var converterResult (+ (toFloatConv 3) 0.5))
 ; --- For loop tests ---
 ; Sum elements of an array literal with a for loop.
 (var forSeqSum
@@ -516,6 +558,24 @@ suite "nfl module backend":
     let b = BoxPure[int](val: 3)
     check b.val == 3
 
+  test "generic template — inference-based call":
+    check genericIdent(55) == 55
+    check genericTemplateResult == 77
+
+  test "exported generic template callable under base name":
+    check genericIdent2(11) == 11
+    check genericTemplateResult2 == 88
+
+  test "generic template with generic type in param position":
+    check genericUnbox(intBox) == 42
+    check genericUnboxResult == 42
+
+  test "generic iterator — single type param":
+    check genericIterSum == 10   # 5 + 5
+
+  test "generic iterator — two type params":
+    check genericIterSum2 == 6   # 3 + 3
+
 suite "nfl module backend — for / case / raise / try":
   test "for loop sums sequence elements":
     check forSeqSum == 15
@@ -571,6 +631,18 @@ suite "nfl module backend — template / iterator":
     for x in range2(4):
       s += x
     check s == 6   # 0 + 1 + 2 + 3 = 6
+
+suite "nfl module backend — func / converter (#21 follow-on)":
+  test "func compiles and is callable":
+    check doublePure(21) == 42
+    check funcResult == 42
+
+  test "generic exported func callable under base name":
+    check genericSquare(6) == 36
+    check genericSquareResult == 36
+
+  test "converter applies automatically at expected-type context":
+    check converterResult == 3.5
 
 # ---------------------------------------------------------------------------
 # Behavioral tests for while/break/continue (#24), return (#25),

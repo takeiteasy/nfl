@@ -461,6 +461,12 @@ proc emitIterator(ctx: var EmitContext; sx: Syntax): NimNode =
 proc emitMethod(ctx: var EmitContext; sx: Syntax): NimNode =
   ctx.emitRoutine(sx, nnkMethodDef, "method")
 
+proc emitFunc(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitRoutine(sx, nnkFuncDef, "func")
+
+proc emitConverter(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitRoutine(sx, nnkConverterDef, "converter")
+
 proc emitYield(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits a `(yield expr)` form as `nnkYieldStmt`.
   nnkYieldStmt.newTree(ctx.emitExpr(sx.items[1])).attachLineInfo(sx)
@@ -961,6 +967,10 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, "iterator is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("method"):
       raiseCompilerError(sx.span, "method is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("func"):
+      raiseCompilerError(sx.span, "func is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("converter"):
+      raiseCompilerError(sx.span, "converter is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("type"):
       raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
@@ -1026,6 +1036,10 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return ctx.emitIterator(sx)
     if sx.items[0].isSymbol("method"):
       return ctx.emitMethod(sx)
+    if sx.items[0].isSymbol("func"):
+      return ctx.emitFunc(sx)
+    if sx.items[0].isSymbol("converter"):
+      return ctx.emitConverter(sx)
     if sx.items[0].isSymbol("yield"):
       return ctx.emitYield(sx)
     if sx.items[0].isSymbol("type"):

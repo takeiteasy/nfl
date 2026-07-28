@@ -100,9 +100,42 @@ Omit the return type for void procedures:
   (echo "Hello, " name))
 ```
 
+### `func` — side-effect-free procedure
+
+Identical syntax to `proc`, but the body must not perform side effects
+(Nim's `{.noSideEffect.}` restriction applies):
+
+```lisp
+(func double ((x int)) (: int)
+  (* x 2))
+
+(func identity* [T] ((x T)) (: T)  ; generic and exported, same as proc
+  x)
+```
+
+### `converter` — implicit type conversion
+
+Defines a Nim converter: a named conversion from one type to another. A
+converter must declare exactly one parameter and an explicit return (target)
+type:
+
+```lisp
+(converter toFloat ((x int)) (: float)
+  (float x))
+```
+
+Nim normally applies a converter implicitly wherever the target type is
+expected. NFL modules are emitted through a macro, and Nim does not perform
+implicit converter-based conversion for code assembled that way — call the
+converter explicitly instead:
+
+```lisp
+(echo (+ (toFloat 3) 0.5))    ; 3.5
+```
+
 ### Implicit `result`
 
-Any `proc` or `method` with a return type gets a mutable `result` variable, initialised to the type's default value. Assign to it with `set!` and it is returned automatically when the body falls through — no explicit `return` required:
+Any `proc`, `func`, `method`, or `converter` with a return type gets a mutable `result` variable, initialised to the type's default value. Assign to it with `set!` and it is returned automatically when the body falls through — no explicit `return` required:
 
 ```lisp
 (proc sumTo ((n int)) (: int)
@@ -114,6 +147,38 @@ Any `proc` or `method` with a return type gets a mutable `result` variable, init
 `result` is not available in `template` or `iterator` bodies, and a proc without a return type has no `result` binding — `set!`ing it there is an error.
 
 Avoid ending a body with a bare `result` read once it has been assigned earlier — Nim rejects that as a redundant expression. Either let the body fall through on an assignment (as above), or return explicitly with `(return result)`.
+
+### Generics
+
+`proc`, `func`, `method`, `template`, `iterator`, `converter`, and `type` all
+accept an optional `[T ...]` generic-parameter vector immediately after the
+name, before any pragma clause or parameter list:
+
+```lisp
+(proc identity [T] ((x T)) (: T)
+  x)
+
+(proc pickFst [T U] ((a T) (b U)) (: T)
+  a)
+```
+
+Generic parameters are plain symbols with no constraints or defaults. A
+generic type can be referenced in parameter or return position with the same
+`[Name T]` bracket syntax used to declare it:
+
+```lisp
+(type Box [T]
+  (object
+    (value T)))
+
+(proc unbox [T] ((b [Box T])) (: T)
+  (. b value))
+
+(var intBox (new [Box int] (value 42)))
+```
+
+Calls are usually resolved by inference (`(identity 99)`); explicit
+instantiation uses the same `[Name T]` bracket form as a type reference.
 
 ### `do` — anonymous procedure
 
@@ -138,6 +203,7 @@ Defines a zero-cost compile-time template. Templates expand inline at the call s
 
 (template name* (params...) ...)  ; exported
 (template name {.pragma.} (params...) ...)
+(template name [T] (params...) ...)  ; generic — see Generics above
 ```
 
 Parameters follow the same `(name type)` form as `proc`. A bare symbol parameter (no type) becomes an `untyped` template parameter in Nim:
@@ -171,6 +237,7 @@ Defines a Nim inline iterator. Iterators are consumed by `for` loops and must ha
 
 (iterator name* ((param type) ...) (: yield-type) ...)  ; exported
 (iterator name {.pragma.} ((param type) ...) (: yield-type) ...)
+(iterator name [T] ((param type) ...) (: yield-type) ...)  ; generic — see Generics above
 ```
 
 Use `yield` inside the body to produce values:
@@ -182,6 +249,17 @@ Use `yield` inside the body to produce values:
 
 (for (x (upTo 5))
   (echo x))    ; prints 0 1 2 3 4
+```
+
+A generic iterator follows the same `[T]` pattern as `proc`:
+
+```lisp
+(iterator repeat [T] ((x T) (n int)) (: T)
+  (for (i (.. 1 n))
+    (yield x)))
+
+(for (s (repeat "hi" 3))
+  (echo s))    ; prints "hi" three times
 ```
 
 ### `yield` — produce an iterator value

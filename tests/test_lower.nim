@@ -545,6 +545,9 @@ suite "lowering validation":
   test "allows generic template":
     discard lowerModule(readAll("(template echo2 [T] ((x T)) (block (echo x) (echo x)))", "lower-test.nfl"))
 
+  test "allows generic iterator":
+    discard lowerModule(readAll("(iterator genericUpTo [T] ((n T)) (: T) (yield n))", "lower-test.nfl"))
+
   test "allows template with return type":
     discard lowerModule(readAll("(template double ((x int)) (: int) (* x 2))", "lower-test.nfl"))
 
@@ -671,6 +674,41 @@ suite "lowering validation":
 
   test "rejects method in expression position":
     expectLowerError("(method m () m)", "method is only allowed at statement/module scope")
+
+  # ---------------------------------------------------------------------------
+  # func / converter  (#21 follow-on: same routine forms as proc/template/iterator)
+  # ---------------------------------------------------------------------------
+
+  test "allows func definition":
+    discard lowerModule(readAll("(func double ((x int)) (: int) (* x 2))", "lower-test.nfl"))
+
+  test "allows generic func definition":
+    discard lowerModule(readAll("(func identity [T] ((x T)) (: T) x)", "lower-test.nfl"))
+
+  test "rejects func in expression position":
+    expectLowerError("(let ((x (func f () 1))) x)", "func is only allowed at statement/module scope")
+
+  test "allows converter definition":
+    discard lowerModule(readAll("(converter toFloat ((x int)) (: float) (float x))", "lower-test.nfl"))
+
+  test "allows generic converter definition":
+    discard lowerModule(readAll("(converter wrap [T] ((x T)) (: T) x)", "lower-test.nfl"))
+
+  test "rejects converter missing return type":
+    expectLowerModuleError("(converter toFloat ((x int)) (float x))",
+      "converter requires an explicit return type")
+
+  test "rejects converter with more than one parameter":
+    expectLowerModuleError("(converter bad ((x int) (y int)) (: float) (float x))",
+      "converter expects exactly one parameter")
+
+  test "rejects converter with zero parameters":
+    expectLowerModuleError("(converter bad () (: float) 1.0)",
+      "converter expects exactly one parameter")
+
+  test "rejects converter in expression position":
+    expectLowerError("(let ((x (converter c ((y int)) (: int) y))) x)",
+      "converter is only allowed at statement/module scope")
 
   # ---------------------------------------------------------------------------
   # object inheritance  (#33)

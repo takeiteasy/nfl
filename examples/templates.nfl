@@ -17,9 +17,16 @@
 (template twice (expr)
   (block expr expr))
 
+; A generic template — the [T] parameter follows the same pattern as proc/type.
+(template identity [T] ((x T)) (: T)
+  x)
+
 ; Use the templates.
 (withLog "demo" (echo "inside block"))
 
 (echo "square(6) = " (square 6))
 
 (twice (echo "printed twice"))
+
+(echo "identity(9) = " (identity 9))
+(echo "identity(\"generic\") = " (identity "generic"))

@@ -326,9 +326,10 @@ proc validateGenericParams(sx: Syntax) =
 
 proc lowerRoutine(ctx: var LowerContext; sx: Syntax; formName: string;
                   requireReturnType: bool) =
-  ## Shared validation for proc/template/iterator definition forms.
-  ## `requireReturnType` causes an error when no `(: type)` annotation is
-  ## present — used for iterator which needs an explicit element type.
+  ## Shared validation for proc/template/iterator/func/converter/method
+  ## definition forms.  `requireReturnType` causes an error when no `(: type)`
+  ## annotation is present — used for iterator and converter, which need an
+  ## explicit element / target type.
   if sx.items.len < 4:
     raiseCompilerError(sx.span, formName & " expects name, parameters, and body")
   let name = sx.items[1]
@@ -350,16 +351,20 @@ proc lowerRoutine(ctx: var LowerContext; sx: Syntax; formName: string;
   let params = sx.items[paramsIdx]
   if params.kind != sxList:
     raiseCompilerError(params.span, formName & " parameters must be a list")
+  if formName == "converter" and params.items.len != 1:
+    raiseCompilerError(params.span, "converter expects exactly one parameter")
   let bodyStart = procBodyStart(sx)
   if requireReturnType and bodyStart == paramsIdx + 1:
     raiseCompilerError(sx.span, formName & " requires an explicit return type (: type)")
   if bodyStart > sx.items.high:
     raiseCompilerError(sx.span, formName & " expects body expression")
   ctx.pushScope()
-  # `proc`/`method` forms with an explicit return type get Nim's implicit
-  # mutable `result` variable; declared before params so a param named
-  # `result` raises the same "duplicate binding" error Nim itself would.
-  if (formName == "proc" or formName == "method") and bodyStart == paramsIdx + 2:
+  # `proc`/`func`/`method`/`converter` forms with an explicit return type get
+  # Nim's implicit mutable `result` variable; declared before params so a
+  # param named `result` raises the same "duplicate binding" error Nim itself
+  # would.
+  if (formName == "proc" or formName == "method" or formName == "func" or
+      formName == "converter") and bodyStart == paramsIdx + 2:
     declare(ctx, newSymbol("result", sx.items[paramsIdx + 1].span), bkMutable)
   for param in params.items:
     lowerParam(ctx, param)
@@ -382,6 +387,15 @@ proc lowerIterator(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerMethod(ctx: var LowerContext; sx: Syntax) =
   lowerRoutine(ctx, sx, "method", requireReturnType = false)
+
+proc lowerFunc(ctx: var LowerContext; sx: Syntax) =
+  lowerRoutine(ctx, sx, "func", requireReturnType = false)
+
+proc lowerConverter(ctx: var LowerContext; sx: Syntax) =
+  ## Nim requires a converter to declare exactly one parameter and an
+  ## explicit return (target) type; both are enforced in lowerRoutine so the
+  ## error surfaces as an NFL diagnostic rather than a raw Nim compile error.
+  lowerRoutine(ctx, sx, "converter", requireReturnType = true)
 
 proc lowerYield(ctx: var LowerContext; sx: Syntax) =
   ## Validates a `(yield expr)` form.  NFL does not enforce that yield only
@@ -917,6 +931,10 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       raiseCompilerError(sx.span, "iterator is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("method"):
       raiseCompilerError(sx.span, "method is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("func"):
+      raiseCompilerError(sx.span, "func is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("converter"):
+      raiseCompilerError(sx.span, "converter is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("type"):
       raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("."):
@@ -990,6 +1008,12 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
       return
     if sx.items[0].isSymbol("method"):
       lowerMethod(ctx, sx)
+      return
+    if sx.items[0].isSymbol("func"):
+      lowerFunc(ctx, sx)
+      return
+    if sx.items[0].isSymbol("converter"):
+      lowerConverter(ctx, sx)
       return
     if sx.items[0].isSymbol("discard"):
       lowerDiscard(ctx, sx)

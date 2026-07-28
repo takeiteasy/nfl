@@ -1,0 +1,28 @@
+; Demonstrates Nim `func` and `converter` definitions from NFL.
+; `func` is shorthand for a side-effect-free `proc` (`{.noSideEffect.}`).
+; `converter` defines a callable conversion from one type to another.
+; Converters must declare exactly one parameter and an explicit return
+; (target) type.
+
+; A plain func — doubles an int with no side effects.
+(func double ((x int)) (: int)
+  (* x 2))
+
+; An exported generic func — the [T] parameter follows the same pattern
+; as proc/template/iterator/type.
+(func identity* [T] ((x T)) (: T)
+  x)
+
+; A converter from int to float.
+(converter toFloat ((x int)) (: float)
+  (float x))
+
+(echo "double(21) = " (double 21))
+(echo "identity(7) = " (identity 7))
+
+; Nim normally applies a converter implicitly wherever the target type is
+; expected; NFL modules are emitted through a macro, and Nim does not run
+; converter-based implicit conversion for code assembled that way, so call
+; the converter explicitly here.
+(var three 3)
+(echo "toFloat(three) + 0.5 = " (+ (toFloat three) 0.5))

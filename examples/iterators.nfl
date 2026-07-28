@@ -13,6 +13,12 @@
         (yield i)
         nil)))
 
+; A generic iterator — the [T] parameter follows the same pattern as proc/type.
+; Yields `x` a total of `n` times.
+(iterator repeat [T] ((x T) (n int)) (: T)
+  (for (i (.. 1 n))
+    (yield x)))
+
 ; Consume `upTo` with a for loop — prints 0 1 2 3 4.
 (echo "upTo(5):")
 (for (x (upTo 5))
@@ -31,3 +37,8 @@
 (echo "evens up to 10:")
 (for (n (evens 10))
   (echo "  " n))
+
+; Consume the generic iterator — prints "hi" three times.
+(echo "repeat(\"hi\", 3):")
+(for (s (repeat "hi" 3))
+  (echo "  " s))
