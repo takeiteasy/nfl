@@ -1,4 +1,5 @@
 import std/options
+import std/sets
 import std/tables
 
 import ./diagnostics
@@ -27,9 +28,17 @@ type
   MacroEnv* = ref object
     macros*: Table[string, MacroDef]
     gensymCounter*: int
+    includedFiles*: HashSet[string]  ## resolved paths of .nfl files already
+                                      ## inlined (#10) — a second `(import
+                                      ## ...)` of the same file is a no-op so
+                                      ## diamond imports don't duplicate decls
+    includingStack*: seq[string]     ## resolved paths currently being
+                                      ## inlined, in inclusion order — used to
+                                      ## detect and report circular imports
 
 proc newMacroEnv*(): MacroEnv =
-  MacroEnv(macros: initTable[string, MacroDef](), gensymCounter: 0)
+  MacroEnv(macros: initTable[string, MacroDef](), gensymCounter: 0,
+           includedFiles: initHashSet[string](), includingStack: @[])
 
 proc hasMacro*(env: MacroEnv; name: string): bool =
   env.macros.hasKey(name)

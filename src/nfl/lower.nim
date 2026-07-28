@@ -535,13 +535,20 @@ proc lowerConst(ctx: var LowerContext; sx: Syntax) =
   lowerExpr(ctx, sx.items[valueIdx])
   declare(ctx, newSymbol(baseName, nameSpan), bkImmutable)
 
-proc lowerImport(sx: Syntax) =
-  expectArity(sx, "import", sx.items.len - 1, 1)
-  let module = sx.items[1]
+proc isNflModulePath(sym: string): bool =
+  sym.endsWith(".nfl")
+
+proc validateModulePath(module: Syntax; formName: string) =
   if module.kind != sxSymbol:
-    raiseCompilerError(module.span, "import expects a module symbol")
+    raiseCompilerError(module.span, formName & " expects a module symbol")
   if module.sym.len == 0 or module.sym[0] == '/' or module.sym[^1] == '/' or module.sym.contains("//"):
     raiseCompilerError(module.span, "invalid import path")
+
+proc lowerImport(sx: Syntax) =
+  expectArity(sx, "import", sx.items.len - 1, 1)
+  validateModulePath(sx.items[1], "import")
+  if sx.items[1].sym.isNflModulePath():
+    raiseCompilerError(sx.span, "nfl file imports are only allowed at the top level of a module")
 
 proc validateFieldName(name: Syntax; what: string): string =
   if name.kind != sxSymbol:
@@ -551,6 +558,25 @@ proc validateFieldName(name: Syntax; what: string): string =
   if name.sym.len == 0 or name.sym[0] == '.' or name.sym[^1] == '.' or name.sym.contains(".."):
     raiseCompilerError(name.span, "invalid " & what & ": " & name.sym)
   name.sym
+
+proc lowerFrom(sx: Syntax) =
+  if sx.items.len < 4:
+    raiseCompilerError(sx.span, "from expects (from module import sym...)")
+  validateModulePath(sx.items[1], "from")
+  if sx.items[1].sym.isNflModulePath():
+    raiseCompilerError(sx.items[1].span, "from does not support importing nfl files")
+  if not sx.items[2].isSymbol("import"):
+    raiseCompilerError(sx.items[2].span, "from expects the literal symbol 'import' after the module")
+  let rest = sx.items[3 .. ^1]
+  if rest.len == 1 and rest[0].kind == sxList and rest[0].items.len > 0 and rest[0].items[0].isSymbol("except"):
+    let excepted = rest[0].items[1 .. ^1]
+    if excepted.len == 0:
+      raiseCompilerError(rest[0].span, "from ... import (except ...) expects at least one symbol")
+    for sym in excepted:
+      discard validateFieldName(sym, "from import except symbol")
+  else:
+    for sym in rest:
+      discard validateFieldName(sym, "from import symbol")
 
 proc lowerNamedArg(ctx: var LowerContext; sx: Syntax; seen: var Table[string, bool]) =
   if sx.items.len != 3:
@@ -1095,6 +1121,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       raiseCompilerError(sx.span, sx.items[0].sym & " is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
       raiseCompilerError(sx.span, "import is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("from"):
+      raiseCompilerError(sx.span, "from is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("for"):
       lowerFor(ctx, sx)
     elif sx.items[0].isSymbol("while"):
@@ -1141,6 +1169,9 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
       return
     if sx.items[0].isSymbol("import"):
       lowerImport(sx)
+      return
+    if sx.items[0].isSymbol("from"):
+      lowerFrom(sx)
       return
     if sx.items[0].isSymbol("proc"):
       lowerProc(ctx, sx)

@@ -17,6 +17,27 @@ After importing, all exported symbols are available by name:
 (echo (toUpperAscii "hello"))   ; HELLO
 ```
 
+## Selective imports
+
+`(from module import sym...)` brings only the named symbols into unqualified
+scope, leaving everything else in the module qualified (`module.other`):
+
+```lisp
+(from std/strutils import toUpperAscii toLowerAscii)
+(echo (toUpperAscii "hello"))   ; HELLO
+```
+
+`(from module import (except sym...))` imports everything from the module
+*except* the named symbols — the mirror image of a plain `import`:
+
+```lisp
+(from std/math import (except sqrt))
+(echo (pow 2.0 10.0))           ; sqrt is not brought into scope here
+```
+
+`from` only targets real Nim modules — see below for importing another `.nfl`
+file.
+
 ## Calling Nim procedures
 
 Nim procedures are called with the same `(name args...)` syntax as NFL procedures:
@@ -226,6 +247,45 @@ to `float` before being passed to a `sqrt`-based proc. As in plain Nim (see
 [`converter`](language-reference.md#converter--implicit-type-conversion)
 above), the conversion applies implicitly at the call site — no explicit call
 needed.
+
+## Splitting a project across multiple .nfl files
+
+`(import ./path.nfl)` — a module path ending in `.nfl` — pulls another NFL
+source file into the current one. The path resolves relative to the
+importing file's own directory:
+
+```lisp
+; helpers.nfl
+(defmacro double (x) `(* 2 ,x))
+(proc addOne ((x int)) (: int) (+ x 1))
+```
+
+```lisp
+; main.nfl
+(import ./helpers.nfl)
+(echo (addOne (double 5)))   ; 11
+```
+
+This is an **inline include**, not a separate compiled Nim module: the
+imported file's forms — including macro definitions — are expanded in place
+of the `(import ...)` form and become part of the same compiled unit as the
+importer. A macro defined in an imported file is visible to the importer
+from that point on, the same as if it had been defined locally.
+
+A few consequences follow from that model:
+
+- **`.nfl` imports are top-level only.** `(import ./helpers.nfl)` is only
+  valid at module scope, not inside a `proc`/`block`/`let` body (plain Nim
+  module imports, e.g. `(import std/os)`, still work in either position).
+- **Diamond imports are deduplicated.** If two files both import the same
+  third file, its declarations are only inlined once — the second `(import
+  ...)` is a no-op — so you don't get duplicate-definition errors.
+- **Circular imports are a compile error.** `a.nfl` importing `b.nfl`
+  importing `a.nfl` is reported as `circular import: a.nfl -> b.nfl ->
+  a.nfl` rather than looping forever.
+- Since imports are inlined, plain Nim code cannot `import` a `.nfl` file
+  directly (it isn't compiled to a standalone Nim module) — only another
+  `.nfl` file can pull it in via `(import ...)`.
 
 ## Full interop example
 

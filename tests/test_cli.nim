@@ -227,3 +227,61 @@ doAssert publicHappy != publicSad
       let (output, exitCode) = runCommand(nimExe, @["check", "--path:src", consumer])
       check exitCode == 0
       check not output.contains("Error:")
+
+  # ---------------------------------------------------------------------------
+  # multi-file nfl imports (#10)
+  # ---------------------------------------------------------------------------
+
+  test "imports another nfl file by relative path":
+    discard writeTempNfl("nfl cli multi file", "helpers.nfl", """
+(defmacro double (x) `(* 2 ,x))
+(proc addOne ((x int)) (: int) (+ x 1))
+""")
+    let main = writeTempNfl("nfl cli multi file", "main.nfl", """
+(import ./helpers.nfl)
+(echo (addOne (double 5)))
+""")
+
+    let (output, exitCode) = runCommand(cliExe, @["run", main])
+    check exitCode == 0
+    check output.contains("11")
+
+  test "diamond imports do not duplicate declarations":
+    discard writeTempNfl("nfl cli diamond import", "d.nfl", "(var dValue 100)\n")
+    discard writeTempNfl("nfl cli diamond import", "b.nfl", "(import ./d.nfl)\n(var bValue (+ dValue 1))\n")
+    discard writeTempNfl("nfl cli diamond import", "c.nfl", "(import ./d.nfl)\n(var cValue (+ dValue 2))\n")
+    let main = writeTempNfl("nfl cli diamond import", "main.nfl", """
+(import ./b.nfl)
+(import ./c.nfl)
+(echo (+ bValue cValue))
+""")
+
+    let (output, exitCode) = runCommand(cliExe, @["run", main])
+    check exitCode == 0
+    check output.contains("203")
+
+  test "circular nfl imports are reported as a compile error":
+    let dir = "nfl cli circular import"
+    let main = writeTempNfl(dir, "a.nfl", "(import ./b.nfl)\n(var a 1)\n")
+    discard writeTempNfl(dir, "b.nfl", "(import ./a.nfl)\n(var b 1)\n")
+    let (output, exitCode) = runCommand(cliExe, @["check", main])
+    check exitCode != 0
+    check output.contains("circular import")
+
+  test "importing a missing nfl file is a compile error":
+    let main = writeTempNfl("nfl cli missing import", "main.nfl", "(import ./does-not-exist.nfl)\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["check", main])
+    check exitCode != 0
+    check output.contains("cannot find imported file")
+
+  test "nfl file imports are rejected outside top-level module scope":
+    let main = writeTempNfl("nfl cli nested import", "main.nfl", """
+(proc f () (: int)
+  (import ./helpers.nfl)
+  1)
+""")
+
+    let (output, exitCode) = runCommand(cliExe, @["check", main])
+    check exitCode != 0
+    check output.contains("nfl file imports are only allowed at the top level of a module")

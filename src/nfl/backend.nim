@@ -614,7 +614,21 @@ proc emitConst(ctx: var EmitContext; sx: Syntax): NimNode =
 
 proc emitImport(sx: Syntax): NimNode =
   expectArity(sx, "import", sx.items.len - 1, 1)
+  if sx.items[1].kind == sxSymbol and sx.items[1].sym.endsWith(".nfl"):
+    raiseCompilerError(sx.span, "nfl file imports are only allowed at the top level of a module")
   nnkImportStmt.newTree(emitModulePath(sx.items[1])).attachLineInfo(sx)
+
+proc emitFrom(sx: Syntax): NimNode =
+  let modulePath = emitModulePath(sx.items[1])
+  let rest = sx.items[3 .. ^1]
+  if rest.len == 1 and rest[0].kind == sxList and rest[0].items.len > 0 and rest[0].items[0].isSymbol("except"):
+    result = nnkImportExceptStmt.newTree(modulePath).attachLineInfo(sx)
+    for sym in rest[0].items[1 .. ^1]:
+      result.add ident(sym.sym).attachLineInfo(sym)
+  else:
+    result = nnkFromStmt.newTree(modulePath).attachLineInfo(sx)
+    for sym in rest:
+      result.add ident(sym.sym).attachLineInfo(sym)
 
 proc emitObjectType(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits `(object [of Base] (field type) …)` as `nnkObjectTy`.
@@ -1214,6 +1228,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("import"):
       raiseCompilerError(sx.span, "import is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("from"):
+      raiseCompilerError(sx.span, "from is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("quote"):
       emitQuote(sx)
     elif sx.items[0].isSymbol("quasiquote"):
@@ -1273,6 +1289,8 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return ctx.emitConst(sx)
     if sx.items[0].isSymbol("import"):
       return emitImport(sx)
+    if sx.items[0].isSymbol("from"):
+      return emitFrom(sx)
     if sx.items[0].isSymbol("proc"):
       return ctx.emitProc(sx)
     if sx.items[0].isSymbol("template"):

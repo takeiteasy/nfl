@@ -524,6 +524,11 @@ nflModule """
 (var opSum (int (+ (OpInt 3) (OpInt 4))))
 (var opProduct (int (* (OpInt 3) (OpInt 4))))
 (var opDoubleProduct (int (|**| (OpInt 3) (OpInt 4))))
+; --- Selective imports (#31) ---
+(from std/math import sqrt)
+(from std/os import (except getEnv))
+(var fromImportResult (sqrt 16.0))
+(var fromImportExceptResult (. (getCurrentDir) len))
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -536,6 +541,12 @@ suite "nfl module backend":
   test "typed proc and dotted method call":
     check shout("nim") == "NIM"
     check shoutedByMethod == "METHOD"
+
+  test "from-import brings only the named symbol into scope (#31)":
+    check fromImportResult == 4.0
+
+  test "from-import-except imports everything but the excepted symbol (#31)":
+    check fromImportExceptResult > 0
 
   test "gensym bindings do not collide with matching source names":
     check hygienicResult == 3

@@ -1,4 +1,5 @@
 import std/macros
+import std/os
 
 import ./diagnostics
 import ./expand
@@ -16,7 +17,14 @@ proc expandSource*(source, file: string; autoloadCore = true): seq[Syntax] =
   let env = newMacroEnv()
   if autoloadCore:
     discard expandModule(readAll(coreSource, "std/core.nfl"), env)
-  expandModule(readAll(source, file), env)
+  # `file` is used as-is (never resolved via `getCurrentDir()`) since this
+  # also runs inside the `nflModule` macro at Nim compile time during `nfl
+  # run`/`compile`/`check`, where the compiler's VM refuses `getCurrentDir`
+  # (compile-time FFI). The CLI already passes an absolute path, so relative
+  # `.nfl` imports resolve correctly there; callers that hand in a synthetic,
+  # non-file-backed label (as tests do) simply can't relatively import
+  # anything from it, which is fine since no such file exists to import from.
+  expandModule(readAll(source, file), env, parentDir(file), file)
 
 macro nflExpr*(source: static[string]; autoloadCore: static[bool] = true): untyped =
   try:

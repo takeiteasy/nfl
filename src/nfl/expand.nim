@@ -1,8 +1,12 @@
 import std/options
+import std/os
+import std/sets
+import std/strutils
 import std/tables
 
 import ./diagnostics
 import ./macros
+import ./reader
 import ./syntax
 
 const maxExpansionDepth = 100
@@ -10,7 +14,7 @@ const maxExpansionDepth = 100
 type EvalScope = Table[string, Syntax]
 
 proc expandExpr*(env: MacroEnv; sx: Syntax; depth = 0): Syntax
-proc expandModule*(forms: seq[Syntax]; env: MacroEnv = newMacroEnv()): seq[Syntax]
+proc expandModule*(forms: seq[Syntax]; env: MacroEnv = newMacroEnv(); currentDir = ""; selfPath = ""): seq[Syntax]
 
 proc expectArity(sx: Syntax; name: string; actual, expected: int) =
   if actual != expected:
@@ -648,9 +652,47 @@ proc expandExpr*(env: MacroEnv; sx: Syntax; depth = 0): Syntax =
   else:
     sx.copySyntax()
 
-proc expandModule*(forms: seq[Syntax]; env: MacroEnv = newMacroEnv()): seq[Syntax] =
+proc isNflImportForm(form: Syntax): bool =
+  form.kind == sxList and form.items.len == 2 and form.items[0].isSymbol("import") and
+    form.items[1].kind == sxSymbol and form.items[1].sym.endsWith(".nfl")
+
+proc resolveNflImportPath(currentDir, raw: string): string =
+  ## Never falls back to `getCurrentDir()` — this runs at Nim compile time
+  ## inside the `nflModule` macro during `nfl run`/`compile`/`check`, where
+  ## the VM refuses it (compile-time FFI). `currentDir` is empty only for
+  ## synthetic, non-file-backed sources, which can't resolve relative
+  ## imports meaningfully anyway.
+  if currentDir.len == 0: raw
+  else: normalizedPath(absolutePath(raw, currentDir))
+
+proc expandModuleFile(path: string; env: MacroEnv; span: Span): seq[Syntax] =
+  ## Inline-includes an `.nfl` file's expanded forms in place of the
+  ## `(import path.nfl)` form that referenced it (#10). Files already fully
+  ## included are skipped (diamond imports don't duplicate declarations);
+  ## a file still being included when it's requested again — including the
+  ## entry file itself, which `expandModule*` also pushes onto
+  ## `includingStack` via its `selfPath` argument — is a cycle.
+  if path in env.includedFiles:
+    return @[]
+  if path in env.includingStack:
+    var chain = env.includingStack
+    chain.add path
+    raiseCompilerError(span, "circular import: " & chain.join(" -> "))
+  if not fileExists(path):
+    raiseCompilerError(span, "cannot find imported file: " & path)
+  let forms = readAll(readFile(path), path)
+  expandModule(forms, env, parentDir(path), path)
+
+proc expandModule*(forms: seq[Syntax]; env: MacroEnv = newMacroEnv(); currentDir = ""; selfPath = ""): seq[Syntax] =
+  if selfPath.len > 0:
+    env.includingStack.add selfPath
   for form in forms:
     if form.kind == sxList and form.items.len > 0 and form.items[0].isSymbol("defmacro"):
       env.defineMacro parseDefmacro(form)
+    elif form.isNflImportForm():
+      result.add expandModuleFile(resolveNflImportPath(currentDir, form.items[1].sym), env, form.span)
     else:
       result.add expandExpr(env, form)
+  if selfPath.len > 0:
+    discard env.includingStack.pop()
+    env.includedFiles.incl selfPath

@@ -1,0 +1,8 @@
+; Selective imports (#31): bring only named symbols into scope, or
+; import everything except a named exclusion list.
+(from std/strutils import toUpperAscii toLowerAscii)
+(from std/math import (except sqrt))
+
+(echo (toUpperAscii "hello"))
+(echo (toLowerAscii "WORLD"))
+(echo (pow 2.0 10.0))

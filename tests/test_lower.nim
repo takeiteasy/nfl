@@ -863,6 +863,42 @@ suite "lowering validation":
       "converter is only allowed at statement/module scope")
 
   # ---------------------------------------------------------------------------
+  # selective imports  (#31)
+  # ---------------------------------------------------------------------------
+
+  test "allows from-import of named symbols":
+    discard lowerModule(readAll("(from std/strutils import toUpperAscii toLowerAscii)", "lower-test.nfl"))
+
+  test "allows from-import-except":
+    discard lowerModule(readAll("(from std/math import (except sqrt))", "lower-test.nfl"))
+
+  test "rejects from missing the import keyword":
+    expectLowerModuleError("(from std/strutils bring toUpperAscii)",
+      "from expects the literal symbol 'import' after the module")
+
+  test "rejects from with no symbols":
+    expectLowerModuleError("(from std/strutils import)",
+      "from expects (from module import sym...)")
+
+  test "rejects from-import-except with no symbols":
+    expectLowerModuleError("(from std/math import (except))",
+      "from ... import (except ...) expects at least one symbol")
+
+  test "rejects from importing an nfl file":
+    expectLowerModuleError("(from ./helpers.nfl import foo)",
+      "from does not support importing nfl files")
+
+  test "rejects from with invalid module path":
+    expectLowerModuleError("(from /std/strutils import toUpperAscii)", "invalid import path")
+
+  test "rejects from-imported symbol with export marker":
+    expectLowerModuleError("(from std/strutils import toUpperAscii*)", "cannot use export markers")
+
+  test "rejects from in expression position":
+    expectLowerError("(let ((x (from std/strutils import toUpperAscii))) x)",
+      "from is only allowed at statement/module scope")
+
+  # ---------------------------------------------------------------------------
   # object inheritance  (#33)
   # ---------------------------------------------------------------------------
 

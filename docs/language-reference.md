@@ -661,6 +661,18 @@ Preamble helpers:
 (import std/os)
 ```
 
+`(import ./path.nfl)` inline-includes another NFL source file instead — see
+[Splitting a project across multiple .nfl files](nim-interop.md#splitting-a-project-across-multiple-nfl-files).
+
+## Selective imports
+
+```lisp
+(from std/strutils import toUpperAscii toLowerAscii)
+(from std/math import (except sqrt))
+```
+
+See [Selective imports](nim-interop.md#selective-imports) for details.
+
 ## Threading macros (preamble)
 
 ```lisp

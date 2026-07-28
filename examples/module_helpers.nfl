@@ -1,0 +1,7 @@
+; Helper module for module_main.nfl (#10) — imported by relative path, not
+; run directly as an entry point (though it's valid to run on its own too).
+(defmacro double (x)
+  `(* 2 ,x))
+
+(proc addOne ((x int)) (: int)
+  (+ x 1))
