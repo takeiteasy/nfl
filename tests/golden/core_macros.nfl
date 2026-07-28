@@ -4,4 +4,4 @@
   (false (echo "skip"))
   (true (echo "take")))
 (-> "nfl" toUpperAscii)
-(map [1 2 3] (do ((x int64)) (* x 2)))
+(map [1 2 3] (do ((x int)) (* x 2)))

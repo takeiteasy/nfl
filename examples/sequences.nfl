@@ -1,13 +1,13 @@
 (var nums (@ [1 2 3 4]))
 
 (var doubled
-  (map nums (do ((x int64)) (* x 2))))
+  (map nums (do ((x int)) (* x 2))))
 
 (var small
-  (filter nums (do ((x int64)) (< x 4))))
+  (filter nums (do ((x int)) (< x 4))))
 
 (var total
-  (foldl nums 0 (do ((acc int64) (x int64)) (+ acc x))))
+  (foldl nums 0 (do ((acc int) (x int)) (+ acc x))))
 
 (echo (first doubled))
 (echo (first (rest small)))

@@ -184,13 +184,14 @@ type:
   (float x))
 ```
 
-Nim normally applies a converter implicitly wherever the target type is
-expected. NFL modules are emitted through a macro, and Nim does not perform
-implicit converter-based conversion for code assembled that way — call the
-converter explicitly instead:
+The converter applies implicitly wherever the target type is expected, just
+like in plain Nim — no explicit call is needed:
 
 ```lisp
-(echo (+ (toFloat 3) 0.5))    ; 3.5
+(proc takesFloat ((f float)) (: float) f)
+
+(echo (takesFloat 3))         ; 3.0 — `int` converted to `float` implicitly
+(echo (+ (toFloat 3) 0.5))    ; 3.5 — explicit call still works too
 ```
 
 ### Implicit `result`

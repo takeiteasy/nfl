@@ -20,9 +20,12 @@
 (echo "double(21) = " (double 21))
 (echo "identity(7) = " (identity 7))
 
-; Nim normally applies a converter implicitly wherever the target type is
-; expected; NFL modules are emitted through a macro, and Nim does not run
-; converter-based implicit conversion for code assembled that way, so call
-; the converter explicitly here.
+; The converter applies implicitly wherever a float is expected — no
+; explicit call needed, same as plain Nim.
+(proc addHalf ((f float)) (: float)
+  (+ f 0.5))
+
 (var three 3)
+(echo "addHalf(three) = " (addHalf three))
+; An explicit call still works too.
 (echo "toFloat(three) + 0.5 = " (+ (toFloat three) 0.5))

@@ -2,4 +2,4 @@
 (if false nil (block (echo "unless")))
 (if false (block (echo "skip")) (if true (block (echo "take")) nil))
 (toUpperAscii "nfl")
-(nflSeqMap [1 2 3] (do ((x int64)) (* x 2)))
+(nflSeqMap [1 2 3] (do ((x int)) (* x 2)))

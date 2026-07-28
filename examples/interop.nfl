@@ -11,16 +11,14 @@
 ; A distinct wrapper type plus a converter to its underlying Nim type — the
 ; concrete interop shape a converter is for: values arrive as a domain type
 ; (`Meters`) but the stdlib proc (`hypotenuse`, via `sqrt`) expects `float`.
-; NFL modules are emitted through a macro, so Nim does not apply the
-; converter implicitly the way it would in a normal Nim module — call it
-; explicitly at the interop boundary.
+; The converter applies implicitly at the call site, same as plain Nim.
 (type Meters (distinct float))
 
 (converter metersToFloat ((m Meters)) (: float)
   (float m))
 
 (proc hypotenuseMeters ((a Meters) (b Meters)) (: float)
-  (hypotenuse (metersToFloat a) (metersToFloat b)))
+  (hypotenuse a b))    ; `a`/`b` convert to `float` implicitly
 
 ; Custom operator proc (#29) — `|op|` names a proc after the operator
 ; symbol; a trailing `*` exports it. `+*` here defines an exported `+`

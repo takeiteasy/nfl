@@ -376,6 +376,14 @@ nflModule """
 (var funcResult (doublePure 21))
 (var genericSquareResult (genericSquare 6))
 (var converterResult (+ (toFloatConv 3) 0.5))
+; The converter also applies implicitly at a call site expecting `float` —
+; no explicit call needed (#45).
+(proc takesFloatArg ((f float)) (: float) f)
+(var implicitConverterResult (takesFloatArg 3))
+; Mixed int/float arithmetic relies on the same untyped-literal fix (#45).
+(var mixedArithResult (+ 3 0.5))
+; Sequence literals infer plain `int`, not `int64` (#45).
+(var seqLiteral (@ [1 2 3]))
 ; --- For loop tests ---
 ; Sum elements of an array literal with a for loop.
 (var forSeqSum
@@ -509,8 +517,13 @@ nflModule """
 ; Multi-char exported operator — `**` strips to exported `*`.
 (proc ** ((a OpInt) (b OpInt)) (: OpInt)
   (OpInt (* (int a) (int b))))
+; Escaped multi-char operator — `|**|` is the unexported `**` operator,
+; distinct from unescaped `**` above (#46 follow-up to #29).
+(proc |**| ((a OpInt) (b OpInt)) (: OpInt)
+  (OpInt (* (* (int a) (int b)) 2)))
 (var opSum (int (+ (OpInt 3) (OpInt 4))))
 (var opProduct (int (* (OpInt 3) (OpInt 4))))
+(var opDoubleProduct (int (|**| (OpInt 3) (OpInt 4))))
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -766,6 +779,10 @@ suite "nfl module backend — operator procs (#29)":
   test "exported operator proc callable infix from plain Nim":
     check int(OpInt(9) - OpInt(4)) == 5
 
+  test "unexported |**| operator proc is a distinct name from exported ** (#46)":
+    check opDoubleProduct == 24
+    check opProduct == 12
+
 suite "nfl module backend — func / converter (#21 follow-on)":
   test "func compiles and is callable":
     check doublePure(21) == 42
@@ -777,6 +794,16 @@ suite "nfl module backend — func / converter (#21 follow-on)":
 
   test "converter is callable via an explicit call":
     check converterResult == 3.5
+
+  test "converter applies implicitly at a call site (#45)":
+    check implicitConverterResult == 3.0
+
+  test "mixed int/float arithmetic on untyped literals (#45)":
+    check mixedArithResult == 3.5
+
+  test "sequence literals infer plain int, not int64 (#45)":
+    check seqLiteral is seq[int]
+    check seqLiteral == @[1, 2, 3]
 
 # ---------------------------------------------------------------------------
 # Behavioral tests for while/break/continue (#24), return (#25),

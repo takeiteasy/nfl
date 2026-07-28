@@ -81,6 +81,20 @@ proc attachLineInfo(node: NimNode; sx: Syntax): NimNode =
   if sx.span.file.len > 0 and sx.span.file[0] != '<' and fileExists(sx.span.file):
     result.setLineInfo(sx.span.file, sx.span.line, sx.span.col)
 
+proc plainIntLit(v: BiggestInt): NimNode =
+  ## `newLit` on a `BiggestInt` yields an `nnkInt64Lit`, which Nim types as a
+  ## concrete `int64` rather than an untyped integer literal — that
+  ## suppresses literal narrowing, converter matching and generic inference.
+  ## Build the node directly so NFL integer literals behave like ordinary
+  ## Nim integer literals.
+  result = nnkIntLit.newNimNode()
+  result.intVal = v
+
+proc plainFloatLit(v: BiggestFloat): NimNode =
+  ## See `plainIntLit` — same reasoning for float literals.
+  result = nnkFloatLit.newNimNode()
+  result.floatVal = v
+
 proc identForSymbol(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, "expected symbol")
@@ -123,39 +137,27 @@ proc declIdent(ctx: var EmitContext; sx: Syntax; what: string; allowOperator = f
   ## Build the declaration-site identifier for a symbol, handling both the
   ## export postfix (`name*` → `nnkPostfix(*, ident(name))`) and hygiene.
   ## Hygienic symbols cannot carry `*` — they have no stable public name.
-  ##
-  ## `allowOperator` (routine names only — see #29) mirrors lower.nim's
-  ## `validateExportedDecl`: an operator name (`+`, `+*`, `**`, …) is made
-  ## entirely of operator characters, so a trailing `*` only means "export
-  ## marker" when stripping it leaves a nonempty operator name. A plain
-  ## `ident(...)` node is emitted either way — Nim's parser tokenizes any
-  ## run of operator characters as a single operator, so no `nnkAccQuoted`
-  ## wrapping is needed at the declaration site (verified: `nnkProcDef` with
-  ## a plain `ident("+")` name, including multi-char and exported forms,
-  ## compiles and is callable infix).
+  ## Mirrors lower.nim's `validateExportedDecl`; see `splitExportMarker`
+  ## (syntax.nim) for the marker/operator/escape rules. A plain
+  ## `ident(...)` node is emitted for operator names either way — Nim's
+  ## parser tokenizes any run of operator characters as a single operator,
+  ## so no `nnkAccQuoted` wrapping is needed at the declaration site
+  ## (verified: `nnkProcDef` with a plain `ident("+")` name, including
+  ## multi-char and exported forms, compiles and is callable infix).
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, what & " must be a symbol")
-  if allowOperator and sx.sym.isOperatorName:
-    if sx.sym.len > 1 and sx.sym.endsWith("*"):
-      if sx.hygieneId != 0:
-        raiseCompilerError(sx.span, "exported name cannot be a hygienic symbol")
-      return nnkPostfix.newTree(
-        ident("*"),
-        ident(sx.sym[0 ..< sx.sym.high]).attachLineInfo(sx)
-      ).attachLineInfo(sx)
-    return ident(sx.sym).attachLineInfo(sx)
-  if sx.sym.endsWith("*"):
+  let (base, exported, err) = splitExportMarker(sx.sym, sx.escaped, allowOperator)
+  if err.len > 0:
+    raiseCompilerError(sx.span, err)
+  if exported:
     if sx.hygieneId != 0:
       raiseCompilerError(sx.span, "exported name cannot be a hygienic symbol")
-    let base = sx.sym[0 ..< sx.sym.high]
-    if base.len == 0:
-      raiseCompilerError(sx.span, "exported name must have a base name")
-    if base.contains("*"):
-      raiseCompilerError(sx.span, "export marker is only allowed at the end of a name")
     return nnkPostfix.newTree(
       ident("*"),
       ident(base).attachLineInfo(sx)
     ).attachLineInfo(sx)
+  if allowOperator and sx.sym.isOperatorName:
+    return ident(base).attachLineInfo(sx)
   ctx.identForSymbol(sx)
 
 proc emitTypeRef(sx: Syntax): NimNode =
@@ -905,9 +907,9 @@ proc emitMatchTest(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): NimNode
   of sxBool:
     nnkInfix.newTree(ident("=="), tmp.copyNimTree(), newLit(pattern.boolVal)).attachLineInfo(pattern)
   of sxInt:
-    nnkInfix.newTree(ident("=="), tmp.copyNimTree(), newLit(pattern.intVal)).attachLineInfo(pattern)
+    nnkInfix.newTree(ident("=="), tmp.copyNimTree(), plainIntLit(pattern.intVal)).attachLineInfo(pattern)
   of sxFloat:
-    nnkInfix.newTree(ident("=="), tmp.copyNimTree(), newLit(pattern.floatVal)).attachLineInfo(pattern)
+    nnkInfix.newTree(ident("=="), tmp.copyNimTree(), plainFloatLit(pattern.floatVal)).attachLineInfo(pattern)
   of sxString:
     nnkInfix.newTree(ident("=="), tmp.copyNimTree(), newLit(pattern.strVal)).attachLineInfo(pattern)
   of sxSymbol:
@@ -1128,9 +1130,9 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
   of sxBool:
     newLit(sx.boolVal).attachLineInfo(sx)
   of sxInt:
-    newLit(sx.intVal).attachLineInfo(sx)
+    plainIntLit(sx.intVal).attachLineInfo(sx)
   of sxFloat:
-    newLit(sx.floatVal).attachLineInfo(sx)
+    plainFloatLit(sx.floatVal).attachLineInfo(sx)
   of sxString:
     newLit(sx.strVal).attachLineInfo(sx)
   of sxSymbol:

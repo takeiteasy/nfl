@@ -26,7 +26,7 @@
 ; Vector pattern destructuring plus a guard. The empty case uses a `_`
 ; bind with a length guard, since a destructuring pattern must have at
 ; least one element.
-(proc describeList ((xs [seq int64])) (: string)
+(proc describeList ((xs [seq int])) (: string)
   (match xs
     (_ :when (== (. xs len) 0) "empty")
     ([_] "one element")

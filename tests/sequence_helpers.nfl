@@ -7,20 +7,20 @@
 (var appendedValues (append nums (@ [5 6])))
 
 (var mappedValues
-  (map nums (do ((x int64)) (* x 2))))
+  (map nums (do ((x int)) (* x 2))))
 
 (var mappedWithCapture
   (let ((offset 10))
-    (map nums (do ((x int64)) (+ x offset)))))
+    (map nums (do ((x int)) (+ x offset)))))
 
 (var filteredValues
-  (filter nums (do ((x int64)) (< x 4))))
+  (filter nums (do ((x int)) (< x 4))))
 
 (var foldedLeft
-  (foldl nums 0 (do ((acc int64) (x int64)) (- acc x))))
+  (foldl nums 0 (do ((acc int) (x int)) (- acc x))))
 
 (var foldedRight
-  (foldr nums 0 (do ((x int64) (acc int64)) (- x acc))))
+  (foldr nums 0 (do ((x int) (acc int)) (- x acc))))
 
 (var mappedStrings
   (map words (do ((s string)) (. s len))))
