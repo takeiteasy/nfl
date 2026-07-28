@@ -380,6 +380,26 @@ nflModule """
   (try
     (raise (newException CatchableError "any"))
     (except "handled")))
+; --- defer tests (#26) ---
+; defer: runs at scope exit on the success path — the proc's own scope, not
+; before the caller observes the mutation.
+(var deferRan false)
+(proc triggerDefer () (: void)
+  (defer (set! deferRan true)))
+(triggerDefer)
+; defer: still runs when an exception propagates out of its scope.
+(proc deferRanOnException () (: bool)
+  (var ((ran false))
+    (try
+      (block
+        (defer (set! ran true))
+        (raise (newException ValueError "boom")))
+      (except ValueError nil))
+    ran))
+; defer: may be the last form in a body (routed through emitBodyExpr).
+(proc deferTrailingResult () (: int)
+  (set! result 42)
+  (defer (set! result result)))
 ; --- Template tests ---
 ; Unexported template: squares an int.
 (template square ((x int))
@@ -612,6 +632,15 @@ suite "nfl module backend — for / case / raise / try":
 
   test "try — bare catch-all catches any exception":
     check tryBare() == "handled"
+
+  test "defer — runs at scope exit on success":
+    check deferRan == true
+
+  test "defer — runs even when an exception propagates out of its scope":
+    check deferRanOnException() == true
+
+  test "defer — trailing defer in a body still returns the implicit result":
+    check deferTrailingResult() == 42
 
 suite "nfl module backend — template / iterator":
   test "template definition produces correct value":

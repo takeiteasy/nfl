@@ -11,6 +11,10 @@ type
 
   LowerContext = object
     scopes: seq[Table[string, BindingKind]]
+    bodyDepth: int
+      ## Counts nesting inside a proc/template/block/etc. body (see
+      ## `lowerBody`). Zero at true module top level, where `defer` is not
+      ## allowed since Nim itself rejects `defer` outside a body.
 
 proc isSymbol(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
@@ -130,8 +134,10 @@ proc bindingName(binding: Syntax): Syntax =
 proc lowerBody(ctx: var LowerContext; items: openArray[Syntax]; owner: Syntax) =
   if items.len == 0:
     raiseCompilerError(owner.span, "expected body expression")
+  inc ctx.bodyDepth
   for item in items:
     lowerStmt(ctx, item)
+  dec ctx.bodyDepth
 
 proc lowerBindings(ctx: var LowerContext; bindings: Syntax; mutable: bool) =
   if bindings.kind != sxList:
@@ -645,6 +651,14 @@ proc lowerDiscard(ctx: var LowerContext; sx: Syntax) =
   if nargs == 1:
     lowerExpr(ctx, sx.items[1])
 
+proc lowerDefer(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(defer body…)`. Only allowed inside a proc/block/etc. body —
+  ## Nim rejects `defer` at module top level, so NFL diagnoses it up front
+  ## instead of surfacing a raw Nim compiler error.
+  if ctx.bodyDepth == 0:
+    raiseCompilerError(sx.span, "defer is only allowed inside a proc or block body")
+  lowerBody(ctx, sx.items.toOpenArray(1, sx.items.high), sx)
+
 proc lowerWhile(ctx: var LowerContext; sx: Syntax) =
   ## Validates `(while condition body…)`.
   if sx.items.len < 3:
@@ -935,6 +949,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       raiseCompilerError(sx.span, "func is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("converter"):
       raiseCompilerError(sx.span, "converter is only allowed at statement/module scope")
+    elif sx.items[0].isSymbol("defer"):
+      raiseCompilerError(sx.span, "defer is only allowed at statement scope")
     elif sx.items[0].isSymbol("type"):
       raiseCompilerError(sx.span, "type is only allowed at statement/module scope")
     elif sx.items[0].isSymbol("."):
@@ -1017,6 +1033,9 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
       return
     if sx.items[0].isSymbol("discard"):
       lowerDiscard(ctx, sx)
+      return
+    if sx.items[0].isSymbol("defer"):
+      lowerDefer(ctx, sx)
       return
     if sx.items[0].isSymbol("break"):
       lowerBreak(sx)

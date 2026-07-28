@@ -33,3 +33,13 @@
     (if done 1 0)))
 
 (echo "cleanup ran: " (withCleanup))
+
+; defer is the ergonomic alternative to try/finally for scope-exit cleanup —
+; it runs when the enclosing proc/block exits, including via a propagating
+; exception. Note it runs *after* the return value is computed, not before.
+(proc withDefer () (: int)
+  (defer (echo "resource closed"))
+  (echo "resource opened")
+  42)
+
+(echo "withDefer returned: " (withDefer))

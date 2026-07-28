@@ -527,6 +527,25 @@ suite "lowering validation":
     expectLowerError("(try (riskyCall) (except (e ValueError) (set! e nil)))", "immutable binding")
 
   # ---------------------------------------------------------------------------
+  # defer
+  # ---------------------------------------------------------------------------
+
+  test "allows defer inside a block body":
+    discard lowerExpr(readOne("(block (defer (cleanup)))", "lower-test.nfl"))
+
+  test "allows defer inside a proc body":
+    discard lowerModule(readAll("(proc f () (defer (cleanup)))", "lower-test.nfl"))
+
+  test "rejects empty defer":
+    expectLowerError("(block (defer))", "expected body expression")
+
+  test "rejects defer in expression position":
+    expectLowerError("(+ 1 (defer (cleanup)))", "defer is only allowed at statement scope")
+
+  test "rejects defer at module top level":
+    expectLowerModuleError("(defer (cleanup))", "defer is only allowed inside a proc or block body")
+
+  # ---------------------------------------------------------------------------
   # template
   # ---------------------------------------------------------------------------
 

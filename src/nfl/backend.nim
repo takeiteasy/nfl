@@ -183,9 +183,22 @@ proc emitModulePath(sx: Syntax): NimNode =
   for part in parts[1 .. ^1]:
     result = nnkInfix.newTree(ident("/"), result, ident(part)).attachLineInfo(sx)
 
+proc isDeferForm(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("defer")
+
 proc emitBodyExpr(ctx: var EmitContext; items: openArray[Syntax]; owner: Syntax): NimNode =
   if items.len == 0:
     raiseCompilerError(owner.span, "expected body expression")
+  # A trailing `defer` cannot be routed through emitExpr — `defer` is
+  # statement-only — so a body ending in `defer` emits entirely as
+  # statements instead of expression-tailing the last item. This is what
+  # makes `(proc f () (open h) (defer (close h)))` work: the ergonomic,
+  # most natural way to write scope-exit cleanup as the last form in a body.
+  if items[items.high].isDeferForm():
+    result = newStmtList()
+    for item in items:
+      result.add ctx.emitStmt(item)
+    return
   if items.len == 1:
     return ctx.emitExpr(items[0])
   result = newStmtList()
@@ -814,6 +827,13 @@ proc emitDiscard(ctx: var EmitContext; sx: Syntax): NimNode =
   let operand = if nargs == 1: ctx.emitExpr(sx.items[1]) else: newEmptyNode()
   nnkDiscardStmt.newTree(operand).attachLineInfo(sx)
 
+proc emitDefer(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(defer body…)` as `nnkDefer`.
+  var body = newStmtList()
+  for i in 1 ..< sx.items.len:
+    body.add ctx.emitStmt(sx.items[i])
+  nnkDefer.newTree(body).attachLineInfo(sx)
+
 proc emitWhileCore(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Builds the `nnkWhileStmt` for `(while COND body…)`.
   ## Always returns a statement node; wrap in `emitBlockExpr` for expr context.
@@ -953,6 +973,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
     elif sx.items[0].isSymbol("discard"):
       raiseCompilerError(sx.span, "discard is only allowed at statement scope")
+    elif sx.items[0].isSymbol("defer"):
+      raiseCompilerError(sx.span, "defer is only allowed at statement scope")
     elif sx.items[0].isSymbol("break"):
       raiseCompilerError(sx.span, "break is only allowed inside a loop body")
     elif sx.items[0].isSymbol("continue"):
@@ -1002,6 +1024,8 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return ctx.emitReturn(sx)
     if sx.items[0].isSymbol("discard"):
       return ctx.emitDiscard(sx)
+    if sx.items[0].isSymbol("defer"):
+      return ctx.emitDefer(sx)
     if sx.items[0].isSymbol("break"):
       return nnkBreakStmt.newTree(newEmptyNode()).attachLineInfo(sx)
     if sx.items[0].isSymbol("continue"):

@@ -477,6 +477,8 @@ The implicit `result` variable (see [Implicit `result`](#implicit-result)) is an
 
 ## Error handling
 
+### `try`
+
 ```lisp
 (try
   body...
@@ -490,6 +492,27 @@ Raise an exception:
 ```lisp
 (raise (newException ValueError "message"))
 ```
+
+### `defer`
+
+`(defer body...)` schedules `body` to run when the enclosing `proc`/`method`/
+`template`/`iterator`/`block` scope exits — whether it exits normally, via
+`return`, or because an exception propagates out of it. It is the ergonomic
+alternative to a `try`/`finally` wrapping the whole body, and is well suited
+to resource cleanup (closing a file handle, releasing a lock):
+
+```lisp
+(proc withFile ((path string)) (: string)
+  (var ((handle (open path)))
+    (defer (close handle))
+    (handle.readAll)))
+```
+
+`defer` is statement-only (it cannot appear inside an expression) but may be
+the last form in a body — the example above puts it in the middle, but
+`(proc f () (setup) (defer (cleanup)))` also works. `defer` is not allowed at
+module top level; Nim itself does not support scheduling cleanup for a whole
+module, so use it inside a `proc` or `block`.
 
 ## Sequences and collections
 
