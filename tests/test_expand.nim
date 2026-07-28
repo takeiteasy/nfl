@@ -156,10 +156,66 @@ suite "macro expansion":
 (loop)
 """, "macro expansion depth exceeded")
 
+  # ---------------------------------------------------------------------------
+  # automatic template hygiene (#11)
+  # ---------------------------------------------------------------------------
+
+  test "quasiquoted let auto-renames its own literal binding":
+    let sx = expandOne """
+(defmacro m (a) `(let ((tmp ,a)) (+ tmp tmp)))
+(let ((tmp 99)) (m tmp))
+"""
+    # sx == (let ((tmp 99)) (let ((tmp<hygienic> tmp)) (+ tmp<hygienic> tmp<hygienic>)))
+    let innerLet = sx.items[2]
+    let innerBinding = innerLet.items[1].items[0]
+    let boundName = innerBinding.items[0]
+    let substitutedArg = innerBinding.items[1]
+    let bodyRefA = innerLet.items[2].items[1]
+    let bodyRefB = innerLet.items[2].items[2]
+    check boundName.sym == "tmp"
+    check boundName.hygieneId != 0
+    # The substituted `,a` is the caller's own `tmp` — untouched (hygieneId 0).
+    check substitutedArg.hygieneId == 0
+    # Both body references resolve to the same renamed binding.
+    check bodyRefA.hygieneId == boundName.hygieneId
+    check bodyRefB.hygieneId == boundName.hygieneId
+
+  test "nested lets in one template each get their own hygieneId":
+    let sx = expandOne """
+(defmacro dbl (a) `(let ((tmp ,a)) (let ((tmp (+ tmp tmp))) tmp)))
+(dbl 3)
+"""
+    let outerBoundName = sx.items[1].items[0].items[0]
+    let innerLet = sx.items[2]
+    let innerBoundName = innerLet.items[1].items[0].items[0]
+    check outerBoundName.hygieneId != 0
+    check innerBoundName.hygieneId != 0
+    check outerBoundName.hygieneId != innerBoundName.hygieneId
+
+  test "unhygienic escape hatch leaves the binding and its references unrenamed":
+    let sx = expandOne """
+(defmacro with-it (test &body body) `(let (((unhygienic it) ,test)) (block ,@body)))
+(with-it 41 (+ it 1))
+"""
+    let binding = sx.items[1].items[0]
+    let boundName = binding.items[0]
+    check boundName.sym == "it"
+    check boundName.hygieneId == 0
+
+  test "rejects unhygienic outside a quasiquote template":
+    expectExpandError("(unhygienic x)", "unhygienic is only valid as a binding target inside a quasiquote template")
+
+  test "rejects malformed unhygienic binding target":
+    expectExpandError("""
+(defmacro bad () `(let (((unhygienic 1) 2)) 1))
+(bad)
+""", "unhygienic expects exactly one symbol argument")
+
 suite "golden macro expansion":
   test "core macro fixtures":
     for sourcePath in ["tests/golden/core_macros.nfl",
-                       "tests/golden/escaped_symbols.nfl"]:
+                       "tests/golden/escaped_symbols.nfl",
+                       "tests/golden/hygiene.nfl"]:
       let expectedPath = sourcePath.changeFileExt("out")
       let actual = expandSource(readFile(sourcePath), sourcePath).renderForms()
       check actual.strip() == readFile(expectedPath).strip()

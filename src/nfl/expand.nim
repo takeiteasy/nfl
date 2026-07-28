@@ -271,6 +271,174 @@ proc bindMacroArgs(env: MacroEnv; def: MacroDef; call: Syntax): EvalScope =
     if not found:
       raiseCompilerError(call.span, def.name & ": unknown keyword argument :" & key)
 
+# ---------- automatic template hygiene (#11) ----------
+#
+# Renames literal binding-target symbols introduced by a quasiquoted
+# template — let/var (binding-list form), do, and for — so that a macro's
+# own local bindings don't accidentally capture, or get captured by,
+# identically-named symbols the caller passes in. This runs once over the
+# whole template *before* evalQuasiquote substitutes unquotes, which is
+# what makes leaving unquote/unquote-splicing subtrees untouched sufficient
+# to avoid ever renaming caller-supplied syntax: at this point an unquoted
+# expression is still the literal form `(unquote expr)`, not yet expr's
+# value, so skipping recursion into it skips exactly the caller's syntax.
+#
+# `(unhygienic sym)` in binding-target position is the escape hatch for
+# intentional capture (anaphoric macros): it unwraps to plain `sym`,
+# without renaming it or registering it in scope, so both the binding and
+# every literal reference to it stay capturable/capturing.
+#
+# Deliberately unhandled, and so left unrenamed (matching how the preamble
+# macros `let*`/`as->` already work, unaffected by this pass): a binding
+# whose target is itself an unquote (`,name`, a macro-computed name — the
+# macro author's own symbol) or a #12 destructuring vector pattern.
+
+type HygieneScope = Table[string, int]  # literal name -> assigned hygieneId
+
+proc hygienicRename(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax
+
+proc renameHygienicTarget(env: MacroEnv; target: Syntax; scope: var HygieneScope): Syntax =
+  let id = env.newHygienicId()
+  scope[target.sym] = id
+  newSymbol(target.sym, target.span, id)
+
+proc unwrapUnhygienicTarget(target: Syntax): tuple[inner: Syntax, skip: bool] =
+  ## Recognizes `(unhygienic sym)` in binding-target position.
+  if target.kind == sxList and target.items.len > 0 and target.items[0].isSymbol("unhygienic"):
+    if target.items.len != 2 or target.items[1].kind != sxSymbol:
+      raiseCompilerError(target.span, "unhygienic expects exactly one symbol argument")
+    return (target.items[1], true)
+  (target, false)
+
+proc hygienicRenameItems(env: MacroEnv; items: openArray[Syntax]; scope: HygieneScope): seq[Syntax] =
+  for item in items:
+    result.add hygienicRename(env, item, scope)
+
+proc hygienicRenameGeneric(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax =
+  case sx.kind
+  of sxSymbol:
+    if scope.hasKey(sx.sym):
+      newSymbol(sx.sym, sx.span, scope[sx.sym])
+    else:
+      sx.copySyntax()
+  of sxList:
+    newList(hygienicRenameItems(env, sx.items, scope), sx.span)
+  of sxVector:
+    newVector(hygienicRenameItems(env, sx.items, scope), sx.span)
+  else:
+    sx.copySyntax()
+
+proc hygienicRenameTypedTarget(env: MacroEnv; target: Syntax; childScope: var HygieneScope): Syntax =
+  ## Renames the shared `symbol` / `(name type)` / `(unhygienic ...)`
+  ## binding-target shape used by let/var bindings, do params, and for loop
+  ## variables. Any other shape (an unquoted/computed name, a destructuring
+  ## vector pattern, …) is left untouched — see the module-level comment.
+  let (inner, skip) = unwrapUnhygienicTarget(target)
+  if skip:
+    inner.copySyntax()
+  elif inner.kind == sxSymbol:
+    renameHygienicTarget(env, inner, childScope)
+  elif inner.kind == sxList and inner.items.len > 0 and inner.items[0].isSymbol("unquote"):
+    inner.copySyntax()
+  elif inner.kind == sxList and inner.items.len == 2 and inner.items[0].kind == sxSymbol and
+      (inner.items[1].kind == sxSymbol or inner.items[1].kind == sxVector):
+    newList(@[renameHygienicTarget(env, inner.items[0], childScope), inner.items[1].copySyntax()], inner.span)
+  else:
+    inner.copySyntax()
+
+proc hygienicRenameLetLike(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax =
+  if sx.items.len < 3:
+    return hygienicRenameGeneric(env, sx, scope)
+  let bindingsList = sx.items[1]
+  if bindingsList.kind != sxList:
+    return hygienicRenameGeneric(env, sx, scope)
+  var childScope = scope
+  var newBindings: seq[Syntax] = @[]
+  for binding in bindingsList.items:
+    if binding.kind == sxList and binding.items.len > 0 and binding.items[0].isSymbol("unquote"):
+      # The whole binding is computed (e.g. `,(first bindings)` in let*) —
+      # left entirely untouched; nothing to add to childScope.
+      newBindings.add binding.copySyntax()
+      continue
+    if binding.kind != sxList or binding.items.len notin {2, 3}:
+      newBindings.add hygienicRenameGeneric(env, binding, scope)
+      continue
+    let newTarget = hygienicRenameTypedTarget(env, binding.items[0], childScope)
+    var items = @[newTarget]
+    for i in 1 ..< binding.items.len:
+      # Binding values are parallel, not sequential (lower.nim's
+      # lowerBindings lowers every value in the outer scope before
+      # declaring any of this let's names) — walked with `scope`, not
+      # `childScope`.
+      items.add hygienicRename(env, binding.items[i], scope)
+    newBindings.add newList(items, binding.span)
+  var items = @[sx.items[0].copySyntax(), newList(newBindings, bindingsList.span)]
+  for i in 2 ..< sx.items.len:
+    items.add hygienicRename(env, sx.items[i], childScope)
+  newList(items, sx.span)
+
+proc hygienicRenameDo(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax =
+  if sx.items.len < 3:
+    return hygienicRenameGeneric(env, sx, scope)
+  let params = sx.items[1]
+  if params.kind != sxList:
+    return hygienicRenameGeneric(env, sx, scope)
+  var childScope = scope
+  var newParams: seq[Syntax] = @[]
+  for param in params.items:
+    newParams.add hygienicRenameTypedTarget(env, param, childScope)
+  var items = @[sx.items[0].copySyntax(), newList(newParams, params.span)]
+  for i in 2 ..< sx.items.len:
+    items.add hygienicRename(env, sx.items[i], childScope)
+  newList(items, sx.span)
+
+proc hygienicRenameFor(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax =
+  if sx.items.len < 3:
+    return hygienicRenameGeneric(env, sx, scope)
+  let clause = sx.items[1]
+  if clause.kind != sxList or clause.items.len != 2:
+    return hygienicRenameGeneric(env, sx, scope)
+  let binding = clause.items[0]
+  var childScope = scope
+  var newBinding: Syntax
+  if binding.kind == sxSymbol:
+    newBinding = renameHygienicTarget(env, binding, childScope)
+  elif binding.kind == sxList and binding.items.len > 0:
+    var allSymbols = true
+    for v in binding.items:
+      if v.kind != sxSymbol:
+        allSymbols = false
+        break
+    if allSymbols:
+      var vars: seq[Syntax] = @[]
+      for v in binding.items:
+        vars.add renameHygienicTarget(env, v, childScope)
+      newBinding = newList(vars, binding.span)
+    else:
+      newBinding = binding.copySyntax()
+  else:
+    newBinding = binding.copySyntax()
+  # The iterable is walked with the OUTER scope — mirrors lower.nim's
+  # lowerFor: "Lower the iterable in the outer scope before introducing
+  # loop vars."
+  let newIterable = hygienicRename(env, clause.items[1], scope)
+  var items = @[sx.items[0].copySyntax(), newList(@[newBinding, newIterable], clause.span)]
+  for i in 2 ..< sx.items.len:
+    items.add hygienicRename(env, sx.items[i], childScope)
+  newList(items, sx.span)
+
+proc hygienicRename(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax =
+  if sx.kind == sxList and sx.items.len > 0:
+    if sx.items[0].isSymbol("unquote") or sx.items[0].isSymbol("unquote-splicing"):
+      return sx.copySyntax()
+    if sx.items[0].isSymbol("let") or sx.items[0].isSymbol("var"):
+      return hygienicRenameLetLike(env, sx, scope)
+    if sx.items[0].isSymbol("do"):
+      return hygienicRenameDo(env, sx, scope)
+    if sx.items[0].isSymbol("for"):
+      return hygienicRenameFor(env, sx, scope)
+  hygienicRenameGeneric(env, sx, scope)
+
 # ---------- quasiquote ----------
 
 proc evalQuasiquote(env: MacroEnv; scope: var EvalScope; sx: Syntax; allowSplice: bool): Syntax
@@ -408,7 +576,9 @@ proc evalMacroExpr(env: MacroEnv; scope: var EvalScope; sx: Syntax): Syntax =
       return sx.items[1].copySyntax()
     if head.isSymbol("quasiquote"):
       expectArity(sx, "quasiquote", sx.items.len - 1, 1)
-      return evalQuasiquote(env, scope, sx.items[1], false)
+      let hygieneScope: HygieneScope = initTable[string, int]()
+      let renamedTemplate = hygienicRename(env, sx.items[1], hygieneScope)
+      return evalQuasiquote(env, scope, renamedTemplate, false)
     if head.isSymbol("if"):
       expectArity(sx, "if", sx.items.len - 1, 3)
       if evalMacroExpr(env, scope, sx.items[1]).truthy:
@@ -452,6 +622,8 @@ proc expandList(env: MacroEnv; sx: Syntax; depth: int): Syntax =
     raiseCompilerError(sx.span, "unquote is only valid inside quasiquote")
   if head.isSymbol("unquote-splicing"):
     raiseCompilerError(sx.span, "unquote-splicing is only valid inside quasiquote")
+  if head.isSymbol("unhygienic"):
+    raiseCompilerError(sx.span, "unhygienic is only valid as a binding target inside a quasiquote template")
   if head.isSymbol("defmacro"):
     raiseCompilerError(sx.span, "defmacro is only allowed at statement/module scope")
   if head.kind == sxSymbol and env.hasMacro(head.sym):

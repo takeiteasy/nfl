@@ -57,9 +57,55 @@ Inside a macro body these predicates are available:
 | `(gensym "prefix")` | generate a unique symbol |
 | `(macro-error "msg")` | abort expansion with an error |
 
-## `gensym` — hygienic macros
+## Hygiene
 
-`gensym` generates a fresh symbol that cannot clash with user code:
+A quasiquoted template's own `let`, `var` (local binding form), `do`, and
+`for` bindings are renamed automatically — the macro's local variables
+can't be accidentally captured by, or capture, identically-named symbols
+the caller passes in:
+
+```lisp
+(defmacro add-one (a)
+  `(let ((tmp 1)) (+ tmp ,a)))
+
+(let ((tmp 100))
+  (add-one tmp))    ; -> 101, not 2 — the macro's tmp and the caller's tmp
+                     ; are distinct bindings, even though ,a substitutes
+                     ; the caller's own tmp directly into the macro's body.
+```
+
+This covers a binding target that is a literal symbol or a typed
+`(name type)` pair. It does **not** cover:
+
+- a binding target that is itself unquoted (`,name`) — a name the macro
+  computes at expansion time is the macro author's own symbol and is left
+  as-is (this is how the preamble's `let*` and `as->` work);
+- a [destructuring](language-reference.md#destructuring) vector-pattern
+  target — left unrenamed for now.
+
+### `(unhygienic sym)` — intentional capture
+
+Wrapping a binding target in `unhygienic` opts it out of renaming — the
+escape hatch for anaphoric macros, where the macro deliberately introduces
+a name for the caller's body to reference:
+
+```lisp
+(defmacro with-it (test &body body)
+  `(let (((unhygienic it) ,test))
+     (block ,@body)))
+
+(with-it 41 (+ it 1))    ; -> 42 — `it` is visible to the caller's body.
+```
+
+`unhygienic` is only valid wrapping a binding target inside a quasiquote
+template; using it anywhere else is an error.
+
+### `gensym` — manual hygiene
+
+`gensym` generates a fresh symbol that cannot clash with user code. It
+remains useful for a binding introduced without going through `let`/`var`/
+`do`/`for` — or any name the automatic pass doesn't cover, such as a
+computed (unquoted) binding name:
 
 ```lisp
 (defmacro or (&rest args)
@@ -70,7 +116,7 @@ Inside a macro body these predicates are available:
            (if ,v ,v (or ,@(rest args)))))))
 ```
 
-See `examples/hygiene.nfl` for a runnable demonstration.
+See `examples/hygiene.nfl` for a runnable demonstration of all three.
 
 ## Preamble macros
 

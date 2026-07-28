@@ -17,3 +17,7 @@ nimble.paths
 !/examples/*.nfl
 nimbledeps
 /build_std
+
+# Golden test fixtures — a global `*.out` ignore rule (common for build
+# output) would otherwise swallow these legitimate expected-output files.
+!/tests/golden/*.out

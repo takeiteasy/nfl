@@ -46,3 +46,12 @@ proc gensym*(env: MacroEnv; hint: string; span: Span): Syntax =
   inc env.gensymCounter
   let prefix = if hint.len == 0: "g" else: hint
   newSymbol(prefix & "__gensym" & $env.gensymCounter, span, env.gensymCounter)
+
+proc newHygienicId*(env: MacroEnv): int =
+  ## Allocates a fresh hygieneId for the automatic template-hygiene rename
+  ## pass (#11) — shares `gensymCounter` with explicit `gensym` calls so
+  ## both mechanisms draw from the same id space; backend.nim's
+  ## `hygienicSymbols` table treats an id as opaque regardless of which
+  ## produced it.
+  inc env.gensymCounter
+  env.gensymCounter

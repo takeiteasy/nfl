@@ -1,3 +1,5 @@
+; Explicit gensym: builds a fresh symbol by hand and proves it doesn't
+; collide with an unrelated source name that happens to print the same way.
 (defmacro hygienic-sum ()
   (let ((tmp (gensym "tmp")))
     `(let ((,tmp 1)
@@ -5,3 +7,25 @@
        (+ ,tmp tmp__gensym1))))
 
 (echo (hygienic-sum))
+
+; Automatic template hygiene (#11): a macro's own literal `let`/`var`/`do`/
+; `for` bindings are renamed automatically — no explicit gensym needed. The
+; macro below binds its own `tmp`, and the caller separately binds its own
+; `tmp`; the two don't collide even though the macro substitutes the
+; caller's `tmp` directly into its own body via `,a`.
+(defmacro add-one (a)
+  `(let ((tmp 1)) (+ tmp ,a)))
+
+(echo
+  (let ((tmp 100))
+    (add-one tmp)))   ; -> 101, not 2: the macro's tmp and the caller's tmp
+                       ; are distinct bindings.
+
+; (unhygienic sym) is the escape hatch for intentional capture — the
+; classic anaphoric-macro pattern, where the macro deliberately introduces
+; a name (`it`) for the caller's body to reference.
+(defmacro with-it (test &body body)
+  `(let (((unhygienic it) ,test))
+     (block ,@body)))
+
+(echo (with-it 41 (+ it 1)))   ; -> 42

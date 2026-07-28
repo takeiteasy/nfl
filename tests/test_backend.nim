@@ -194,6 +194,20 @@ nflModule """
   (let ((tmp (gensym "tmp")))
     `(let ((,tmp 1) (tmp__gensym1 2))
        (+ ,tmp tmp__gensym1))))
+; --- Automatic template hygiene (#11) ---
+; The macro's own literal `tmp` binding no longer captures — or is captured
+; by — a caller-supplied `,a` that happens to also be named `tmp`.
+(defmacro badplus (a)
+  `(let ((tmp 1)) (+ tmp ,a)))
+; Nested lets in one template shadow correctly: the inner `tmp` gets its
+; own hygieneId, distinct from (but still referencing, via `,a`) the outer.
+(defmacro nestedShadow (a)
+  `(let ((tmp ,a)) (let ((tmp (+ tmp tmp))) tmp)))
+; (unhygienic sym) is the intentional-capture escape hatch — an anaphoric
+; macro binding `it` for the body to see.
+(defmacro with-it (test &body body)
+  `(let (((unhygienic it) ,test))
+     (block ,@body)))
 (proc greet ((name string))
   (toUpperAscii name))
 (proc shout ((name string)) (: string)
@@ -203,6 +217,9 @@ nflModule """
 (var shoutedAgain (greet "macro"))
 (var shoutedByMethod (shout "method"))
 (var hygienicResult (hygienic))
+(var autoHygieneResult (let ((tmp 100)) (badplus tmp)))
+(var nestedShadowResult (nestedShadow 5))
+(var withItResult (with-it 41 (+ it 1)))
 (type Count int)
 (type Person
   (object
@@ -509,6 +526,19 @@ suite "nfl module backend":
 
   test "gensym bindings do not collide with matching source names":
     check hygienicResult == 3
+
+  test "automatic template hygiene — macro-local binding doesn't capture caller argument (#11)":
+    # (badplus tmp) called with the caller's own `tmp` (== 100): the macro's
+    # literal `(let ((tmp 1)) (+ tmp ,a))` must bind its own hygienic `tmp`
+    # (== 1) without shadowing the substituted `,a` reference to the
+    # caller's `tmp`. Result is 1 + 100 = 101 — a 2 would mean capture.
+    check autoHygieneResult == 101
+
+  test "automatic template hygiene — nested lets in one template shadow correctly":
+    check nestedShadowResult == 10   # (5 + 5)
+
+  test "unhygienic escape hatch — anaphoric macro binds it for the caller's body":
+    check withItResult == 42
 
   test "type alias definition":
     check counted == 3

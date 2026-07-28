@@ -1131,6 +1131,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerQuote(sx)
     elif sx.items[0].isSymbol("quasiquote"):
       raiseCompilerError(sx.span, "runtime quasiquote is not implemented yet")
+    elif sx.items[0].isSymbol("unhygienic"):
+      raiseCompilerError(sx.span, "unhygienic is only valid as a binding target inside a quasiquote template")
     elif sx.items[0].isSymbol("pragma"):
       raiseCompilerError(sx.span, "pragma is only allowed as a declaration annotation")
     else:

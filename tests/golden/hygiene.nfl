@@ -1,0 +1,3 @@
+(defmacro add-one (a)
+  `(let ((tmp 1)) (+ tmp ,a)))
+(let ((tmp 100)) (add-one tmp))
