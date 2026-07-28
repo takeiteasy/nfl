@@ -20,9 +20,11 @@
 (echo "distance: " (float dist) "m")
 
 ; tuple — structural record type usable in proc signatures.
-; Named tuples are constructed on the Nim side: Vec2(x: 1.0, y: 2.0).
+; tuple-new constructs a named tuple by field.
 (type Vec2 (tuple (x float) (y float)))
 (proc getX ((v Vec2)) (: float) (. v x))
+(var vec (tuple-new Vec2 (x 1.0) (y 2.0)))
+(echo "vec.x: " (getX vec))
 
 ; ref object — heap-allocated with garbage collection.
 (type Node (ref (object (val int))))

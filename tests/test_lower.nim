@@ -82,6 +82,19 @@ suite "lowering validation":
       check err.diagnostic.span.line == 3
       check err.diagnostic.message.contains("duplicate new field: name")
 
+  test "allows named tuple construction (#35)":
+    discard lowerExpr(readOne("(tuple-new Point2D (x 1.0) (y 2.0))", "lower-test.nfl"))
+
+  test "rejects malformed named tuple construction":
+    expectLowerError("(tuple-new)", "tuple-new expects a type and at least one field initializer")
+    expectLowerError("(tuple-new Point2D)", "tuple-new expects a type and at least one field initializer")
+    expectLowerError("(tuple-new 1 (x 1.0))", "tuple-new type must be a type symbol")
+    expectLowerError("(tuple-new Point2D x)", "tuple-new field initializer must be (name value)")
+    expectLowerError("(tuple-new Point2D (x))", "tuple-new field initializer must be (name value)")
+    expectLowerError("(tuple-new Point2D (1 1.0))", "tuple-new field name must be a symbol")
+    expectLowerError("(tuple-new Point2D (x* 1.0))", "tuple-new field name cannot use export markers")
+    expectLowerError("(tuple-new Point2D (x 1.0) (x 2.0))", "duplicate tuple-new field: x")
+
   test "allows named arguments in ordinary calls":
     discard lowerExpr(readOne("(makePerson (: name \"Ada\") (: age 36))", "lower-test.nfl"))
 

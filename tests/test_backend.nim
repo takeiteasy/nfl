@@ -750,11 +750,11 @@ nflModule """
 (var metreDist (toMetres 5.0))
 
 ; --- tuple structural type (#28) ---
-; Construction of named tuples uses Nim-side syntax (no (new ...) form for tuples).
-; We declare the type and procs in NFL; the test constructs the value in Nim.
 (type Point2D (tuple (x float) (y float)))
 (proc getPtX ((pt Point2D)) (: float) (. pt x))
 (proc getPtY ((pt Point2D)) (: float) (. pt y))
+; Named tuple construction (#35) — no Nim-side syntax required.
+(var namedPoint (tuple-new Point2D (x 3.0) (y 4.0)))
 
 ; --- ref object heap allocation (#28) ---
 (type TreeNode (ref (object (val int))))
@@ -797,6 +797,11 @@ suite "nfl backend — distinct / tuple / ref types (#28)":
     let pt: Point2D = (x: 3.0, y: 4.0)
     check getPtX(pt) == 3.0
     check getPtY(pt) == 4.0
+
+  test "tuple-new constructs a named tuple by field (#35)":
+    check namedPoint == (x: 3.0, y: 4.0)
+    check getPtX(namedPoint) == 3.0
+    check getPtY(namedPoint) == 4.0
 
   test "ref object allocates on heap and field is readable":
     check nodeVal == 7

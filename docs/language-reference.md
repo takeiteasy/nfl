@@ -349,7 +349,7 @@ With export and pragmas:
 (proc getX ((p Point)) (: float) (. p x))
 ```
 
-> Named tuples are constructed on the Nim side: `Point(x: 1.0, y: 2.0)`.
+> Construct one with `tuple-new` — see [`tuple-new`](#tuple-new--named-tuple-construction) below.
 
 **Ref object** — heap-allocated object managed by the garbage collector:
 
@@ -393,6 +393,22 @@ Dispatch is determined at runtime by the concrete type:
   (name "Ada")
   (age  36)))
 ```
+
+`new` is for object types (`(object …)`, `(ref (object …))`) — see `tuple-new`
+below for named tuples.
+
+### `tuple-new` — named tuple construction
+
+```lisp
+(type Point2D (tuple (x float) (y float)))
+
+(tuple-new Point2D (x 1.0) (y 2.0))    ; -> Point2D((x: 1.0, y: 2.0))
+```
+
+Constructs a value of a named tuple type by field, mirroring `new`'s
+`(field value)` shape. At least one field is required. `tuple-new` is
+tuples-only: Nim does not accept a tuple literal where an object type is
+expected, so an object type still goes through `new`.
 
 ## Control flow
 

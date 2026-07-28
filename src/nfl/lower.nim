@@ -562,6 +562,24 @@ proc lowerNew(ctx: var LowerContext; sx: Syntax) =
     seen[key] = true
     lowerExpr(ctx, field.items[1])
 
+proc lowerTupleNew(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(tuple-new Type (field value) …)` — named tuple construction
+  ## (#35). Mirrors `lowerNew`, but requires at least one field: an empty
+  ## tuple constructor has no use case here and Nim's `()` reads as `void`,
+  ## not an empty tuple.
+  if sx.items.len < 3:
+    raiseCompilerError(sx.span, "tuple-new expects a type and at least one field initializer")
+  validateTypeReference(sx.items[1], "tuple-new type")
+  var seen = initTable[string, bool]()
+  for field in sx.items.toOpenArray(2, sx.items.high):
+    if field.kind != sxList or field.items.len != 2:
+      raiseCompilerError(field.span, "tuple-new field initializer must be (name value)")
+    let key = validateFieldName(field.items[0], "tuple-new field name")
+    if seen.hasKey(key):
+      raiseCompilerError(field.items[0].span, "duplicate tuple-new field: " & key)
+    seen[key] = true
+    lowerExpr(ctx, field.items[1])
+
 proc lowerQuote(sx: Syntax) =
   expectArity(sx, "quote", sx.items.len - 1, 1)
 
@@ -979,6 +997,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerSlice(ctx, sx)
     elif sx.items[0].isSymbol("new"):
       lowerNew(ctx, sx)
+    elif sx.items[0].isSymbol("tuple-new"):
+      lowerTupleNew(ctx, sx)
     elif sx.items[0].isSymbol(":"):
       raiseCompilerError(sx.span, "named argument marker is only allowed in call argument position")
     elif sx.items[0].isSymbol("const"):

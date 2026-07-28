@@ -692,6 +692,23 @@ proc emitNew(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitExpr(field.items[1])
     ).attachLineInfo(field)
 
+proc emitTupleNew(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(tuple-new Type (field value) …)` (#35) as
+  ## `Type((field: value, …))` — an object-constructor-style call wrapping a
+  ## tuple constructor, the shape Nim requires to build a *named* tuple type
+  ## rather than an anonymous structural tuple.
+  if sx.items.len < 3:
+    raiseCompilerError(sx.span, "tuple-new expects a type and at least one field initializer")
+  var tupleConstr = nnkTupleConstr.newTree().attachLineInfo(sx)
+  for field in sx.items.toOpenArray(2, sx.items.high):
+    if field.kind != sxList or field.items.len != 2:
+      raiseCompilerError(field.span, "tuple-new field initializer must be (name value)")
+    tupleConstr.add nnkExprColonExpr.newTree(
+      identForFieldSymbol(field.items[0]),
+      ctx.emitExpr(field.items[1])
+    ).attachLineInfo(field)
+  newCall(emitTypeReference(sx.items[1]), tupleConstr).attachLineInfo(sx)
+
 proc emitQuotedDatum(sx: Syntax): NimNode =
   case sx.kind
   of sxNil:
@@ -976,6 +993,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitSlice(sx)
     elif sx.items[0].isSymbol("new"):
       ctx.emitNew(sx)
+    elif sx.items[0].isSymbol("tuple-new"):
+      ctx.emitTupleNew(sx)
     elif sx.items[0].isSymbol("for"):
       emitBlockExpr(@[ctx.emitForCore(sx)], newNilLit()).attachLineInfo(sx)
     elif sx.items[0].isSymbol("while"):
