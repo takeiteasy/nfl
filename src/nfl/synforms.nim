@@ -47,15 +47,27 @@ proc procParamsIdx*(sx: Syntax): int =
     idx += 1   # skip {.pragma.}
   idx
 
-proc procBodyStart*(sx: Syntax): int =
-  let paramsIdx = procParamsIdx(sx)
+proc bodyStartAfterParams*(sx: Syntax; paramsIdx: int; formName = "proc"): int =
+  ## Returns the index of the first body item after `paramsIdx`, skipping an
+  ## optional `(: return-type)` clause immediately following the params.
+  ## Shared by `procBodyStart` (name-bearing forms) and `lambdaBodyStart`
+  ## (`do`, which has no name slot) so both agree on how a return-type clause
+  ## is recognised and diagnosed.
   result = paramsIdx + 1
   if sx.items.len > result and sx.items[result].kind == sxList and
      sx.items[result].items.len == 2 and sx.items[result].items[0].isSymbol(":"):
     let returnType = sx.items[result].items[1]
     if returnType.kind != sxSymbol and returnType.kind != sxVector:
-      raiseCompilerError(returnType.span, "proc return type must be a symbol or generic type")
+      raiseCompilerError(returnType.span, formName & " return type must be a symbol or generic type")
     result = paramsIdx + 2
+
+proc procBodyStart*(sx: Syntax): int =
+  bodyStartAfterParams(sx, procParamsIdx(sx))
+
+proc lambdaBodyStart*(sx: Syntax): int =
+  ## `do` has no name slot: `(do (params) (: T)? body…)`, so params sit at
+  ## slot 1 and the optional return-type clause (if any) at slot 2.
+  bodyStartAfterParams(sx, 1, "do")
 
 proc formName*(sx: Syntax): string =
   if sx.kind == sxSymbol: sx.sym else: "form"

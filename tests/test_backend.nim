@@ -55,6 +55,21 @@ suite "nfl backend":
     let inc = nflExpr"(do ((x int)) (+ x 1))"
     check inc(2) == 3
 
+  test "do expression with explicit return type (#40)":
+    let doubler = nflExpr"(do ((x int)) (: int) (* x 2))"
+    check doubler(21) == 42
+
+  test "do expression with implicit result (#40)":
+    let five = nflExpr"(do () (: int) (set! result 5))"
+    check five() == 5
+
+  test "do expression accumulating into result then returning explicitly (#40)":
+    let sumTo = nflExpr"""(do ((n int)) (: int)
+      (set! result 0)
+      (set! result (+ result n))
+      (return result))"""
+    check sumTo(5) == 5
+
   test "autoloaded core macros":
     check nflExpr"(and true true)" == true
     check nflExpr"(or false true)" == true
@@ -1010,6 +1025,19 @@ suite "nfl backend — implicit result variable (#36)":
 
   test "method gets an implicit result too":
     check resultDouble(Doubler(factor: 2), 3) == 6
+
+nflModule """
+; A typed do nested inside a typed proc each get their own independent
+; `result` binding — the inner do's `result` legitimately shadows the
+; outer proc's `result` rather than colliding with it (#40).
+(proc nestedResult () (: int)
+  (var g (do () (: int) (set! result 1)))
+  (set! result (g)))
+""", "nested-result-test.nfl"
+
+suite "nfl backend — do/lambda implicit result variable (#40)":
+  test "a typed do nested in a typed proc gets its own independent result":
+    check nestedResult() == 1
 
 # ---------------------------------------------------------------------------
 # named block / break-from (#41)

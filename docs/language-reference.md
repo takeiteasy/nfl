@@ -202,7 +202,7 @@ like in plain Nim — no explicit call is needed:
 
 ### Implicit `result`
 
-Any `proc`, `func`, `method`, or `converter` with a return type gets a mutable `result` variable, initialised to the type's default value. Assign to it with `set!` and it is returned automatically when the body falls through — no explicit `return` required:
+Any `proc`, `func`, `method`, `converter`, or `do` with a return type gets a mutable `result` variable, initialised to the type's default value. Assign to it with `set!` and it is returned automatically when the body falls through — no explicit `return` required:
 
 ```lisp
 (proc sumTo ((n int)) (: int)
@@ -211,7 +211,7 @@ Any `proc`, `func`, `method`, or `converter` with a return type gets a mutable `
     (set! result (+ result i))))
 ```
 
-`result` is not available in `template` or `iterator` bodies, and a proc without a return type has no `result` binding — `set!`ing it there is an error.
+`result` is not available in `template` or `iterator` bodies, and a proc (or `do`) without a return type has no `result` binding — `set!`ing it there is an error.
 
 Avoid ending a body with a bare `result` read once it has been assigned earlier — Nim rejects that as a redundant expression. Either let the body fall through on an assignment (as above), or return explicitly with `(return result)`.
 
@@ -259,6 +259,23 @@ instantiation uses the same `[Name T]` bracket form as a type reference.
   (do ((n int)) (: int)
     (* n 2)))
 ```
+
+The `(: return-type)` clause is optional, immediately following the
+parameter list. A `do` with one gets the same implicit mutable `result`
+binding as a typed `proc` (see [Implicit `result`](#implicit-result)); a `do`
+with no return type has no `result` and infers its type from usage, same as
+any other Nim `auto`-typed anonymous proc:
+
+```lisp
+(var sumTo
+  (do ((n int)) (: int)
+    (set! result 0)
+    (set! result (+ result n))
+    (return result)))
+```
+
+Unlike `proc`, `do` takes no pragma clause and no `[T ...]` generic-params
+vector.
 
 ### `template` — Nim template definition
 

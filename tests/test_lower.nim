@@ -1047,3 +1047,19 @@ suite "lowering validation":
 
   test "rejects set! result in an iterator":
     expectLowerModuleError("(iterator f () (: int) (set! result 5))", "not a mutable local")
+
+  # ---------------------------------------------------------------------------
+  # do / lambda return type and implicit result  (#40)
+  # ---------------------------------------------------------------------------
+
+  test "allows set! result in a do with a return type":
+    discard lowerExpr(readOne("(do () (: int) (set! result 5))", "lower-test.nfl"))
+
+  test "rejects set! result in a do with no return type as an unrelated free variable":
+    expectLowerError("(do () (set! result 5))", "not a mutable local")
+
+  test "rejects a malformed do return type":
+    expectLowerError("(do () (: 42) 1)", "do return type must be a symbol or generic type")
+
+  test "rejects a do with a return type but no body":
+    expectLowerError("(do () (: int))", "do expects parameters and body")

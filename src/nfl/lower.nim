@@ -354,12 +354,21 @@ proc lowerLambda(ctx: var LowerContext; sx: Syntax) =
   let params = sx.items[1]
   if params.kind != sxList:
     raiseCompilerError(params.span, "do parameters must be a list")
+  let bodyStart = lambdaBodyStart(sx)
+  if bodyStart > sx.items.high:
+    raiseCompilerError(sx.span, "do expects parameters and body")
   ctx.pushScope()
   let savedNamedBlocks = ctx.namedBlocks
   ctx.namedBlocks = @[]
+  # A `do` with an explicit `(: type)` return clause gets Nim's implicit
+  # mutable `result`, same as proc/method/func/converter (see #36); declared
+  # before params so a param named `result` raises the usual duplicate-binding
+  # error rather than silently shadowing it.
+  if bodyStart == 3:
+    declare(ctx, newSymbol("result", sx.items[2].span), bkMutable)
   for param in params.items:
     lowerParam(ctx, param)
-  lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
+  lowerBody(ctx, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ctx.namedBlocks = savedNamedBlocks
   ctx.popScope()
 

@@ -392,6 +392,10 @@ proc hygienicRenameDo(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax =
   for param in params.items:
     newParams.add hygienicRenameTypedTarget(env, param, childScope)
   var items = @[sx.items[0].copySyntax(), newList(newParams, params.span)]
+  # An optional `(: return-type)` clause (see #40) rides through the same
+  # generic `hygienicRename` call as the rest of the body — its only content
+  # is a type symbol, which is never a hygiene-rename target, exactly like a
+  # proc's return type today.
   for i in 2 ..< sx.items.len:
     items.add hygienicRename(env, sx.items[i], childScope)
   newList(items, sx.span)

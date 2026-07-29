@@ -691,7 +691,13 @@ proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
   let params = sx.items[1]
   if params.kind != sxList:
     raiseCompilerError(params.span, "do parameters must be a list")
-  var formalParams = nnkFormalParams.newTree(ident("auto"))
+  let bodyStart = lambdaBodyStart(sx)
+  if bodyStart > sx.items.high:
+    raiseCompilerError(sx.span, "do expects parameters and body")
+  var returnType = ident("auto")
+  if bodyStart == 3:
+    returnType = emitTypeRef(sx.items[2].items[1])
+  var formalParams = nnkFormalParams.newTree(returnType)
   for param in params.items:
     formalParams.add ctx.emitParam(param)
   # `break lbl`/`break` cannot cross a routine boundary, so a bare `break`'s
@@ -699,7 +705,7 @@ proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
   # never leak in from an enclosing routine.
   let savedBareBreak = ctx.bareBreakLabel
   ctx.bareBreakLabel = nil
-  let bodyNode = ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)
+  let bodyNode = ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ctx.bareBreakLabel = savedBareBreak
   nnkLambda.newTree(
     newEmptyNode(),
