@@ -49,3 +49,28 @@
     -1))
 (echo "first over 3: " (firstOver (@ [1 2 3 9 4]) 3))
 (echo "first over 100: " (firstOver (@ [1 2 3]) 100))
+
+; A labelled loop lets a nested loop's break/continue target it directly,
+; rather than only ever affecting the innermost loop.
+(var ((i 0))
+  (while :outer (< i 3)
+    (var ((j 0))
+      (while (< j 3)
+        (if (and (== i 1) (== j 1)) (break :outer) nil)
+        (echo "pair " i " " j)
+        (set! j (+ j 1))))
+    (set! i (+ i 1)))
+  (echo "stopped labelled loop at i=" i))
+
+; A labelled continue restarts the labelled loop directly, skipping both
+; the rest of the inner loop and the rest of the outer loop's own body.
+(var ((i 0) (acc 0))
+  (while :outer (< i 3)
+    (set! i (+ i 1))
+    (var ((j 0))
+      (while (< j 3)
+        (if (== j 1) (continue :outer) nil)
+        (set! acc (+ acc 1))
+        (set! j (+ j 1))))
+    (set! acc (+ acc 100)))
+  (echo "labelled continue total: " acc))

@@ -824,14 +824,84 @@ suite "lowering validation":
   test "allows break in statement position":
     discard lowerModule(readAll("(while true (break))", "lower-test.nfl"))
 
-  test "rejects break with arguments":
-    expectLowerModuleError("(while true (break 1))", "break expects no arguments")
+  test "rejects break with a non-label argument":
+    expectLowerModuleError("(while true (break 1))", "break target must be a :name label")
+
+  test "rejects break with too many arguments":
+    expectLowerModuleError("(while :outer true (break :outer :outer))",
+      "break expects 0 or 1 arguments, got 2")
 
   test "allows continue in statement position":
     discard lowerModule(readAll("(while true (continue))", "lower-test.nfl"))
 
-  test "rejects continue with arguments":
-    expectLowerModuleError("(while true (continue 1))", "continue expects no arguments")
+  test "rejects continue with a non-label argument":
+    expectLowerModuleError("(while true (continue 1))", "continue target must be a :name label")
+
+  test "rejects continue with too many arguments":
+    expectLowerModuleError("(while :outer true (continue :outer :outer))",
+      "continue expects 0 or 1 arguments, got 2")
+
+  # ---------------------------------------------------------------------------
+  # labelled break / continue  (#54)
+  # ---------------------------------------------------------------------------
+
+  test "allows a labelled while loop with a labelled break":
+    discard lowerModule(readAll("(while :outer true (break :outer))", "lower-test.nfl"))
+
+  test "allows a labelled for loop with a labelled continue":
+    discard lowerModule(readAll(
+      "(for :outer (x xs) (continue :outer))", "lower-test.nfl"))
+
+  test "allows a labelled break from a nested loop":
+    discard lowerModule(readAll("""
+      (while :outer true
+        (while true
+          (if true (break :outer) nil)))
+    """, "lower-test.nfl"))
+
+  test "allows a labelled continue from a nested loop":
+    discard lowerModule(readAll("""
+      (while :outer true
+        (while true
+          (if true (continue :outer) nil)))
+    """, "lower-test.nfl"))
+
+  test "rejects a labelled break targeting an unknown label":
+    expectLowerModuleError("(while true (break :nope))",
+      "break target is not an enclosing labelled loop")
+
+  test "rejects a labelled continue targeting an unknown label":
+    expectLowerModuleError("(while true (continue :nope))",
+      "continue target is not an enclosing labelled loop")
+
+  test "rejects a labelled continue targeting a named block":
+    expectLowerModuleError("(block :blk (while true (continue :blk)))",
+      "continue target is a named block, not a labelled loop")
+
+  test "rejects a labelled break targeting a named block":
+    expectLowerModuleError("(block :blk (while true (break :blk)))",
+      "break target is a named block, not a labelled loop")
+
+  test "rejects break-from targeting a labelled loop":
+    expectLowerModuleError("(while :outer true (break-from :outer))",
+      "break-from target is a labelled loop, not a named block")
+
+  test "rejects a labelled break crossing a do boundary":
+    expectLowerModuleError("(while :outer true (do () (break :outer)))",
+      "break target is not an enclosing labelled loop")
+
+  test "rejects a labelled break crossing a proc boundary":
+    expectLowerModuleError("""
+      (while :outer true
+        (proc inner () (: int) (break :outer) 1))
+    """, "break target is not an enclosing labelled loop")
+
+  test "shadowing: inner loop reusing an outer label binds to the inner loop":
+    discard lowerModule(readAll("""
+      (while :outer true
+        (while :outer true
+          (break :outer)))
+    """, "lower-test.nfl"))
 
   # ---------------------------------------------------------------------------
   # return  (#25)

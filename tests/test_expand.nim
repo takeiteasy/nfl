@@ -226,6 +226,36 @@ suite "macro expansion":
 (bad)
 """, "unhygienic expects exactly one symbol argument")
 
+  # ---------------------------------------------------------------------------
+  # labelled loop hygiene (#54)
+  # ---------------------------------------------------------------------------
+
+  test "a labelled for inside a template keeps its label unrenamed and still renames the loop var":
+    let sx = expandOne """
+(defmacro m (xs) `(for :outer (x ,xs) (echo x)))
+(m (list 1 2))
+"""
+    # sx == (for :outer (x<hygienic> (list 1 2)) (echo x<hygienic>))
+    let label = sx.items[1]
+    check label.sym == ":outer"
+    check label.hygieneId == 0
+    let clause = sx.items[2]
+    let loopVar = clause.items[0]
+    check loopVar.sym == "x"
+    check loopVar.hygieneId != 0
+    let bodyRef = sx.items[3].items[1]
+    check bodyRef.hygieneId == loopVar.hygieneId
+
+  test "a labelled while inside a template keeps its label unrenamed":
+    let sx = expandOne """
+(defmacro m () `(while :outer true (echo 1)))
+(m)
+"""
+    # sx == (while :outer true (echo 1))
+    let label = sx.items[1]
+    check label.sym == ":outer"
+    check label.hygieneId == 0
+
 suite "golden macro expansion":
   test "core macro fixtures":
     for sourcePath in ["tests/golden/core_macros.nfl",

@@ -397,9 +397,16 @@ proc hygienicRenameDo(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax =
   newList(items, sx.span)
 
 proc hygienicRenameFor(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax =
-  if sx.items.len < 3:
+  ## `(for [:name] CLAUSE body…)` — an optional leading `:name` label (#54)
+  ## is never a hygiene-rename target (same reasoning as the `block` skip in
+  ## `evalMacroExpr` below and `labelIdent`'s note in backend.nim: it is not
+  ## a binding, and renaming it would desync it from the lowering-side key,
+  ## which is never renamed either), so it is carried through unchanged and
+  ## the clause is read from the slot after it.
+  let clauseIdx = if sx.items.len > 1 and sx.items[1].isBlockLabel(): 2 else: 1
+  if sx.items.len < clauseIdx + 2:
     return hygienicRenameGeneric(env, sx, scope)
-  let clause = sx.items[1]
+  let clause = sx.items[clauseIdx]
   if clause.kind != sxList or clause.items.len != 2:
     return hygienicRenameGeneric(env, sx, scope)
   let binding = clause.items[0]
@@ -426,8 +433,11 @@ proc hygienicRenameFor(env: MacroEnv; sx: Syntax; scope: HygieneScope): Syntax =
   # lowerFor: "Lower the iterable in the outer scope before introducing
   # loop vars."
   let newIterable = hygienicRename(env, clause.items[1], scope)
-  var items = @[sx.items[0].copySyntax(), newList(@[newBinding, newIterable], clause.span)]
-  for i in 2 ..< sx.items.len:
+  var items = @[sx.items[0].copySyntax()]
+  if clauseIdx == 2:
+    items.add sx.items[1].copySyntax()
+  items.add newList(@[newBinding, newIterable], clause.span)
+  for i in (clauseIdx + 1) ..< sx.items.len:
     items.add hygienicRename(env, sx.items[i], childScope)
   newList(items, sx.span)
 

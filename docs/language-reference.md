@@ -548,15 +548,30 @@ Multi-variable (e.g. index + value via `pairs`):
 (for ((idx val) (. seq pairs)) body...)
 ```
 
+An optional `:name` label right after `for` — before the binding clause —
+lets a `break`/`continue` in a nested loop target this loop directly:
+
+```lisp
+(for :outer (x xs) body...)
+```
+
 ### `while`
 
 ```lisp
 (while condition body...)
 ```
 
+An optional `:name` label right after `while` — before the condition —
+labels the loop the same way `for` does:
+
+```lisp
+(while :outer condition body...)
+```
+
 ### `break` and `continue`
 
-`(break)` exits the innermost loop. `(continue)` skips the rest of the current iteration:
+`(break)` exits the innermost loop. `(continue)` skips the rest of the
+current iteration:
 
 ```lisp
 (while true
@@ -568,6 +583,33 @@ Multi-variable (e.g. index + value via `pairs`):
   (if (== 0 (mod k 2)) (continue) nil)
   (echo "odd: " k))
 ```
+
+Either can take an optional `:name` label naming an enclosing labelled
+loop (`for`/`while`), letting a nested loop break out of — or restart — an
+*outer* loop directly, rather than only ever affecting the loop it's
+lexically inside:
+
+```lisp
+(while :outer (< i n)
+  (while (< j n)
+    (if (bad? i j) (break :outer) nil)
+    (if (skip? i j) (continue :outer) nil)
+    ...))
+```
+
+`:name` must refer to an enclosing labelled `for`/`while` in the same
+routine — it cannot cross a `proc`/`method`/`func`/`converter`/`template`/
+`iterator`/`do` boundary, name an enclosing named `block` instead of a loop
+(that's what [`break-from`](#break-from) is for), or reference a name that
+is out of scope; any of those is a lowering error. When an inner loop reuses
+an outer loop's label, the inner one shadows it — a `(break :name)` /
+`(continue :name)` inside the inner loop binds to the inner loop, not the
+outer one.
+
+`(continue :name)` compiles to a `break` out of a hidden per-iteration
+block wrapped around the target loop's body — Nim itself has no labelled
+`continue` — but behaves exactly like restarting that loop's own condition
+check.
 
 ## Control flow — early exit
 
@@ -587,10 +629,12 @@ The implicit `result` variable (see [Implicit `result`](#implicit-result)) is an
 ### `break-from`
 
 `(break-from :name expr)` exits the enclosing `(block :name ...)` early with
-a value; `(break-from :name)` exits it with no value. Unlike `break`, which
-only ever exits the innermost loop, `break-from` can name *which* enclosing
-block to exit — including one that wraps a loop, letting you break out of a
-search with the found value in one step:
+a value; `(break-from :name)` exits it with no value. Unlike bare `break`,
+which only ever exits the innermost loop, `break-from` can name *which*
+enclosing block to exit — including one that wraps a loop, letting you
+break out of a search with the found value in one step. `break-from` only
+ever targets a named `block`; to name a *loop* instead, use `(break :name)`
+or `(continue :name)` (see [break and continue](#break-and-continue) above).
 
 ```lisp
 (proc findFirstOver ((xs [seq int]) (limit int)) (: int)

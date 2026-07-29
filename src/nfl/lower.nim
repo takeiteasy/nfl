@@ -9,21 +9,32 @@ type
   BindingKind = enum
     bkImmutable, bkMutable
 
+  LabelFrame = object
+    key: string
+      ## Via `symbolKey` — see below.
+    isLoop: bool
+      ## True for a labelled `while`/`for`; false for a named `block`.
+      ## `break-from` may only target a `block` frame; `break`/`continue`
+      ## with a `:name` argument may only target a loop frame — mixing them
+      ## up is a lowering error rather than a raw Nim compiler error.
+
   LowerContext = object
     scopes: seq[Table[string, BindingKind]]
     bodyDepth: int
       ## Counts nesting inside a proc/template/block/etc. body (see
       ## `lowerBody`). Zero at true module top level, where `defer` is not
       ## allowed since Nim itself rejects `defer` outside a body.
-    namedBlocks: seq[string]
-      ## Keys (via `symbolKey`) of enclosing named `block`s, innermost last —
-      ## the targets `break-from` may validly reference. Reset to empty (not
-      ## pushed/popped) at each proc/template/iterator/method/converter/`do`
-      ## boundary in `lowerRoutine`/`lowerLambda`: Nim's `break lbl` cannot
-      ## cross a routine boundary, so a label from an enclosing routine is
-      ## never a valid `break-from` target inside a nested one. Loops do
-      ## *not* reset this — breaking out of a loop to an enclosing named
-      ## block is exactly what `break-from` is for.
+    namedBlocks: seq[LabelFrame]
+      ## Enclosing named `block`s and labelled loops, innermost last, keyed
+      ## (via `symbolKey`) the same way — the targets `break-from` (block
+      ## frames only) and labelled `break`/`continue` (loop frames only) may
+      ## validly reference. Reset to empty (not pushed/popped) at each
+      ## proc/template/iterator/method/converter/`do` boundary in
+      ## `lowerRoutine`/`lowerLambda`: Nim's `break lbl` cannot cross a
+      ## routine boundary, so a label from an enclosing routine is never a
+      ## valid target inside a nested one. Loops do *not* reset this —
+      ## breaking out of a loop to an enclosing named block (or an outer
+      ## labelled loop) is exactly what these forms are for.
 
 proc isSymbol(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
@@ -290,6 +301,14 @@ proc lowerIf(ctx: var LowerContext; sx: Syntax) =
   lowerExpr(ctx, sx.items[2])
   lowerExpr(ctx, sx.items[3])
 
+proc findLabelFrame(ctx: LowerContext; key: string): int =
+  ## Innermost-first lookup (shadowing: an inner loop/block reusing an outer
+  ## label name binds first). -1 when no enclosing frame carries `key`.
+  for i in countdown(ctx.namedBlocks.high, 0):
+    if ctx.namedBlocks[i].key == key:
+      return i
+  -1
+
 proc lowerBegin(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len == 1:
     raiseCompilerError(sx.span, "block expects at least one expression")
@@ -303,7 +322,7 @@ proc lowerBegin(ctx: var LowerContext; sx: Syntax) =
     labelKey = sx.items[1].symbolKey()
     bodyStart = 2
   if labelled:
-    ctx.namedBlocks.add labelKey
+    ctx.namedBlocks.add LabelFrame(key: labelKey, isLoop: false)
   lowerBody(ctx, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   if labelled:
     discard ctx.namedBlocks.pop()
@@ -316,9 +335,14 @@ proc lowerBreakFrom(ctx: var LowerContext; sx: Syntax) =
   let target = sx.items[1]
   if not target.isBlockLabel():
     raiseCompilerError(target.span, "break-from target must be a :name label")
-  if target.symbolKey() notin ctx.namedBlocks:
+  let frameIdx = ctx.findLabelFrame(target.symbolKey())
+  if frameIdx < 0:
     raiseCompilerError(target.span,
       "break-from target is not an enclosing named block: " & target.sym)
+  if ctx.namedBlocks[frameIdx].isLoop:
+    raiseCompilerError(target.span,
+      "break-from target is a labelled loop, not a named block — use (break " &
+      target.sym & ") instead")
   if nargs == 2:
     lowerExpr(ctx, sx.items[2])
 
@@ -693,13 +717,22 @@ proc lowerQuote(sx: Syntax) =
   expectArity(sx, "quote", sx.items.len - 1, 1)
 
 proc lowerFor(ctx: var LowerContext; sx: Syntax) =
-  ## Validates `(for CLAUSE body…)` where CLAUSE is `(BINDING ITERABLE)`.
-  ## BINDING is a symbol (one var) or a list of symbols (multiple vars, e.g.
-  ## for pair/tuple iterators).  Loop variables are declared immutable so that
-  ## `set!` inside the body raises a lowering error.
-  if sx.items.len < 3:
+  ## Validates `(for [:name] CLAUSE body…)` where CLAUSE is `(BINDING
+  ## ITERABLE)`. BINDING is a symbol (one var) or a list of symbols (multiple
+  ## vars, e.g. for pair/tuple iterators). Loop variables are declared
+  ## immutable so that `set!` inside the body raises a lowering error. An
+  ## optional leading `:name` labels the loop as a target for `(break :name)`
+  ## / `(continue :name)` from a nested loop.
+  var idx = 1
+  var labelKey = ""
+  var labelled = false
+  if sx.items.len > 1 and sx.items[1].isBlockLabel():
+    labelled = true
+    labelKey = sx.items[1].symbolKey()
+    idx = 2
+  if sx.items.len < idx + 2:
     raiseCompilerError(sx.span, "for expects a binding clause and body")
-  let clause = sx.items[1]
+  let clause = sx.items[idx]
   if clause.kind != sxList or clause.items.len != 2:
     raiseCompilerError(clause.span, "for clause must be a (binding iterable) pair")
   let binding = clause.items[0]
@@ -721,7 +754,11 @@ proc lowerFor(ctx: var LowerContext; sx: Syntax) =
   ctx.pushScope()
   for v in vars:
     declare(ctx, v, bkImmutable)
-  lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
+  if labelled:
+    ctx.namedBlocks.add LabelFrame(key: labelKey, isLoop: true)
+  lowerBody(ctx, sx.items.toOpenArray(idx + 1, sx.items.high), sx)
+  if labelled:
+    discard ctx.namedBlocks.pop()
   ctx.popScope()
 
 proc lowerRangeForm(ctx: var LowerContext; sx: Syntax) =
@@ -859,21 +896,57 @@ proc lowerDefer(ctx: var LowerContext; sx: Syntax) =
   lowerBody(ctx, sx.items.toOpenArray(1, sx.items.high), sx)
 
 proc lowerWhile(ctx: var LowerContext; sx: Syntax) =
-  ## Validates `(while condition body…)`.
-  if sx.items.len < 3:
+  ## Validates `(while [:name] condition body…)`. An optional leading `:name`
+  ## labels the loop as a target for `(break :name)` / `(continue :name)`
+  ## from a nested loop.
+  var idx = 1
+  var labelKey = ""
+  var labelled = false
+  if sx.items.len > 1 and sx.items[1].isBlockLabel():
+    labelled = true
+    labelKey = sx.items[1].symbolKey()
+    idx = 2
+  if sx.items.len < idx + 2:
     raiseCompilerError(sx.span, "while expects a condition and body")
-  lowerExpr(ctx, sx.items[1])
-  lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
+  lowerExpr(ctx, sx.items[idx])
+  if labelled:
+    ctx.namedBlocks.add LabelFrame(key: labelKey, isLoop: true)
+  lowerBody(ctx, sx.items.toOpenArray(idx + 1, sx.items.high), sx)
+  if labelled:
+    discard ctx.namedBlocks.pop()
 
-proc lowerBreak(sx: Syntax) =
-  ## Validates `(break)` — no arguments allowed.
-  if sx.items.len != 1:
-    raiseCompilerError(sx.span, "break expects no arguments, got " & $(sx.items.len - 1))
+proc lowerLoopControl(ctx: var LowerContext; sx: Syntax; formName: string) =
+  ## Validates `(break)` / `(break :name)` and `(continue)` / `(continue
+  ## :name)` — 0 or 1 arguments; a 1-argument form must be a `:name` label
+  ## resolving to an enclosing labelled loop (not a named `block`, which is
+  ## `break-from`'s domain).
+  let nargs = sx.items.len - 1
+  if nargs notin [0, 1]:
+    raiseCompilerError(sx.span, formName & " expects 0 or 1 arguments, got " & $nargs)
+  if nargs == 0:
+    return
+  let target = sx.items[1]
+  if not target.isBlockLabel():
+    raiseCompilerError(target.span, formName & " target must be a :name label")
+  let frameIdx = ctx.findLabelFrame(target.symbolKey())
+  if frameIdx < 0:
+    raiseCompilerError(target.span,
+      formName & " target is not an enclosing labelled loop: " & target.sym)
+  if not ctx.namedBlocks[frameIdx].isLoop:
+    if formName == "break":
+      raiseCompilerError(target.span,
+        "break target is a named block, not a labelled loop — use " &
+        "(break-from " & target.sym & ") instead")
+    else:
+      raiseCompilerError(target.span,
+        "continue target is a named block, not a labelled loop — a block " &
+        "cannot be continued")
 
-proc lowerContinue(sx: Syntax) =
-  ## Validates `(continue)` — no arguments allowed.
-  if sx.items.len != 1:
-    raiseCompilerError(sx.span, "continue expects no arguments, got " & $(sx.items.len - 1))
+proc lowerBreak(ctx: var LowerContext; sx: Syntax) =
+  lowerLoopControl(ctx, sx, "break")
+
+proc lowerContinue(ctx: var LowerContext; sx: Syntax) =
+  lowerLoopControl(ctx, sx, "continue")
 
 proc isExceptClause(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("except")
@@ -1250,10 +1323,10 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
       lowerDefer(ctx, sx)
       return
     if sx.items[0].isSymbol("break"):
-      lowerBreak(sx)
+      lowerBreak(ctx, sx)
       return
     if sx.items[0].isSymbol("continue"):
-      lowerContinue(sx)
+      lowerContinue(ctx, sx)
       return
   lowerExpr(ctx, sx)
 

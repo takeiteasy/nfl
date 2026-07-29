@@ -17,14 +17,45 @@ type
       ## block's `when …is void` split (see `emitLabelledBlock`) — in that
       ## branch the block produces no value, so a `break-from` with a value
       ## simply discards it.
+    isLoop: bool
+      ## True for a labelled `while`/`for` frame; false for a named `block`.
+      ## `break-from` may only resolve a block frame; `(break :n)` /
+      ## `(continue :n)` may only resolve a loop frame — lowering has
+      ## already enforced this, so it is only asserted here (see
+      ## `findNamedBlock`).
+    iterLabel: NimNode
+      ## Only set on loop frames: the per-iteration `block` label a
+      ## `(continue :n)` targeting this frame compiles to (Nim has no
+      ## labelled `continue`). `nil` when nothing inside this loop's body
+      ## uses `(continue :n)` on this frame's key — see
+      ## `usesLabelledContinue` — in which case the loop's body is emitted
+      ## without a per-iteration wrapper at all.
 
   EmitContext = object
     hygienicSymbols: Table[int, NimNode]
     namedBlocks: seq[NamedBlockFrame]
-      ## Enclosing named `block`s in scope, innermost last. Lowering has
-      ## already validated every `break-from` target against the parallel
-      ## stack in `lower.nim` (including resetting at proc/`do` boundaries),
-      ## so backend only needs to look labels up here, not re-validate them.
+      ## Enclosing named `block`s and labelled loops, innermost last.
+      ## Lowering has already validated every `break-from`/labelled
+      ## `break`/`continue` target against the parallel stack in
+      ## `lower.nim` (including resetting at proc/`do` boundaries), so
+      ## backend only needs to look labels up here, not re-validate them.
+    bareBreakLabel: NimNode
+      ## The Nim label a *bare* `(break)` must target: the innermost
+      ## enclosing loop's own wrapper block (see `emitLoopCore`), gensym'd
+      ## when that loop has no user-facing `:name`. `nil` outside any loop
+      ## (a bare `break` there is a pre-existing Nim compile error, same as
+      ## before this field existed) and reset to `nil` at proc/`do`
+      ## boundaries, mirroring `namedBlocks`.
+      ##
+      ## Needed because Nim's *unlabelled* `break` exits the innermost
+      ## enclosing `block` OR loop, whichever is lexically nearer — and
+      ## NFL's `(block …)` compiles to a real `block:` whenever it appears
+      ## in expression position (`emitBegin`/`emitBlockExpr`). Without this,
+      ## a bare `(break)` nested inside such a block (e.g. a non-tail item
+      ## of `(if … (block (break) …) …)` used as a value) would silently
+      ## exit that anonymous block instead of the loop. Always emitting
+      ## `break <bareBreakLabel>` targets the loop directly regardless of
+      ## any intervening anonymous blocks.
 
 proc isSymbol(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
@@ -95,12 +126,53 @@ proc isNamedArg(sx: Syntax): bool =
 proc isBreakFromForm(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("break-from")
 
+proc isLoopControlForm(sx: Syntax): bool =
+  ## True for a bare or labelled `(break)`/`(break :name)`/`(continue)`/
+  ## `(continue :name)` (#54) — like `break-from`, always noreturn from the
+  ## enclosing named block's own fallthrough, so `emitNamedBlockBody` must
+  ## not try to assign its (nonexistent) value into the block's carrier.
+  sx.kind == sxList and sx.items.len > 0 and
+    (sx.items[0].isSymbol("break") or sx.items[0].isSymbol("continue"))
+
 proc namedBlockKey(sx: Syntax): string =
   ## Keyed the same way as lower.nim's `symbolKey`, so a hygienic label
   ## introduced by a template expansion can't collide with a user-written
   ## label of the same spelling.
   if sx.hygieneId == 0: sx.blockLabelName
   else: sx.blockLabelName & "\0" & $sx.hygieneId
+
+proc isLoopForm(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and
+    (sx.items[0].isSymbol("while") or sx.items[0].isSymbol("for"))
+
+proc loopOwnLabelKey(sx: Syntax): string =
+  ## The `:name` key of a `(while :name …)`/`(for :name …)` form, or "" when
+  ## the loop is unlabelled. Only valid to call when `isLoopForm(sx)` holds.
+  if sx.items.len > 1 and sx.items[1].isBlockLabel(): sx.items[1].namedBlockKey()
+  else: ""
+
+proc usesLabelledContinue(sx: Syntax; key: string): bool =
+  ## True if `(continue :key)` appears anywhere in `sx`, not counting one
+  ## inside a nested loop that re-labels the same `key` (shadowing: that
+  ## inner `continue` resolves to the inner loop, per lowering's
+  ## innermost-frame-wins lookup — see `findLabelFrame` in lower.nim).
+  if sx.kind != sxList or sx.items.len == 0:
+    return false
+  if sx.items[0].isSymbol("continue") and sx.items.len == 2 and
+      sx.items[1].isBlockLabel() and sx.items[1].namedBlockKey() == key:
+    return true
+  if sx.isLoopForm and sx.loopOwnLabelKey() == key:
+    return false
+  for item in sx.items:
+    if item.usesLabelledContinue(key):
+      return true
+  false
+
+proc usesLabelledContinue(items: openArray[Syntax]; key: string): bool =
+  for item in items:
+    if item.usesLabelledContinue(key):
+      return true
+  false
 
 proc noreturnMarker(span: Span): Syntax =
   ## `(quit 1)` — used only inside `typeof(block: …)` (see
@@ -110,11 +182,21 @@ proc noreturnMarker(span: Span): Syntax =
   ## like the real `break` it stands in for.
   newList(@[newSymbol("quit", span), newInt(1, span)], span)
 
-proc eraseBreakFrom(sx: Syntax; targetKey: string): Syntax =
+proc eraseBreakFrom(sx: Syntax; targetKey: string; underLoop: bool = false): Syntax =
   ## Builds the "fallthrough" copy of `sx` for use inside `typeof(block: …)`
   ## when inferring a named block's carrier type (see `emitLabelledBlock`):
   ## every `(break-from :name …)` *targeting `targetKey`* becomes the
   ## `noreturnMarker` above, dropping its value entirely.
+  ##
+  ## A bare `(break)`/`(continue)` — labelled or not (#54) — gets the same
+  ## treatment, but *only* when it is not nested inside a further loop form
+  ## within this same body: such a loop-nested one always resolves to that
+  ## inner loop (blocks, named or anonymous, never capture bare loop
+  ## control — see `EmitContext.bareBreakLabel`), so control returns
+  ## normally to whatever follows the inner loop once it exits; it is not
+  ## an early exit from *this* named block's flow, and erasing it would
+  ## wrongly hide that block's real fallthrough type. `underLoop` tracks
+  ## whether the walk has already stepped past such a loop boundary.
   ##
   ## The value is dropped, not inlined, because inlining it here — in the
   ## exact spot the original `break-from` occupied — would force it to
@@ -147,14 +229,18 @@ proc eraseBreakFrom(sx: Syntax; targetKey: string): Syntax =
   of sxList:
     if sx.isBreakFromForm() and sx.items[1].namedBlockKey() == targetKey:
       return noreturnMarker(sx.span)
+    if not underLoop and sx.items.len > 0 and
+        (sx.items[0].isSymbol("break") or sx.items[0].isSymbol("continue")):
+      return noreturnMarker(sx.span)
+    let childUnderLoop = underLoop or sx.isLoopForm()
     var newItems: seq[Syntax] = @[]
     for item in sx.items:
-      newItems.add eraseBreakFrom(item, targetKey)
+      newItems.add eraseBreakFrom(item, targetKey, childUnderLoop)
     newList(newItems, sx.span)
   of sxVector:
     var newItems: seq[Syntax] = @[]
     for item in sx.items:
-      newItems.add eraseBreakFrom(item, targetKey)
+      newItems.add eraseBreakFrom(item, targetKey, underLoop)
     newVector(newItems, sx.span)
   else:
     sx
@@ -165,14 +251,15 @@ proc attachLineInfo(node: NimNode; sx: Syntax): NimNode =
     result.setLineInfo(sx.span.file, sx.span.line, sx.span.col)
 
 proc findNamedBlock(ctx: EmitContext; target: Syntax): NamedBlockFrame =
-  ## Looks up the frame for a `break-from` target. Lowering has already
-  ## validated every target resolves to an enclosing named block, so a miss
-  ## here would mean a lowering/backend mismatch, not a user error.
+  ## Looks up the frame for a `break-from`/labelled `break`/`continue`
+  ## target. Lowering has already validated every target resolves to an
+  ## enclosing frame of the right kind, so a miss here would mean a
+  ## lowering/backend mismatch, not a user error.
   let key = target.namedBlockKey()
   for i in countdown(ctx.namedBlocks.high, 0):
     if ctx.namedBlocks[i].key == key:
       return ctx.namedBlocks[i]
-  raiseCompilerError(target.span, "internal error: break-from target not found: " & target.sym)
+  raiseCompilerError(target.span, "internal error: label target not found: " & target.sym)
 
 proc labelIdent(labelSx: Syntax): NimNode =
   ## A `:name` label is never a hygiene-rename target — `hygienicRename`
@@ -353,16 +440,42 @@ proc emitBreakFrom(ctx: var EmitContext; sx: Syntax): NimNode =
       result.add nnkDiscardStmt.newTree(valueNode).attachLineInfo(sx)
   result.add nnkBreakStmt.newTree(frame.label.copyNimTree()).attachLineInfo(sx)
 
+proc emitBreak(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(break)` — targets `ctx.bareBreakLabel`, the innermost enclosing
+  ## loop's own wrapper block (see `EmitContext.bareBreakLabel`) — or
+  ## `(break :name)`, which targets the named loop frame's label directly.
+  let nargs = sx.items.len - 1
+  let label =
+    if nargs == 0: ctx.bareBreakLabel
+    else: ctx.findNamedBlock(sx.items[1]).label.copyNimTree()
+  nnkBreakStmt.newTree(if label == nil: newEmptyNode() else: label).attachLineInfo(sx)
+
+proc emitContinue(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(continue)` — Nim's own unlabelled `continue` always targets the
+  ## nearest enclosing loop, even through an intervening anonymous `block`,
+  ## so this needs no special-casing (unlike bare `break` — see
+  ## `EmitContext.bareBreakLabel`). `(continue :name)` targets the named
+  ## loop frame's per-iteration block (`iterLabel`) as a `break`, since Nim
+  ## has no labelled `continue`.
+  let nargs = sx.items.len - 1
+  if nargs == 0:
+    return nnkContinueStmt.newTree(newEmptyNode()).attachLineInfo(sx)
+  nnkBreakStmt.newTree(ctx.findNamedBlock(sx.items[1]).iterLabel.copyNimTree()).attachLineInfo(sx)
+
 proc emitNamedBlockBody(ctx: var EmitContext; items: openArray[Syntax]; carrier: NimNode): NimNode =
   ## Emits the inside of a labelled block's `block LBL: …`. Every non-tail
-  ## item — and every `break-from`, wherever it appears — emits as a plain
-  ## statement (a `break-from` assigns its own value into `carrier`, if any,
-  ## and breaks; see `emitBreakFrom`). The true tail item, when `carrier` is
-  ## non-nil and the tail is not itself a `break-from`, additionally assigns
-  ## its expression value into `carrier`.
+  ## item — and every `break-from`/bare or labelled `break`/`continue`
+  ## (#54), wherever it appears — emits as a plain statement (a
+  ## `break-from` assigns its own value into `carrier`, if any, and breaks;
+  ## see `emitBreakFrom`; a bare/labelled `break`/`continue` never produces
+  ## a value at all, and always exits past this block, per
+  ## `isLoopControlForm`). The true tail item, when `carrier` is non-nil and
+  ## the tail is neither of those, additionally assigns its expression
+  ## value into `carrier`.
   result = newStmtList()
   for i, item in items:
-    if i == items.high and carrier != nil and not item.isBreakFromForm():
+    if i == items.high and carrier != nil and not item.isBreakFromForm() and
+        not item.isLoopControlForm():
       result.add nnkAsgn.newTree(carrier, ctx.emitExpr(item)).attachLineInfo(item)
     else:
       result.add ctx.emitStmt(item)
@@ -630,6 +743,13 @@ proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
   var formalParams = nnkFormalParams.newTree(ident("auto"))
   for param in params.items:
     formalParams.add ctx.emitParam(param)
+  # `break lbl`/`break` cannot cross a routine boundary, so a bare `break`'s
+  # target loop (like `namedBlocks`, see its comment in `lowerLambda`) must
+  # never leak in from an enclosing routine.
+  let savedBareBreak = ctx.bareBreakLabel
+  ctx.bareBreakLabel = nil
+  let bodyNode = ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)
+  ctx.bareBreakLabel = savedBareBreak
   nnkLambda.newTree(
     newEmptyNode(),
     newEmptyNode(),
@@ -637,7 +757,7 @@ proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
     formalParams,
     newEmptyNode(),
     newEmptyNode(),
-    ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)
+    bodyNode
   ).attachLineInfo(sx)
 
 proc emitPragma(ctx: var EmitContext; sx: Syntax): NimNode =
@@ -712,6 +832,11 @@ proc emitRoutine(ctx: var EmitContext; sx: Syntax; nodeKind: NimNodeKind;
   for param in params.items:
     formalParams.add ctx.emitParam(param)
 
+  # `break lbl`/`break` cannot cross a routine boundary — reset for the same
+  # reason as `namedBlocks` (see `lowerRoutine`'s comment): a bare `break`'s
+  # target loop from an enclosing routine must never leak into this one.
+  let savedBareBreak = ctx.bareBreakLabel
+  ctx.bareBreakLabel = nil
   let bodyNode =
     if stmtBody:
       # Iterator bodies are pure statement sequences — do not use emitBodyExpr
@@ -722,6 +847,7 @@ proc emitRoutine(ctx: var EmitContext; sx: Syntax; nodeKind: NimNodeKind;
       stmts
     else:
       ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
+  ctx.bareBreakLabel = savedBareBreak
 
   nodeKind.newTree(
     ctx.declIdent(name, formName & " name", allowOperator = true),
@@ -1030,24 +1156,65 @@ proc isExceptBinding(sx: Syntax): bool =
   sx.items[0].kind == sxSymbol and
   (sx.items[1].kind == sxSymbol or sx.items[1].kind == sxVector)
 
+proc loopLabelOrNil(sx: Syntax): Syntax =
+  ## The `:name` label syntax node for a `(while [:name] …)`/`(for [:name]
+  ## …)` form, or `nil` when unlabelled.
+  if sx.items.len > 1 and sx.items[1].isBlockLabel(): sx.items[1] else: nil
+
+proc emitLoopBody(ctx: var EmitContext; owner: Syntax; labelSx: Syntax;
+                   bodyItems: openArray[Syntax]): tuple[wrapperLabel, body: NimNode] =
+  ## Shared machinery for `(while …)`/`(for …)`. Every loop gets a Nim
+  ## wrapper `block` label — the user's `:name` when present, else a gensym
+  ## — because a *bare* `(break)` must always be able to target its own
+  ## loop directly regardless of any intervening anonymous `(block …)` in
+  ## expression position (see `EmitContext.bareBreakLabel`). The loop body
+  ## additionally gets a per-iteration `block` only when a `(continue
+  ## :name)` inside it actually targets this loop — Nim has no labelled
+  ## `continue`, so that is compiled as `break` out of the per-iteration
+  ## block. Callers wrap the returned `body` in their own
+  ## `nnkForStmt`/`nnkWhileStmt`, then that in `block wrapperLabel: …`.
+  let labelled = labelSx != nil
+  let labelKey = if labelled: labelSx.namedBlockKey() else: ""
+  let wrapperLabel =
+    if labelled: labelIdent(labelSx)
+    else: genSym(nskLabel, "loop")
+  let needsIter = labelled and usesLabelledContinue(bodyItems, labelKey)
+  let iterLabel = if needsIter: genSym(nskLabel, "iter") else: nil
+  if labelled:
+    ctx.namedBlocks.add NamedBlockFrame(key: labelKey, label: wrapperLabel,
+      carrier: nil, isLoop: true, iterLabel: iterLabel)
+  let savedBareBreak = ctx.bareBreakLabel
+  ctx.bareBreakLabel = wrapperLabel
+  var innerBody = newStmtList()
+  for item in bodyItems:
+    innerBody.add ctx.emitStmt(item)
+  ctx.bareBreakLabel = savedBareBreak
+  if labelled:
+    discard ctx.namedBlocks.pop()
+  let body =
+    if needsIter: nnkBlockStmt.newTree(iterLabel, innerBody).attachLineInfo(owner)
+    else: innerBody
+  (wrapperLabel, body)
+
 proc emitForCore(ctx: var EmitContext; sx: Syntax): NimNode =
-  ## Builds the `nnkForStmt` for `(for CLAUSE body…)`.
+  ## Builds `(for [:name] CLAUSE body…)`, wrapped per `emitLoopBody`.
   ## Always returns a statement node; wrap in `emitBlockExpr` for expr context.
-  let clause = sx.items[1]
+  let labelSx = loopLabelOrNil(sx)
+  let clauseIdx = if labelSx != nil: 2 else: 1
+  let clause = sx.items[clauseIdx]
   let binding = clause.items[0]
   let iterable = clause.items[1]
-  result = nnkForStmt.newTree()
+  var forStmt = nnkForStmt.newTree()
   if binding.kind == sxSymbol:
-    result.add ctx.identForSymbol(binding)
+    forStmt.add ctx.identForSymbol(binding)
   else:
     for v in binding.items:
-      result.add ctx.identForSymbol(v)
-  result.add ctx.emitExpr(iterable)
-  var body = newStmtList()
-  for i in 2 ..< sx.items.len:
-    body.add ctx.emitStmt(sx.items[i])
-  result.add body
-  result = result.attachLineInfo(sx)
+      forStmt.add ctx.identForSymbol(v)
+  forStmt.add ctx.emitExpr(iterable)
+  let (wrapperLabel, body) = ctx.emitLoopBody(sx, labelSx,
+    sx.items.toOpenArray(clauseIdx + 1, sx.items.high))
+  forStmt.add body
+  nnkBlockStmt.newTree(wrapperLabel, forStmt.attachLineInfo(sx)).attachLineInfo(sx)
 
 proc emitRangeForm(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits a `(.. lo hi)` range form as `nnkInfix(.., lo, hi)` — the same
@@ -1263,12 +1430,15 @@ proc emitDefer(ctx: var EmitContext; sx: Syntax): NimNode =
   nnkDefer.newTree(body).attachLineInfo(sx)
 
 proc emitWhileCore(ctx: var EmitContext; sx: Syntax): NimNode =
-  ## Builds the `nnkWhileStmt` for `(while COND body…)`.
+  ## Builds `(while [:name] COND body…)`, wrapped per `emitLoopBody`.
   ## Always returns a statement node; wrap in `emitBlockExpr` for expr context.
-  var body = newStmtList()
-  for i in 2 ..< sx.items.len:
-    body.add ctx.emitStmt(sx.items[i])
-  nnkWhileStmt.newTree(ctx.emitExpr(sx.items[1]), body).attachLineInfo(sx)
+  let labelSx = loopLabelOrNil(sx)
+  let condIdx = if labelSx != nil: 2 else: 1
+  let condNode = ctx.emitExpr(sx.items[condIdx])
+  let (wrapperLabel, body) = ctx.emitLoopBody(sx, labelSx,
+    sx.items.toOpenArray(condIdx + 1, sx.items.high))
+  let whileStmt = nnkWhileStmt.newTree(condNode, body).attachLineInfo(sx)
+  nnkBlockStmt.newTree(wrapperLabel, whileStmt).attachLineInfo(sx)
 
 proc emitExceptBranch(ctx: var EmitContext; branch: Syntax; asExpr: bool): NimNode =
   ## Emits one `nnkExceptBranch` node.  `asExpr` controls whether the branch
@@ -1473,9 +1643,9 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
     if sx.items[0].isSymbol("defer"):
       return ctx.emitDefer(sx)
     if sx.items[0].isSymbol("break"):
-      return nnkBreakStmt.newTree(newEmptyNode()).attachLineInfo(sx)
+      return ctx.emitBreak(sx)
     if sx.items[0].isSymbol("continue"):
-      return nnkContinueStmt.newTree(newEmptyNode()).attachLineInfo(sx)
+      return ctx.emitContinue(sx)
     if sx.items[0].isSymbol("try"):
       return ctx.emitTryStmt(sx)
     if sx.items[0].isSymbol("block"):

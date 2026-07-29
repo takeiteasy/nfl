@@ -897,6 +897,21 @@ suite "nfl backend — while / break / continue / return / discard (#24-#27)":
   test "continue skips even iterations":
     check continueSkips == 9  # 1+3+5 = 9
 
+  test "bare break inside an expression-position block still exits the loop (#60)":
+    # An anonymous `(block ...)` used in expression position (e.g. as an
+    # `if` branch assigned via `set!`) emits a real Nim `block:` around its
+    # non-tail statements. A bare `break` there must still exit the
+    # enclosing `while`, not the intervening anonymous block. Bounded at
+    # 100 so a regression fails on the wrong value instead of hanging the
+    # test suite.
+    check nflExpr"""
+      (var ((i 0) (y 0))
+        (while (< i 100)
+          (set! y (if (>= i 3) (block (break) 1) 0))
+          (set! i (+ i 1)))
+        i)
+    """ == 3
+
   test "return exits proc early — clamp low":
     check clamp(-1, 0, 10) == 0
 
@@ -1085,3 +1100,144 @@ suite "nfl backend — named block / break-from (#41)":
     stmtPositionLog = @[]
     stmtPositionExit(false)
     check stmtPositionLog == @[1, 2]
+
+# ---------------------------------------------------------------------------
+# labelled break / continue (#54)
+# ---------------------------------------------------------------------------
+
+nflModule """
+; --- labelled break from a nested loop exits the outer loop ---
+(var (labelledBreakLog [seq int]) (@ []))
+(proc labelledBreakOuter ((n int)) (: int)
+  (var ((i 0))
+    (while :outer (< i n)
+      (var ((j 0))
+        (while (< j n)
+          (if (and (== i 1) (== j 1)) (break :outer) nil)
+          (. labelledBreakLog add (+ (* i 100) j))
+          (set! j (+ j 1))))
+      (set! i (+ i 1)))
+    i))
+
+; --- labelled continue from a nested loop restarts the outer loop,
+; skipping both the rest of the inner loop and the rest of the outer
+; loop's own body ---
+(proc labelledContinueOuter ((n int)) (: int)
+  (var ((i 0) (acc 0))
+    (while :outer (< i n)
+      (set! i (+ i 1))
+      (var ((j 0))
+        (while (< j n)
+          (if (== j 1) (continue :outer) nil)
+          (set! acc (+ acc 1))
+          (set! j (+ j 1))))
+      (set! acc (+ acc 100)))
+    acc))
+
+; --- unlabelled break/continue inside a labelled loop still bind to the
+; innermost loop, not the labelled outer one ---
+(proc innerBreakStaysInner ((n int)) (: int)
+  (var ((i 0) (count 0))
+    (while :outer (< i n)
+      (var ((j 0))
+        (while (< j n)
+          (if (== j 1) (break) nil)
+          (set! count (+ count 1))
+          (set! j (+ j 1))))
+      (set! i (+ i 1)))
+    count))
+
+; --- a labelled loop with no labelled break/continue behaves identically
+; to an unlabelled one ---
+(proc labelledSum ((n int)) (: int)
+  (var ((i 0) (acc 0))
+    (while :outer (< i n)
+      (set! acc (+ acc i))
+      (set! i (+ i 1)))
+    acc))
+
+; --- break-from out of a labelled loop into an enclosing named block
+; still works (#41 interop) ---
+(proc labelledLoopBreakFrom ((n int)) (: int)
+  (block :outerBlock
+    (var ((i 0))
+      (while :innerLoop (< i n)
+        (if (== i 2) (break-from :outerBlock 99) nil)
+        (set! i (+ i 1))))
+    -1))
+
+; --- behaviour change (#60): a bare `break` inside a *named* block now
+; exits the enclosing loop, not just the block — Nim's unlabelled `break`
+; previously captured by the block's own (named or anonymous) `block:`.
+; Bounded at 100 so a regression shows as a wrong value, not a hang. ---
+(proc bareBreakThroughNamedBlock () (: int)
+  (var ((i 0))
+    (while (< i 100)
+      (block :name (break))
+      (set! i (+ i 1)))
+    i))
+
+; --- labelled break/continue on a `for` loop (not just `while`) ---
+(var (labelledForBreakLog [seq int]) (@ []))
+(proc labelledForBreakOuter () (: int)
+  (var ((lastI 0))
+    (for :outer (i (.. 0 2))
+      (set! lastI i)
+      (for (j (.. 0 2))
+        (if (and (== i 1) (== j 1)) (break :outer) nil)
+        (. labelledForBreakLog add (+ (* i 100) j))))
+    lastI))
+
+(proc labelledForContinueOuter () (: int)
+  (var ((acc 0))
+    (for :outer (i (.. 0 2))
+      (for (j (.. 0 2))
+        (if (== j 1) (continue :outer) nil)
+        (set! acc (+ acc 1)))
+      (set! acc (+ acc 100)))
+    acc))
+
+; --- shadowing at the Nim codegen level: an inner loop reusing the outer
+; loop's label binds break/continue to the inner loop, and the outer
+; loop's own label is still usable afterwards (#54) ---
+(proc shadowedLabelBreak () (: int)
+  (var ((count 0))
+    (while :outer true
+      (while :outer true
+        (set! count (+ count 1))
+        (break :outer))
+      (break :outer))
+    count))
+""", "labelled-loop-test.nfl"
+
+suite "nfl backend — labelled break / continue (#54)":
+  test "labelled break from a nested loop exits the outer loop":
+    labelledBreakLog = @[]
+    check labelledBreakOuter(3) == 1
+    check labelledBreakLog == @[0, 1, 2, 100]
+
+  test "labelled continue from a nested loop restarts the outer loop":
+    check labelledContinueOuter(3) == 3
+
+  test "unlabelled break/continue inside a labelled loop bind to the innermost loop":
+    check innerBreakStaysInner(3) == 3
+
+  test "a labelled loop with no labelled break/continue behaves like an unlabelled one":
+    check labelledSum(5) == 10   # 0+1+2+3+4
+
+  test "break-from escapes a labelled loop into an enclosing named block (#41 interop)":
+    check labelledLoopBreakFrom(5) == 99
+
+  test "a bare break inside a named block now exits the loop, not the block (#60)":
+    check bareBreakThroughNamedBlock() == 0
+
+  test "labelled break from a nested loop exits an outer for loop":
+    labelledForBreakLog = @[]
+    check labelledForBreakOuter() == 1
+    check labelledForBreakLog == @[0, 1, 2, 100]
+
+  test "labelled continue from a nested loop restarts an outer for loop":
+    check labelledForContinueOuter() == 3
+
+  test "an inner loop reusing the outer label shadows it at the Nim codegen level":
+    check shadowedLabelBreak() == 1
