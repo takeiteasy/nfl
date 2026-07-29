@@ -7,8 +7,24 @@ import ./diagnostics
 import ./runtime
 import ./syntax
 
-type EmitContext = object
-  hygienicSymbols: Table[int, NimNode]
+type
+  NamedBlockFrame = object
+    key: string
+    label: NimNode
+    carrier: NimNode
+      ## The hidden var a `break-from` with a value assigns into before
+      ## `break`ing. `nil` while emitting the void branch of a labelled
+      ## block's `when …is void` split (see `emitLabelledBlock`) — in that
+      ## branch the block produces no value, so a `break-from` with a value
+      ## simply discards it.
+
+  EmitContext = object
+    hygienicSymbols: Table[int, NimNode]
+    namedBlocks: seq[NamedBlockFrame]
+      ## Enclosing named `block`s in scope, innermost last. Lowering has
+      ## already validated every `break-from` target against the parallel
+      ## stack in `lower.nim` (including resetting at proc/`do` boundaries),
+      ## so backend only needs to look labels up here, not re-validate them.
 
 proc isSymbol(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
@@ -76,10 +92,94 @@ proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: s
 proc isNamedArg(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol(":")
 
+proc isBreakFromForm(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("break-from")
+
+proc namedBlockKey(sx: Syntax): string =
+  ## Keyed the same way as lower.nim's `symbolKey`, so a hygienic label
+  ## introduced by a template expansion can't collide with a user-written
+  ## label of the same spelling.
+  if sx.hygieneId == 0: sx.blockLabelName
+  else: sx.blockLabelName & "\0" & $sx.hygieneId
+
+proc noreturnMarker(span: Span): Syntax =
+  ## `(quit 1)` — used only inside `typeof(block: …)` (see
+  ## `eraseBreakFrom`/`emitLabelledBlock`), so it never actually runs. `quit`
+  ## is `{.noreturn.}`, so wherever this sits (an `if`/`case` branch, a
+  ## block's own tail, …) it unifies with any sibling branch type, exactly
+  ## like the real `break` it stands in for.
+  newList(@[newSymbol("quit", span), newInt(1, span)], span)
+
+proc eraseBreakFrom(sx: Syntax; targetKey: string): Syntax =
+  ## Builds the "fallthrough" copy of `sx` for use inside `typeof(block: …)`
+  ## when inferring a named block's carrier type (see `emitLabelledBlock`):
+  ## every `(break-from :name …)` *targeting `targetKey`* becomes the
+  ## `noreturnMarker` above, dropping its value entirely.
+  ##
+  ## The value is dropped, not inlined, because inlining it here — in the
+  ## exact spot the original `break-from` occupied — would force it to
+  ## type-unify with whatever *other*, unrelated branch it sits next to
+  ## (e.g. an `if`'s other arm), which is wrong: in the real, unerased code
+  ## that other arm doesn't need to match, since a real `break` is noreturn
+  ## there. A named block's carrier type therefore mainly comes from its own
+  ## ordinary fallthrough tail — a `break-from` with a value must already
+  ## agree with that type, and if it doesn't, the mismatch still surfaces,
+  ## just at the real `carrier = value` assignment in `emitBreakFrom` rather
+  ## than here.
+  ##
+  ## The one exception is the block's own top-level *tail item*: if that is
+  ## itself a same-target `break-from` with a value, `emitLabelledBlock`
+  ## calls this on the break-from's value directly (not on the whole
+  ## break-from node) instead of going through the branch above — it's the
+  ## one position with no sibling to unify against, so inlining the value
+  ## there is both safe and necessary (a bare `(block :b (break-from :b 5))`
+  ## has no *other* fallthrough to tell `typeof` it's `int`).
+  ##
+  ## A `break-from` targeting a *different*, enclosing label is left
+  ## completely alone (recursed into normally) — it is still emitted for
+  ## real when this copy itself is emitted, and resolves against that
+  ## ancestor's still-active real frame, since building this copy happens
+  ## nested inside the ancestor's own real emission. The same goes for
+  ## nested `(block :other …)` forms: left fully intact, recursed into with
+  ## the same `targetKey`, and emitted by the ordinary recursive
+  ## `emitLabelledBlock` machinery when the copy is emitted.
+  case sx.kind
+  of sxList:
+    if sx.isBreakFromForm() and sx.items[1].namedBlockKey() == targetKey:
+      return noreturnMarker(sx.span)
+    var newItems: seq[Syntax] = @[]
+    for item in sx.items:
+      newItems.add eraseBreakFrom(item, targetKey)
+    newList(newItems, sx.span)
+  of sxVector:
+    var newItems: seq[Syntax] = @[]
+    for item in sx.items:
+      newItems.add eraseBreakFrom(item, targetKey)
+    newVector(newItems, sx.span)
+  else:
+    sx
+
 proc attachLineInfo(node: NimNode; sx: Syntax): NimNode =
   result = node
   if sx.span.file.len > 0 and sx.span.file[0] != '<' and fileExists(sx.span.file):
     result.setLineInfo(sx.span.file, sx.span.line, sx.span.col)
+
+proc findNamedBlock(ctx: EmitContext; target: Syntax): NamedBlockFrame =
+  ## Looks up the frame for a `break-from` target. Lowering has already
+  ## validated every target resolves to an enclosing named block, so a miss
+  ## here would mean a lowering/backend mismatch, not a user error.
+  let key = target.namedBlockKey()
+  for i in countdown(ctx.namedBlocks.high, 0):
+    if ctx.namedBlocks[i].key == key:
+      return ctx.namedBlocks[i]
+  raiseCompilerError(target.span, "internal error: break-from target not found: " & target.sym)
+
+proc labelIdent(labelSx: Syntax): NimNode =
+  ## A `:name` label is never a hygiene-rename target — `hygienicRename`
+  ## (expand.nim) only renames let/var/do-param/for-loop binding targets, so
+  ## `labelSx.hygieneId` is always 0 here — unlike `identForSymbol`, this
+  ## needs no genSym-and-cache path for a hygienic case that can't occur.
+  ident(labelSx.blockLabelName).attachLineInfo(labelSx)
 
 proc plainIntLit(v: BiggestInt): NimNode =
   ## `newLit` on a `BiggestInt` yields an `nnkInt64Lit`, which Nim types as a
@@ -235,6 +335,105 @@ proc emitBlockExpr(stmts: seq[NimNode]; body: NimNode): NimNode =
     list.add stmt
   list.add body
   nnkBlockStmt.newTree(newEmptyNode(), list)
+
+proc emitBreakFrom(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(break-from :name)` / `(break-from :name expr)`: assigns into
+  ## the target named block's carrier var (if it has one — see
+  ## `NamedBlockFrame.carrier`) and `break`s to its label. Always builds a
+  ## small statement list; expression-position callers wrap it (see the
+  ## `emitExpr` dispatch), mirroring how `for`/`while` wrap their
+  ## statement-only core in expression context.
+  let frame = ctx.findNamedBlock(sx.items[1])
+  result = newStmtList()
+  if sx.items.len == 3:
+    let valueNode = ctx.emitExpr(sx.items[2])
+    if frame.carrier != nil:
+      result.add nnkAsgn.newTree(frame.carrier.copyNimTree(), valueNode).attachLineInfo(sx)
+    else:
+      result.add nnkDiscardStmt.newTree(valueNode).attachLineInfo(sx)
+  result.add nnkBreakStmt.newTree(frame.label.copyNimTree()).attachLineInfo(sx)
+
+proc emitNamedBlockBody(ctx: var EmitContext; items: openArray[Syntax]; carrier: NimNode): NimNode =
+  ## Emits the inside of a labelled block's `block LBL: …`. Every non-tail
+  ## item — and every `break-from`, wherever it appears — emits as a plain
+  ## statement (a `break-from` assigns its own value into `carrier`, if any,
+  ## and breaks; see `emitBreakFrom`). The true tail item, when `carrier` is
+  ## non-nil and the tail is not itself a `break-from`, additionally assigns
+  ## its expression value into `carrier`.
+  result = newStmtList()
+  for i, item in items:
+    if i == items.high and carrier != nil and not item.isBreakFromForm():
+      result.add nnkAsgn.newTree(carrier, ctx.emitExpr(item)).attachLineInfo(item)
+    else:
+      result.add ctx.emitStmt(item)
+
+proc emitNamedBlockBranch(ctx: var EmitContext; bodyItems: openArray[Syntax]; owner: Syntax;
+                           key: string; label: NimNode; typeProbe: NimNode): NimNode =
+  ## Builds one branch of a labelled block: `typeProbe == nil` selects the
+  ## void branch (no carrier var, just `block LBL: …`); otherwise builds
+  ## `block: var TMP: typeProbe; block LBL: …; TMP`.
+  let carrier = if typeProbe == nil: nil else: genSym(nskVar, "carry")
+  ctx.namedBlocks.add NamedBlockFrame(key: key, label: label, carrier: carrier)
+  let inner = ctx.emitNamedBlockBody(bodyItems, carrier)
+  discard ctx.namedBlocks.pop()
+  let blockStmt = nnkBlockStmt.newTree(label.copyNimTree(), inner).attachLineInfo(owner)
+  if carrier == nil:
+    return blockStmt
+  let varSection = nnkVarSection.newTree(
+    nnkIdentDefs.newTree(carrier, typeProbe, newEmptyNode())).attachLineInfo(owner)
+  emitBlockExpr(@[varSection, blockStmt], carrier.copyNimTree())
+
+proc emitLabelledBlock(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(block :name body…)`. Nim's `break lbl` carries no value, so a
+  ## `break-from` with a value stashes it in a hidden var (the carrier)
+  ## before breaking; the block's trailing expression then reads that var.
+  ##
+  ## The carrier's type is inferred with `typeof` over the body's ordinary
+  ## fallthrough — a copy with every same-target `break-from` replaced
+  ## in-place by a noreturn marker (`eraseBreakFrom`), preserving the
+  ## body's exact lexical structure (so e.g. a `break-from` reading a `for`
+  ## loop's own variable still resolves inside the copy) and letting Nim's
+  ## ordinary noreturn-branch exemption do the rest, exactly as it does for
+  ## the real, unerased code. This never runs — it's only used inside
+  ## `typeof` — so side effects in the body are irrelevant, and the copy's
+  ## own block-local bindings stay in scope for it since it's a structural
+  ## copy, not a hoisted one.
+  ##
+  ## A `var TMP: typeof(…)` where that type is `void` is illegal in Nim, so
+  ## this always guards with `when …is void` and skips the carrier var
+  ## entirely in that branch — needed even in `emitExpr`'s call site
+  ## (`emitBegin`), since NFL emits every proc's tail expression through
+  ## `emitExpr` regardless of whether the proc has an explicit (possibly
+  ## void) return type; the `auto` return type then infers void from
+  ## whichever branch `when` actually selects, same as a plain (unlabelled)
+  ## void-tailed block already relies on.
+  let labelSx = sx.items[1]
+  let bodyItems = sx.items[2 .. ^1]
+  let label = labelIdent(labelSx)
+  let key = labelSx.namedBlockKey()
+  var copyItems: seq[Syntax] = @[]
+  for i, item in bodyItems:
+    # The block's own top-level tail is the one position with no sibling
+    # branch to unify against, so — unlike everywhere else — it's safe (and
+    # necessary) to inline a same-target break-from's *value* there instead
+    # of the noreturn marker: a bare `(block :b (break-from :b 5))`, with no
+    # other fallthrough at all, has no other way to tell `typeof` it's `int`.
+    if i == bodyItems.high and item.isBreakFromForm() and
+        item.items[1].namedBlockKey() == key and item.items.len == 3:
+      copyItems.add eraseBreakFrom(item.items[2], key)
+    else:
+      copyItems.add eraseBreakFrom(item, key)
+
+  proc typeProbe(ctx: var EmitContext): NimNode =
+    nnkCall.newTree(ident("typeof"),
+      emitBlockExpr(@[], ctx.emitBodyExpr(copyItems, sx))).attachLineInfo(sx)
+
+  let isVoidCheck = nnkInfix.newTree(ident("is"), ctx.typeProbe(), ident("void")).attachLineInfo(sx)
+  let voidBranch = ctx.emitNamedBlockBranch(bodyItems, sx, key, label, nil)
+  let valueBranch = ctx.emitNamedBlockBranch(bodyItems, sx, key, label, ctx.typeProbe())
+  nnkWhenStmt.newTree(
+    nnkElifBranch.newTree(isVoidCheck, voidBranch),
+    nnkElse.newTree(valueBranch)).attachLineInfo(sx)
 
 proc emitVectorPatternIdentDefs(ctx: var EmitContext; pattern: Syntax; valueNode: NimNode; mutable: bool; defs: var seq[NimNode]) =
   ## Emits a hidden temp (`genSym`) bound to `valueNode`, plus one
@@ -406,6 +605,8 @@ proc emitIfStmt(ctx: var EmitContext; sx: Syntax): NimNode =
 proc emitBegin(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len == 1:
     raiseCompilerError(sx.span, "block expects at least one expression")
+  if sx.items[1].isBlockLabel():
+    return ctx.emitLabelledBlock(sx)
   emitBlockExpr(@[], ctx.emitBodyExpr(sx.items.toOpenArray(1, sx.items.high), sx)).attachLineInfo(sx)
 
 proc emitSet(ctx: var EmitContext; sx: Syntax): NimNode =
@@ -1198,6 +1399,14 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitRaise(sx)
     elif sx.items[0].isSymbol("return"):
       ctx.emitReturn(sx)
+    elif sx.items[0].isSymbol("break-from"):
+      # Unwrapped, like `return` just above: a `break` is noreturn, so this
+      # statement list (ending in `break`) type-unifies with any expected
+      # type at its use site (e.g. as one branch of an `if`-expression whose
+      # other branch has an unrelated type) — wrapping it in a `block:`
+      # with a filler value (the way `for`/`while` do, since those *aren't*
+      # noreturn) would instead give it a concrete, unrelated type.
+      ctx.emitBreakFrom(sx)
     elif sx.items[0].isSymbol("try"):
       ctx.emitTry(sx)
     elif sx.items[0].isSymbol(":"):
@@ -1270,10 +1479,14 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
     if sx.items[0].isSymbol("try"):
       return ctx.emitTryStmt(sx)
     if sx.items[0].isSymbol("block"):
+      if sx.items.len > 1 and sx.items[1].isBlockLabel():
+        return ctx.emitLabelledBlock(sx)
       result = newStmtList()
       for i in 1 ..< sx.items.len:
         result.add ctx.emitStmt(sx.items[i])
       return
+    if sx.items[0].isSymbol("break-from"):
+      return ctx.emitBreakFrom(sx)
     if sx.items[0].isSymbol("var"):
       if isDefvarForm(sx):
         return ctx.emitVarDecl(sx)

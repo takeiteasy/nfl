@@ -589,7 +589,15 @@ proc evalMacroExpr(env: MacroEnv; scope: var EvalScope; sx: Syntax): Syntax =
         return evalMacroExpr(env, scope, sx.items[2])
       return evalMacroExpr(env, scope, sx.items[3])
     if head.isSymbol("block"):
-      return evalBody(env, scope, sx.items.toOpenArray(1, sx.items.high), sx)
+      # `(block :name body…)` — the label only matters to lowering/backend's
+      # break-from validation and codegen; at macro-expansion time a named
+      # block evaluates exactly like an anonymous one, simply skipping the
+      # leading label. break-from itself isn't supported in macro bodies
+      # (see below), so there is no non-local exit to account for here.
+      let bodyStart = if sx.items.len > 1 and sx.items[1].isBlockLabel(): 2 else: 1
+      return evalBody(env, scope, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
+    if head.isSymbol("break-from"):
+      raiseCompilerError(sx.span, "break-from is not supported in macro bodies")
     if head.isSymbol("let"):
       if sx.items.len < 3:
         raiseCompilerError(sx.span, "let expects bindings and body")

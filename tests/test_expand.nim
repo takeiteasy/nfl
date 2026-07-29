@@ -45,6 +45,21 @@ suite "macro expansion":
 """
     check sx.renderSyntax() == "(if true (block (echo \"yes\") 3) nil)"
 
+  test "named block evaluates like an anonymous block in a macro body (#41)":
+    let sx = expandOne """
+(defmacro pick ()
+  (block :result 1 2 3))
+(pick)
+"""
+    check sx.renderSyntax() == "3"
+
+  test "break-from is rejected inside a macro body (#41)":
+    expectExpandError("""
+(defmacro pick ()
+  (block :result (break-from :result 1) 2))
+(pick)
+""", "break-from is not supported in macro bodies")
+
   test "gensym generates distinct symbols":
     let sx = expandOne """
 (defmacro twice (x)

@@ -173,6 +173,20 @@ proc splitExportMarker*(sym: string; escaped, allowOperator: bool):
     return ("", false, "export marker is only allowed at the end of a name")
   return (sym, false, "")
 
+proc isBlockLabel*(sx: Syntax): bool =
+  ## True for a `:name` symbol used as a `block`/`break-from` label — e.g.
+  ## the `:search` in `(block :search …)` or `(break-from :search expr)`.
+  ## Requires a symbol strictly longer than the bare `:` (which is reserved
+  ## as the named-argument marker, see `isNamedArg`) whose first character
+  ## is `:` and whose remainder contains no further `:` or `*`.
+  sx.kind == sxSymbol and sx.sym.len > 1 and sx.sym[0] == ':' and
+    not sx.sym[1 .. ^1].contains(':') and not sx.sym[1 .. ^1].contains('*')
+
+proc blockLabelName*(sx: Syntax): string =
+  ## The label name with its leading `:` stripped. Only valid to call when
+  ## `isBlockLabel(sx)` holds.
+  sx.sym[1 .. ^1]
+
 proc isRangeShaped*(sx: Syntax): bool =
   ## True for any list headed by the `..` symbol, regardless of arity. Used
   ## to recognize (and validate the arity of) an intended range form —

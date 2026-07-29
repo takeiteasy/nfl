@@ -660,6 +660,51 @@ suite "lowering validation":
     expectLowerError("(try (riskyCall) (except (e ValueError) (set! e nil)))", "immutable binding")
 
   # ---------------------------------------------------------------------------
+  # named block / break-from (#41)
+  # ---------------------------------------------------------------------------
+
+  test "allows a named block with no break-from":
+    discard lowerExpr(readOne("(block :search 1 2)", "lower-test.nfl"))
+
+  test "allows break-from targeting an enclosing named block":
+    discard lowerExpr(readOne("(block :search (break-from :search 1))", "lower-test.nfl"))
+
+  test "allows valueless break-from":
+    discard lowerExpr(readOne("(block :search (break-from :search))", "lower-test.nfl"))
+
+  test "allows break-from nested inside a loop inside a named block":
+    discard lowerExpr(readOne(
+      "(block :search (for (x xs) (if (> x 3) (break-from :search x) nil)) -1)",
+      "lower-test.nfl"))
+
+  test "rejects a named block with an empty body":
+    expectLowerError("(block :search)", "block expects at least one expression")
+
+  test "rejects break-from targeting an unknown label":
+    expectLowerError("(break-from :nope 1)", "not an enclosing named block")
+
+  test "rejects break-from once its named block has ended":
+    expectLowerError("(block (block :search 1) (break-from :search 2))",
+      "not an enclosing named block")
+
+  test "rejects break-from crossing a do boundary":
+    expectLowerError("(block :outer (do () (break-from :outer 1)))",
+      "not an enclosing named block")
+
+  test "rejects break-from crossing a proc boundary":
+    expectLowerModuleError(
+      "(block :outer (proc f () (break-from :outer 1)))",
+      "not an enclosing named block")
+
+  test "rejects break-from with the wrong arity":
+    expectLowerError("(block :search (break-from))", "break-from expects 1 or 2 arguments")
+    expectLowerError("(block :search (break-from :search 1 2))",
+      "break-from expects 1 or 2 arguments")
+
+  test "rejects break-from with a malformed target":
+    expectLowerError("(block :search (break-from search 1))", "break-from target must be a :name label")
+
+  # ---------------------------------------------------------------------------
   # defer
   # ---------------------------------------------------------------------------
 

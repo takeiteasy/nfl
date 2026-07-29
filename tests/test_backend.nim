@@ -995,3 +995,93 @@ suite "nfl backend — implicit result variable (#36)":
 
   test "method gets an implicit result too":
     check resultDouble(Doubler(factor: 2), 3) == 6
+
+# ---------------------------------------------------------------------------
+# named block / break-from (#41)
+# ---------------------------------------------------------------------------
+
+nflModule """
+; --- fall-through value: no break-from taken ---
+(proc firstOver ((xs [seq int]) (limit int)) (: int)
+  (block :search
+    (for (x xs)
+      (if (> x limit) (break-from :search x) nil))
+    -1))
+
+; --- valueless break-from out of a void-tailed block, from inside a for ---
+(var (voidBreakLog [seq int]) (@ []))
+(proc logFirstOver ((xs [seq int]) (limit int)) (: void)
+  (block :search
+    (for (x xs)
+      (if (> x limit)
+          (break-from :search)
+          nil))
+    (. voidBreakLog add 0)))
+
+; --- break-from reachable from inside a while loop ---
+(proc firstOverWhile ((xs [seq int]) (limit int)) (: int)
+  (block :search
+    (var ((i 0))
+      (while (< i (. xs len))
+        (if (> (at xs i) limit)
+            (break-from :search (at xs i))
+            nil)
+        (set! i (+ i 1))))
+    -1))
+
+; --- nested named blocks: inner block exits the outer one ---
+(proc nestedExit ((x int)) (: string)
+  (block :outer
+    (let ((inner (block :inner
+                   (if (> x 0)
+                       (break-from :outer "early")
+                       5))))
+      (& "inner=" ($ inner)))))
+
+; --- bare tail break-from with a value, no other fallthrough at all ---
+(proc bareBreak () (: int)
+  (block :search
+    (break-from :search 5)))
+
+; --- named block in non-tail statement position (not a proc's own tail,
+; so it emits via emitStmt's labelled branch, a real nnkBlockStmt, unlike
+; the anonymous-block statement path which just flattens) ---
+(var (stmtPositionLog [seq int]) (@ []))
+(proc stmtPositionExit ((doBreak bool)) (: void)
+  (block :early
+    (if doBreak (break-from :early) nil)
+    (. stmtPositionLog add 1))
+  (. stmtPositionLog add 2))
+""", "named-block-test.nfl"
+
+suite "nfl backend — named block / break-from (#41)":
+  test "fall-through value when break-from is never taken":
+    check firstOver(@[1, 2, 3], 100) == -1
+
+  test "break-from short-circuits with a value":
+    check firstOver(@[1, 2, 3, 9, 4], 3) == 9
+
+  test "valueless break-from exits a void-tailed block early":
+    logFirstOver(@[1, 2, 9], 3)
+    check voidBreakLog.len == 0
+    logFirstOver(@[1, 2, 3], 100)
+    check voidBreakLog.len == 1
+
+  test "break-from reachable from inside a while loop":
+    check firstOverWhile(@[1, 2, 3], 100) == -1
+    check firstOverWhile(@[1, 2, 3, 9, 4], 3) == 9
+
+  test "nested named blocks — inner block's break-from exits the outer one":
+    check nestedExit(1) == "early"
+    check nestedExit(-1) == "inner=5"
+
+  test "bare tail break-from with a value and no other fallthrough":
+    check bareBreak() == 5
+
+  test "named block in non-tail statement position still runs code after it":
+    stmtPositionLog = @[]
+    stmtPositionExit(true)
+    check stmtPositionLog == @[2]   # break-from skips the `add 1`
+    stmtPositionLog = @[]
+    stmtPositionExit(false)
+    check stmtPositionLog == @[1, 2]

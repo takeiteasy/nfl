@@ -15,6 +15,15 @@ type
       ## Counts nesting inside a proc/template/block/etc. body (see
       ## `lowerBody`). Zero at true module top level, where `defer` is not
       ## allowed since Nim itself rejects `defer` outside a body.
+    namedBlocks: seq[string]
+      ## Keys (via `symbolKey`) of enclosing named `block`s, innermost last —
+      ## the targets `break-from` may validly reference. Reset to empty (not
+      ## pushed/popped) at each proc/template/iterator/method/converter/`do`
+      ## boundary in `lowerRoutine`/`lowerLambda`: Nim's `break lbl` cannot
+      ## cross a routine boundary, so a label from an enclosing routine is
+      ## never a valid `break-from` target inside a nested one. Loops do
+      ## *not* reset this — breaking out of a loop to an enclosing named
+      ## block is exactly what `break-from` is for.
 
 proc isSymbol(sx: Syntax; name: string): bool =
   sx.kind == sxSymbol and sx.sym == name
@@ -284,7 +293,34 @@ proc lowerIf(ctx: var LowerContext; sx: Syntax) =
 proc lowerBegin(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len == 1:
     raiseCompilerError(sx.span, "block expects at least one expression")
-  lowerBody(ctx, sx.items.toOpenArray(1, sx.items.high), sx)
+  var bodyStart = 1
+  var labelKey = ""
+  var labelled = false
+  if sx.items[1].isBlockLabel():
+    if sx.items.len == 2:
+      raiseCompilerError(sx.span, "block expects at least one expression")
+    labelled = true
+    labelKey = sx.items[1].symbolKey()
+    bodyStart = 2
+  if labelled:
+    ctx.namedBlocks.add labelKey
+  lowerBody(ctx, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
+  if labelled:
+    discard ctx.namedBlocks.pop()
+
+proc lowerBreakFrom(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(break-from :name)` (valueless) or `(break-from :name expr)`.
+  let nargs = sx.items.len - 1
+  if nargs notin [1, 2]:
+    raiseCompilerError(sx.span, "break-from expects 1 or 2 arguments, got " & $nargs)
+  let target = sx.items[1]
+  if not target.isBlockLabel():
+    raiseCompilerError(target.span, "break-from target must be a :name label")
+  if target.symbolKey() notin ctx.namedBlocks:
+    raiseCompilerError(target.span,
+      "break-from target is not an enclosing named block: " & target.sym)
+  if nargs == 2:
+    lowerExpr(ctx, sx.items[2])
 
 proc lowerSet(ctx: var LowerContext; sx: Syntax) =
   expectArity(sx, "set!", sx.items.len - 1, 2)
@@ -317,9 +353,12 @@ proc lowerLambda(ctx: var LowerContext; sx: Syntax) =
   if params.kind != sxList:
     raiseCompilerError(params.span, "do parameters must be a list")
   ctx.pushScope()
+  let savedNamedBlocks = ctx.namedBlocks
+  ctx.namedBlocks = @[]
   for param in params.items:
     lowerParam(ctx, param)
   lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
+  ctx.namedBlocks = savedNamedBlocks
   ctx.popScope()
 
 proc validateExportedDecl(name: Syntax; what: string; allowOperator = false): string =
@@ -419,6 +458,13 @@ proc lowerRoutine(ctx: var LowerContext; sx: Syntax; formName: string;
   if bodyStart > sx.items.high:
     raiseCompilerError(sx.span, formName & " expects body expression")
   ctx.pushScope()
+  # `break lbl` cannot cross a routine boundary, so a named block from an
+  # enclosing routine is never a valid break-from target inside this one —
+  # save and clear, then restore on the way out (mirrors how bodyDepth would
+  # be scoped, not the pushScope/popScope stack, since loops inside this
+  # routine must keep seeing blocks named *within* this routine).
+  let savedNamedBlocks = ctx.namedBlocks
+  ctx.namedBlocks = @[]
   # `proc`/`func`/`method`/`converter` forms with an explicit return type get
   # Nim's implicit mutable `result` variable; declared before params so a
   # param named `result` raises the same "duplicate binding" error Nim itself
@@ -429,6 +475,7 @@ proc lowerRoutine(ctx: var LowerContext; sx: Syntax; formName: string;
   for param in params.items:
     lowerParam(ctx, param)
   lowerBody(ctx, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
+  ctx.namedBlocks = savedNamedBlocks
   ctx.popScope()
   # Routine names resolve via Nim's own name resolution; we register under the
   # base name (stripped of any `*`) so local set!/lookup always finds it.
@@ -1135,6 +1182,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerRaise(ctx, sx)
     elif sx.items[0].isSymbol("return"):
       lowerReturn(ctx, sx)
+    elif sx.items[0].isSymbol("break-from"):
+      lowerBreakFrom(ctx, sx)
     elif sx.items[0].isSymbol("try"):
       lowerTry(ctx, sx)
     elif sx.items[0].isSymbol("quote"):

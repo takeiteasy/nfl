@@ -524,9 +524,12 @@ by type, e.g. `(Circle r)`) are not yet supported; see the tracker.
 
 ```lisp
 (block body...)
+(block :name body...)
 ```
 
-Evaluates multiple forms and returns the last value.
+Evaluates multiple forms and returns the last value. Giving it a `:name`
+label lets a nested `break-from` exit it early with a value — see
+[`break-from`](#break-from) below.
 
 ## Loops
 
@@ -580,6 +583,37 @@ Multi-variable (e.g. index + value via `pairs`):
 ```
 
 The implicit `result` variable (see [Implicit `result`](#implicit-result)) is an alternative to explicit `return`: assign to `result` and let the body fall through instead of returning a value directly.
+
+### `break-from`
+
+`(break-from :name expr)` exits the enclosing `(block :name ...)` early with
+a value; `(break-from :name)` exits it with no value. Unlike `break`, which
+only ever exits the innermost loop, `break-from` can name *which* enclosing
+block to exit — including one that wraps a loop, letting you break out of a
+search with the found value in one step:
+
+```lisp
+(proc findFirstOver ((xs [seq int]) (limit int)) (: int)
+  (block :search
+    (for (x xs)
+      (if (> x limit) (break-from :search x) nil))
+    -1))
+```
+
+`:name` must refer to a `block` that lexically encloses the `break-from` —
+it cannot cross a `proc`/`method`/`func`/`converter`/`template`/`iterator`/`do`
+boundary, and referencing a name that is out of scope (or was never
+declared) is a lowering error. `break-from` is not supported inside a macro
+body (the compile-time macro evaluator does not implement non-local exit);
+a plain `(block :name ...)` there is still fine and evaluates like an
+anonymous block.
+
+A named block's value type is inferred from its own ordinary fallthrough
+tail — the same expression the block would evaluate to if no `break-from`
+were ever taken (or, if the tail itself is an unconditional `break-from`
+with a value and there's no other fallthrough, from that value). A
+`break-from` value that doesn't match the block's type is a regular Nim
+type-mismatch error at the point it's assigned.
 
 ### `discard`
 

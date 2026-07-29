@@ -39,3 +39,13 @@
     (if (== 0 (mod k 2))
         (continue)
         (echo "odd: " k))))
+
+; A named block + break-from exits a specific enclosing block — including
+; one wrapping a loop — with a value, rather than just the innermost loop.
+(proc firstOver ((xs [seq int]) (limit int)) (: int)
+  (block :search
+    (for (x xs)
+      (if (> x limit) (break-from :search x) nil))
+    -1))
+(echo "first over 3: " (firstOver (@ [1 2 3 9 4]) 3))
+(echo "first over 100: " (firstOver (@ [1 2 3]) 100))
