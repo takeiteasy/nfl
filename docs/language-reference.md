@@ -59,8 +59,13 @@ Multiple bindings in one `var`:
 
 ### Destructuring
 
-A binding target — in `let` and the local `var` form only — may be a
-vector pattern that destructures a tuple or indexable value by position:
+A binding target may be a pattern that destructures a value instead of
+binding it whole — positional (by index) or by object field. This works
+anywhere a name is bound: `let`, `var` (both the local form and the
+module-level section form), `const` sections, `do`/`proc`/`template`/
+`iterator`/etc. parameters, and required macro parameters.
+
+A **vector pattern** destructures a tuple or indexable value by position:
 
 ```lisp
 (let (([a b] pair)) (+ a b))            ; positional bind
@@ -69,20 +74,59 @@ vector pattern that destructures a tuple or indexable value by position:
 (let (([_ b] pair)) b)                  ; _ discards a position
 ```
 
+At most one `& rest` capture is allowed per pattern, and it must be the
+last two elements. Arity mismatches are not diagnosed by NFL: for a tuple
+value, a pattern with too many/few elements is a Nim compile error; for a
+seq or array, an out-of-range index is a runtime error.
+
+An **object pattern** destructures by field name — a vector whose first
+element is a `:field` keyword:
+
+```lisp
+(let (([:name n :age a] person)) (+ a 1))   ; explicit target per field
+(let (([:name :age] person)) (& name ($ age)))  ; shorthand — binds name/age
+(let (([a [:name n]] pair)) n)               ; nests inside a vector pattern
+```
+
+A bare `:field` key with no following target is shorthand for binding a
+variable named after the field; explicit and shorthand keys may be mixed.
+There is no `&` rest capture for object patterns.
+
 `var` with a destructuring target makes every bound name mutable:
 
 ```lisp
 (var (([a b] pair)) (set! a (+ a 1)) a)
 ```
 
-At most one `& rest` capture is allowed per pattern, and it must be the
-last two elements. Arity mismatches are not diagnosed by NFL: for a tuple
-value, a pattern with too many/few elements is a Nim compile error; for a
-seq or array, an out-of-range index is a runtime error.
+A `var`/`const` section binding may also destructure — every name the
+pattern binds is declared, and (matching a section's usual rules) the
+binding always requires a value since a pattern never carries a type:
 
-Destructuring is not supported in `var`/`const` sections, `do`/`proc`
-parameters, or macro parameters — see the tracker for follow-up scope.
-Object/record field destructuring is not supported.
+```lisp
+(var (([a b] pair)))
+(const (([a b] pair)))
+```
+
+A destructured `do`/`proc`/`template`/`iterator`/`method`/`func`/`converter`
+parameter must carry an explicit type — the pattern itself has nowhere to
+put one:
+
+```lisp
+(proc distance (([x y] Point)) (: float)
+  (sqrt (+ (* x x) (* y y))))
+```
+
+A required macro parameter may also be a pattern — it destructures the
+*argument's syntax form* at expansion time (not a runtime value), so the
+argument must literally be a list/vector of matching shape:
+
+```lisp
+(defmacro swap ([a b]) `(list ,b ,a))
+(swap (1 2))    ; -> (list 2 1)
+```
+
+Object patterns are not supported for macro parameters (there is no value
+to dot-access at expansion time — only syntax).
 
 ### `set!` — mutation
 
@@ -527,7 +571,10 @@ Pattern kinds:
 - `'sym` (the reader's quote sugar) matches by equality against the symbol
   `sym` — for an enum label or a module-level const
 - a vector pattern (`[a b]`, `[head & rest]`, nested) destructures like a
-  `let`/`var` [destructuring pattern](#destructuring)
+  `let`/`var` [destructuring pattern](#destructuring) — object patterns
+  (`[:field ...]`) are not supported in `match`, since there is no
+  arity/field-presence test to run against an arbitrary Nim object; use a
+  vector pattern instead
 
 A clause may carry a guard, recognized positionally right after the
 pattern: `(PATTERN :when guard-expr body…)`. The guard can reference names

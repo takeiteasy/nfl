@@ -77,11 +77,44 @@ suite "lowering validation":
   test "rejects pragma clause on a destructuring binding":
     expectLowerError("(let (([a b] {.used.} pair)) (+ a b))", "destructuring pattern cannot carry a pragma clause")
 
-  test "rejects destructuring in var/const sections":
-    expectLowerModuleError("(var (([a b])))", "destructuring is not supported in var/const sections")
+  test "allows destructuring in var/const sections (#47)":
+    discard lowerModule(readAll("(var (([a b] pair)))\n(set! a 1)\na", "lower-test.nfl"))
+    discard lowerModule(readAll("(const (([a b] pair)))\na", "lower-test.nfl"))
 
-  test "rejects destructuring in do parameters":
-    expectLowerError("(do ([a b]) a)", "destructuring is not supported in do/proc parameters")
+  test "rejects destructuring in a var/const section without a value":
+    expectLowerModuleError("(var (([a b])))", "var section binding without a type annotation requires a value")
+    expectLowerModuleError("(const (([a b])))", "const section binding requires a value")
+
+  test "rejects a pragma clause on a var/const section destructuring binding":
+    expectLowerModuleError("(var (([a b] {.used.} pair)))", "destructuring pattern cannot carry a pragma clause")
+
+  test "rejects destructuring in an untyped do/proc parameter":
+    expectLowerError("(do ([a b]) a)", "a destructured parameter requires a type annotation")
+
+  test "allows a typed destructuring do parameter (#47)":
+    discard lowerExpr(readOne("(do (([a b] Pair)) (+ a b))", "lower-test.nfl"))
+
+  test "allows an object destructuring pattern (#47)":
+    discard lowerExpr(readOne("(let (([:name n :age a] person)) (+ a 1))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (([:name :age] person)) (+ age 1))", "lower-test.nfl"))
+
+  test "allows a nested object pattern inside a positional pattern (#47)":
+    discard lowerExpr(readOne("(let (([a [:name n]] pair)) n)", "lower-test.nfl"))
+
+  test "rejects a non-keyword object pattern key":
+    expectLowerError("(let (([:name n age] pair)) n)", "object pattern key must be a :field keyword")
+
+  test "rejects a duplicate object pattern field":
+    expectLowerError("(let (([:name a :name b] pair)) a)", "duplicate object pattern field: name")
+
+  test "rejects & rest capture inside an object pattern":
+    expectLowerError("(let (([:name n & rest] pair)) rest)", "& rest capture is not supported in an object pattern")
+
+  test "rejects a stray :field key in a positional pattern":
+    expectLowerError("(let (([a :name n] pair)) n)", "a :field key is only valid in an object pattern")
+
+  test "rejects a stray :field key as a positional rest binding":
+    expectLowerError("(let (([a & :name] pair)) a)", "a :field key is only valid in an object pattern")
 
   test "rejects malformed typed bindings":
     expectLowerError("(let (((x 1) 2)) x)", "binding name must be a symbol or (name type)")
@@ -602,6 +635,9 @@ suite "lowering validation":
 
   test "rejects malformed destructuring pattern inside match":
     expectLowerError("(match n ([1 b] b))", "destructuring pattern element must be a symbol")
+
+  test "rejects object patterns in match (#47)":
+    expectLowerError("(match n ([:name a] a))", "object patterns are not supported in match")
 
   # ---------------------------------------------------------------------------
   # raise

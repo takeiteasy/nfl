@@ -45,6 +45,63 @@ suite "nfl backend":
   test "mutable destructuring binding":
     check nflExpr"(var (([a b] [1 2])) (set! a (+ a 10)) (+ a b))" == 13
 
+  test "object destructuring binding (#47)":
+    check nflExpr"""(let ((p (new ImportedPerson (name "Ada") (age 36))))
+      (let (([:name n :age a] p)) (& n ($ a))))""" == "Ada36"
+
+  test "object destructuring shorthand (#47)":
+    check nflExpr"""(let ((p (new ImportedPerson (name "Ada") (age 36))))
+      (let (([:name :age] p)) (& name ($ age))))""" == "Ada36"
+
+  test "nested object pattern inside a positional pattern (#47)":
+    check nflExpr"""(let ((p (new ImportedPerson (name "Ada") (age 36))))
+      (let (([[:age a]] [p])) a))""" == 36
+
+  test "destructuring in a var section (#47)":
+    check nflExpr"""(block
+      (var (([a b] [1 2])))
+      (set! a (+ a 10))
+      (+ a b))""" == 13
+
+  test "destructuring in a const section (#47)":
+    check nflExpr"(block (const (([a b] [1 2]))) (+ a b))" == 3
+
+  test "typed destructuring proc parameter (#47)":
+    check nflExpr"""(block
+      (type IntPair (tuple (x int) (y int)))
+      (proc addPair (([x y] IntPair)) (: int) (+ x y))
+      (addPair (tuple-new IntPair (x 5) (y 1))))""" == 6
+
+  test "destructuring proc parameter with an object pattern (#47)":
+    check nflExpr"""(block
+      (proc personAge (([:age a] ImportedPerson)) (: int) a)
+      (personAge (new ImportedPerson (name "Ada") (age 36))))""" == 36
+
+  test "typed destructuring do parameter (#47)":
+    check nflExpr"""(block
+      (type IntPair (tuple (x int) (y int)))
+      (var f (do (([a b] IntPair)) (: int) (+ a b)))
+      (f (tuple-new IntPair (x 36) (y 4))))""" == 40
+
+  test "typed destructuring template parameter (#47)":
+    check nflExpr"""(block
+      (type IntPair (tuple (x int) (y int)))
+      (template addPair (([x y] IntPair)) (: int) (+ x y))
+      (addPair (tuple-new IntPair (x 5) (y 2))))""" == 7
+
+  test "destructuring iterator parameter preserves break/yield (#47)":
+    check nflExpr"""(block
+      (type IntPair (tuple (x int) (y int)))
+      (iterator upTo (([lo hi] IntPair)) (: int)
+        (var i lo)
+        (while (< i hi)
+          (yield i)
+          (set! i (+ i 1))))
+      (var total 0)
+      (for (v (upTo (tuple-new IntPair (x 0) (y 5))))
+        (set! total (+ total v)))
+      total)""" == 10
+
   test "var and set expression":
     check nflExpr"(var ((x 1)) (set! x (+ x 2)) x)" == 3
 

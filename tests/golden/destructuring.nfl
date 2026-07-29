@@ -1,0 +1,6 @@
+(defmacro swap ([a b])
+  `(list ,b ,a))
+(swap (1 2))
+(defmacro grab-first-two (xs)
+  `(let (([a b] ,xs)) (+ a b)))
+(grab-first-two [10 20])

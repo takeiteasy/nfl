@@ -1,8 +1,15 @@
-; Destructuring bindings (#12) — a `let`/`var` binding target may be a
-; vector pattern that pulls values out of a tuple, array, or seq by
-; position.
+; Destructuring bindings — a binding target may be a pattern that pulls
+; values out of a value instead of binding it whole: a vector pattern by
+; position, or an object pattern by field name. This works in `let`/`var`
+; (local and section forms), `const` sections, routine parameters, and
+; required macro parameters.
 
 (type Point2D (tuple (x float) (y float)))
+(type Point3D
+  (object
+    (x float)
+    (y float)
+    (z float)))
 
 ; Positional bind against a named tuple.
 (let (([x y] (tuple-new Point2D (x 3.0) (y 4.0))))
@@ -28,3 +35,30 @@
 (var (([a b] [1 2]))
   (set! a (+ a 100))
   (echo "mutated: " a " " b))
+
+; An object pattern destructures by field name — a vector whose first
+; element is a `:field` keyword. A bare key with no following target is
+; shorthand for binding a variable named after the field.
+(let ((origin (new Point3D (x 1.0) (y 2.0) (z 3.0))))
+  (let (([:x px :y py] origin))
+    (echo "px: " px ", py: " py))
+  (let (([:x :y :z] origin))
+    (echo "shorthand: " x " " y " " z)))
+
+; A `var`/`const` section binding may also destructure — every bound name
+; requires a value, since a pattern never carries a type annotation.
+(var (([sx sy] [5 6])))
+(echo "section var: " sx " " sy)
+(const (([cx cy] [7 8])))
+(echo "section const: " cx " " cy)
+
+; A destructured routine parameter must carry an explicit type.
+(proc squaredDistance2D (([px py] Point2D)) (: float)
+  (+ (* px px) (* py py)))
+(echo "squared distance: " (squaredDistance2D (tuple-new Point2D (x 3.0) (y 4.0))))
+
+; A required macro parameter may also be a pattern — it destructures the
+; *argument's syntax form* at expansion time, not a runtime value.
+(defmacro sum-swapped ([a b])
+  `(+ ,b ,a))
+(echo "sum-swapped: " (sum-swapped (3 4)))

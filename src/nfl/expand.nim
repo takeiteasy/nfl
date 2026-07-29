@@ -8,6 +8,7 @@ import ./diagnostics
 import ./macros
 import ./reader
 import ./syntax
+import ./synforms
 
 const maxExpansionDepth = 100
 
@@ -74,7 +75,7 @@ proc parseKeyParam(item: Syntax): MacroKeyParam =
   raiseCompilerError(item.span, "&key parameter must be a symbol, (name default), or ((:key local) default)")
 
 proc parseMacroParams(params: Syntax): tuple[
-    names: seq[string],
+    names: seq[Syntax],
     optParams: seq[MacroOptParam],
     restParam: string,
     bodyParam: string,
@@ -157,10 +158,20 @@ proc parseMacroParams(params: Syntax): tuple[
 
     case mode
     of pmRequired:
-      if item.kind != sxSymbol:
-        raiseCompilerError(item.span, "required macro parameter must be a symbol")
-      checkDup(item.sym, item.span)
-      result.names.add item.sym
+      if item.kind == sxSymbol:
+        checkDup(item.sym, item.span)
+        result.names.add item
+      elif item.kind == sxVector:
+        # A destructuring pattern (#47) — matched against the argument's
+        # syntax form at bind time, not a runtime value, so object patterns
+        # (which need a real Nim value to dot-access) are rejected here.
+        var bound: seq[Syntax] = @[]
+        validatePattern(item, bound, rejectObjectIn = "macro parameters")
+        for name in bound:
+          checkDup(name.sym, name.span)
+        result.names.add item
+      else:
+        raiseCompilerError(item.span, "required macro parameter must be a symbol or a destructuring pattern")
     of pmOptional:
       let op = parseOptParam(item)
       checkDup(op.name, item.span)
@@ -191,9 +202,6 @@ proc parseDefmacro(sx: Syntax): MacroDef =
 
 # ---------- argument binding ----------
 
-proc isKeywordSym(sx: Syntax): bool =
-  sx.kind == sxSymbol and sx.sym.len >= 2 and sx.sym[0] == ':'
-
 proc splitCallArgs(call: Syntax): tuple[positional: seq[Syntax], keywords: Table[string, Syntax]] =
   # Split at the first :keyword symbol. Everything before is positional;
   # from there we expect alternating :key value pairs.
@@ -214,6 +222,42 @@ proc splitCallArgs(call: Syntax): tuple[positional: seq[Syntax], keywords: Table
     result.keywords[key] = call.items[i + 1]
     i += 2
 
+proc bindMacroParam(scope: var EvalScope; paramSx: Syntax; argForm: Syntax) =
+  ## Binds one required macro parameter against the corresponding positional
+  ## argument's *syntax form* — a bare symbol binds the whole form; a
+  ## destructuring pattern (#47) binds names to the form's sub-forms, the
+  ## same shape #12's `let`/`var` patterns use, but matched against syntax
+  ## rather than a runtime value (there is no "evaluate, then destructure"
+  ## step for macro parameters).
+  if paramSx.kind == sxSymbol:
+    scope[paramSx.sym] = argForm
+    return
+  if argForm.kind notin {sxList, sxVector}:
+    raiseCompilerError(argForm.span, "macro argument does not match destructuring pattern shape; expected a list or vector")
+  var restIdx = -1
+  for i, elem in paramSx.items:
+    if elem.kind == sxSymbol and elem.sym == "&":
+      restIdx = i
+      break
+  let headCount = if restIdx >= 0: restIdx else: paramSx.items.len
+  if restIdx >= 0:
+    if argForm.items.len < headCount:
+      raiseCompilerError(argForm.span, "macro argument has too few elements for destructuring pattern")
+  elif argForm.items.len != headCount:
+    raiseCompilerError(argForm.span, "macro argument has " & $argForm.items.len &
+      " elements, destructuring pattern expects " & $headCount)
+  for i in 0 ..< headCount:
+    let elem = paramSx.items[i]
+    if elem.kind == sxSymbol:
+      if elem.sym != "_":
+        scope[elem.sym] = argForm.items[i]
+    else:
+      bindMacroParam(scope, elem, argForm.items[i])
+  if restIdx >= 0:
+    let restName = paramSx.items[restIdx + 1]
+    if restName.kind == sxSymbol and restName.sym != "_":
+      scope[restName.sym] = newList(argForm.items[headCount .. argForm.items.high], argForm.span)
+
 proc bindMacroArgs(env: MacroEnv; def: MacroDef; call: Syntax): EvalScope =
   let (positional, keywords) = splitCallArgs(call)
   let hasRest = def.restParam.len > 0 or def.bodyParam.len > 0
@@ -229,8 +273,8 @@ proc bindMacroArgs(env: MacroEnv; def: MacroDef; call: Syntax): EvalScope =
       raiseCompilerError(call.span, def.name & " expects at least " & $minArgs & " arguments, got " & $positional.len)
 
   result = initTable[string, Syntax]()
-  for i, name in def.params:
-    result[name] = positional[i]
+  for i, paramSx in def.params:
+    bindMacroParam(result, paramSx, positional[i])
   var pos = def.params.len
 
   # optional params
@@ -292,10 +336,14 @@ proc bindMacroArgs(env: MacroEnv; def: MacroDef; call: Syntax): EvalScope =
 # without renaming it or registering it in scope, so both the binding and
 # every literal reference to it stay capturable/capturing.
 #
+# A #12/#47 destructuring pattern target is walked and every name it binds
+# is renamed (see `hygienicRenamePattern`) — `_`/`&`/`:field` markers are
+# preserved, only bound names change.
+#
 # Deliberately unhandled, and so left unrenamed (matching how the preamble
 # macros `let*`/`as->` already work, unaffected by this pass): a binding
 # whose target is itself an unquote (`,name`, a macro-computed name — the
-# macro author's own symbol) or a #12 destructuring vector pattern.
+# macro author's own symbol).
 
 type HygieneScope = Table[string, int]  # literal name -> assigned hygieneId
 
@@ -332,11 +380,46 @@ proc hygienicRenameGeneric(env: MacroEnv; sx: Syntax; scope: HygieneScope): Synt
   else:
     sx.copySyntax()
 
+proc hygienicRenamePattern(env: MacroEnv; pattern: Syntax; childScope: var HygieneScope): Syntax =
+  ## Renames every name a destructuring pattern (#12/#47) binds, registering
+  ## each in `childScope` like `renameHygienicTarget` — `_`, `&`, and object-
+  ## pattern `:field` keys are preserved as-is; only bound names change. A
+  ## shorthand `:field` (no explicit target) is rewritten to the explicit
+  ## `:field renamed-name` form so the rename isn't lost.
+  if pattern.isObjectPattern():
+    var items: seq[Syntax] = @[]
+    var i = 0
+    while i < pattern.items.len:
+      let key = pattern.items[i]
+      items.add key.copySyntax()
+      if i + 1 < pattern.items.len and not pattern.items[i + 1].isKeywordSym():
+        let elem = pattern.items[i + 1]
+        if elem.kind == sxSymbol:
+          items.add (if elem.sym == "_": elem.copySyntax() else: renameHygienicTarget(env, elem, childScope))
+        else:
+          items.add hygienicRenamePattern(env, elem, childScope)
+        i += 2
+      else:
+        let shorthandTarget = newSymbol(key.sym[1 .. ^1], key.span)
+        items.add renameHygienicTarget(env, shorthandTarget, childScope)
+        i += 1
+    return newVector(items, pattern.span)
+  var items: seq[Syntax] = @[]
+  for elem in pattern.items:
+    case elem.kind
+    of sxSymbol:
+      items.add (if elem.sym in ["_", "&"]: elem.copySyntax() else: renameHygienicTarget(env, elem, childScope))
+    of sxVector:
+      items.add hygienicRenamePattern(env, elem, childScope)
+    else:
+      items.add elem.copySyntax()
+  newVector(items, pattern.span)
+
 proc hygienicRenameTypedTarget(env: MacroEnv; target: Syntax; childScope: var HygieneScope): Syntax =
-  ## Renames the shared `symbol` / `(name type)` / `(unhygienic ...)`
-  ## binding-target shape used by let/var bindings, do params, and for loop
-  ## variables. Any other shape (an unquoted/computed name, a destructuring
-  ## vector pattern, …) is left untouched — see the module-level comment.
+  ## Renames the shared `symbol` / `(name type)` / `(unhygienic ...)` /
+  ## destructuring-pattern binding-target shape used by let/var bindings, do
+  ## params, and for loop variables. Any other shape (an unquoted/computed
+  ## name, …) is left untouched — see the module-level comment.
   let (inner, skip) = unwrapUnhygienicTarget(target)
   if skip:
     inner.copySyntax()
@@ -344,9 +427,15 @@ proc hygienicRenameTypedTarget(env: MacroEnv; target: Syntax; childScope: var Hy
     renameHygienicTarget(env, inner, childScope)
   elif inner.kind == sxList and inner.items.len > 0 and inner.items[0].isSymbol("unquote"):
     inner.copySyntax()
-  elif inner.kind == sxList and inner.items.len == 2 and inner.items[0].kind == sxSymbol and
+  elif inner.kind == sxVector:
+    hygienicRenamePattern(env, inner, childScope)
+  elif inner.kind == sxList and inner.items.len == 2 and
+      (inner.items[0].kind == sxSymbol or inner.items[0].kind == sxVector) and
       (inner.items[1].kind == sxSymbol or inner.items[1].kind == sxVector):
-    newList(@[renameHygienicTarget(env, inner.items[0], childScope), inner.items[1].copySyntax()], inner.span)
+    let newName =
+      if inner.items[0].kind == sxSymbol: renameHygienicTarget(env, inner.items[0], childScope)
+      else: hygienicRenamePattern(env, inner.items[0], childScope)
+    newList(@[newName, inner.items[1].copySyntax()], inner.span)
   else:
     inner.copySyntax()
 

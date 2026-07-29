@@ -111,53 +111,13 @@ proc validateTypeReference(sx: Syntax; what: string)
 proc isNamedArg(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol(":")
 
-proc validateVectorPattern(pattern: Syntax; names: var seq[Syntax])
-
-proc validateVectorPatternElem(elem: Syntax; names: var seq[Syntax]) =
-  case elem.kind
-  of sxSymbol:
-    if elem.sym != "_":
-      names.add elem
-  of sxVector:
-    validateVectorPattern(elem, names)
-  else:
-    raiseCompilerError(elem.span, "destructuring pattern element must be a symbol, _, or a nested vector pattern")
-
-proc validateVectorPattern(pattern: Syntax; names: var seq[Syntax]) =
-  ## Validates a destructuring vector pattern (#12) — `[a b]`, `[head &
-  ## rest]`, or a nested pattern like `[a [b c]]` — and collects every name
-  ## that must be declared, skipping `_` (the discard placeholder).
-  ## `&` marks the final element as a rest capture binding the remaining
-  ## slice; at most one is allowed, and it must be the second-to-last
-  ## element (immediately before the rest-binding name).
-  if pattern.items.len == 0:
-    raiseCompilerError(pattern.span, "destructuring pattern must not be empty")
-  var ampersands: seq[Syntax] = @[]
-  for elem in pattern.items:
-    if elem.kind == sxSymbol and elem.sym == "&":
-      ampersands.add elem
-  if ampersands.len > 1:
-    raiseCompilerError(ampersands[1].span, "destructuring pattern allows only one & rest capture")
-  if ampersands.len == 1:
-    if not (pattern.items[^2].kind == sxSymbol and pattern.items[^2].sym == "&"):
-      raiseCompilerError(ampersands[0].span, "& must be immediately followed by the final rest binding")
-    let restName = pattern.items[^1]
-    if restName.kind != sxSymbol:
-      raiseCompilerError(restName.span, "destructuring rest binding must be a symbol")
-    if restName.sym != "_":
-      names.add restName
-    for i in 0 ..< pattern.items.len - 2:
-      validateVectorPatternElem(pattern.items[i], names)
-    return
-  for elem in pattern.items:
-    validateVectorPatternElem(elem, names)
-
 proc bindingTargets(binding: Syntax): seq[Syntax] =
   ## Returns the name symbol(s) to declare for a binding pair `(target
   ## value)` or an annotated binding triple `(target {.pragma.} value)`.
-  ## `target` is a bare symbol, a typed `(name type)` pair, or — per #12 — a
-  ## destructuring vector pattern `[a b]` / `[head & rest]`, optionally
-  ## nested, in which case every name bound by the pattern is returned.
+  ## `target` is a bare symbol, a typed `(name type)` pair, or — per #12/#47 —
+  ## a destructuring pattern (a positional vector `[a b]` / `[head & rest]`
+  ## or an object pattern `[:field ...]`), optionally nested, in which case
+  ## every name bound by the pattern is returned.
   if binding.kind != sxList or binding.items.len notin {2, 3}:
     raiseCompilerError(binding.span, "binding must be a pair or annotated triple")
   if binding.items.len == 3:
@@ -174,7 +134,7 @@ proc bindingTargets(binding: Syntax): seq[Syntax] =
   if target.kind == sxVector:
     if binding.items.len == 3:
       raiseCompilerError(binding.items[1].span, "destructuring pattern cannot carry a pragma clause")
-    validateVectorPattern(target, result)
+    validatePattern(target, result)
     return
   raiseCompilerError(target.span, "binding name must be a symbol or (name type), or a destructuring pattern")
 
@@ -215,39 +175,46 @@ proc isVarSectionForm(sx: Syntax): bool =
   ## arity — `(var (bindings…) body…)` has 3+ items, a section has exactly 2.
   sx.items.len == 2 and not isDefvarForm(sx)
 
-proc sectionBindingParts(binding: Syntax; mutable: bool): tuple[target: Syntax, valueIdx: int] =
+proc sectionBindingParts(binding: Syntax; mutable: bool): tuple[targets: seq[Syntax], valueIdx: int] =
   ## Parses a single binding within a `var`/`const` section — a target,
   ## optional pragma, and optional value: `(target)`, `(target value)`,
   ## `(target {.pragma.})`, `(target {.pragma.} value)`. Unlike the local
   ## mutable-binding form (`bindingName`), a value may be omitted when the
   ## target carries an explicit type — but only for `var` sections; `const`
-  ## always requires a value, mirroring `lowerConst`.
+  ## always requires a value, mirroring `lowerConst`. `target` may also (#47)
+  ## be a destructuring pattern, in which case every name the pattern binds
+  ## is returned; a pattern target never carries a type, so it always
+  ## requires a value.
   if binding.kind != sxList or binding.items.len notin {1, 2, 3}:
     raiseCompilerError(binding.span, "binding must be a target, optional pragma, and optional value")
   let target = binding.items[0]
   var hasType = false
-  var baseTarget: Syntax
+  var targets: seq[Syntax] = @[]
   if target.kind == sxSymbol:
-    baseTarget = target
+    targets = @[target]
   elif target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and
       (target.items[1].kind == sxSymbol or target.items[1].kind == sxVector):
-    baseTarget = target.items[0]
+    targets = @[target.items[0]]
     validateTypeReference(target.items[1], "binding type")
     hasType = true
   elif target.kind == sxVector:
-    raiseCompilerError(target.span, "destructuring is not supported in var/const sections; use a local let/var binding instead")
+    validatePattern(target, targets)
   else:
-    raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
+    raiseCompilerError(target.span, "binding name must be a symbol or (name type), or a destructuring pattern")
   var pragmaIdx = -1
   var valueIdx = -1
   if binding.items.len == 2:
     if binding.items[1].isPragmaClause():
+      if target.kind == sxVector:
+        raiseCompilerError(binding.items[1].span, "destructuring pattern cannot carry a pragma clause")
       pragmaIdx = 1
     else:
       valueIdx = 1
   elif binding.items.len == 3:
     if not binding.items[1].isPragmaClause():
       raiseCompilerError(binding.items[1].span, "expected pragma clause between binding target and value")
+    if target.kind == sxVector:
+      raiseCompilerError(binding.items[1].span, "destructuring pattern cannot carry a pragma clause")
     pragmaIdx = 1
     valueIdx = 2
   if pragmaIdx >= 0:
@@ -257,7 +224,7 @@ proc sectionBindingParts(binding: Syntax; mutable: bool): tuple[target: Syntax, 
       raiseCompilerError(binding.span, "const section binding requires a value")
     if not hasType:
       raiseCompilerError(binding.span, "var section binding without a type annotation requires a value")
-  result = (baseTarget, valueIdx)
+  result = (targets, valueIdx)
 
 proc lowerVarSection(ctx: var LowerContext; sx: Syntax; mutable: bool) =
   let bindings = sx.items[1]
@@ -268,7 +235,7 @@ proc lowerVarSection(ctx: var LowerContext; sx: Syntax; mutable: bool) =
     let parts = sectionBindingParts(binding, mutable)
     if parts.valueIdx >= 0:
       lowerExpr(ctx, binding.items[parts.valueIdx])
-    targets.add parts.target
+    targets.add parts.targets
   let kind = if mutable: bkMutable else: bkImmutable
   for target in targets:
     declare(ctx, target, kind)
@@ -343,8 +310,18 @@ proc lowerParam(ctx: var LowerContext; param: Syntax) =
       (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
     validateTypeReference(param.items[1], "parameter type")
     declare(ctx, param.items[0], bkImmutable)
+  elif param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxVector and
+      (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
+    # A destructured parameter (#47) — `([a b] Point)` — must carry an
+    # explicit type: Nim formal params feed the pattern's synthetic carrier
+    # param directly, and that param always needs a concrete type.
+    validateTypeReference(param.items[1], "parameter type")
+    var names: seq[Syntax] = @[]
+    validatePattern(param.items[0], names)
+    for name in names:
+      declare(ctx, name, bkImmutable)
   elif param.kind == sxVector:
-    raiseCompilerError(param.span, "destructuring is not supported in do/proc parameters; use a local let binding in the body instead")
+    raiseCompilerError(param.span, "a destructured parameter requires a type annotation, e.g. ([a b] Point)")
   else:
     raiseCompilerError(param.span, "do parameter must be a symbol or (name type)")
 
@@ -778,8 +755,10 @@ proc lowerMatchPattern(ctx: var LowerContext; pattern: Syntax) =
   ## other bare symbol matches anything and binds that name; `'sym` (the
   ## reader's quote sugar) matches by equality against the symbol `sym` —
   ## e.g. an enum label or a module-level const; a vector pattern
-  ## destructures like #12's `let`/`var` patterns, reusing
-  ## `validateVectorPattern`.
+  ## destructures like #12's `let`/`var` patterns, reusing `validatePattern`.
+  ## Object patterns (#47) are rejected here — there is no arity/field-
+  ## presence test `emitMatchTest` can emit for a Nim object, unlike the
+  ## `nflMatchArity` runtime check available for positional patterns.
   case pattern.kind
   of sxNil, sxBool, sxInt, sxFloat, sxString:
     discard
@@ -788,7 +767,7 @@ proc lowerMatchPattern(ctx: var LowerContext; pattern: Syntax) =
       declare(ctx, pattern, bkImmutable)
   of sxVector:
     var names: seq[Syntax] = @[]
-    validateVectorPattern(pattern, names)
+    validatePattern(pattern, names, rejectObjectIn = "match")
     for name in names:
       declare(ctx, name, bkImmutable)
   of sxList:

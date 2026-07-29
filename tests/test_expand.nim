@@ -45,6 +45,51 @@ suite "macro expansion":
 """
     check sx.renderSyntax() == "(if true (block (echo \"yes\") 3) nil)"
 
+  test "expands a destructuring pattern in a required macro parameter (#47)":
+    let sx = expandOne """
+(defmacro swap ([a b]) `(list ,b ,a))
+(swap (1 2))
+"""
+    check sx.renderSyntax() == "(list 2 1)"
+
+  test "expands a nested destructuring pattern in a macro parameter (#47)":
+    let sx = expandOne """
+(defmacro firstOfFirst ([[a b] c]) a)
+(firstOfFirst ((1 2) 3))
+"""
+    check sx.renderSyntax() == "1"
+
+  test "expands a rest capture in a macro parameter pattern (#47)":
+    let sx = expandOne """
+(defmacro headTail ([head & rest]) `(list ,head ,@rest))
+(headTail (1 2 3))
+"""
+    check sx.renderSyntax() == "(list 1 2 3)"
+
+  test "rejects a macro argument arity mismatch against a pattern parameter (#47)":
+    expectExpandError("""
+(defmacro swap ([a b]) `(list ,b ,a))
+(swap (1 2 3))
+""", "macro argument has 3 elements, destructuring pattern expects 2")
+
+  test "rejects a non-list macro argument against a pattern parameter (#47)":
+    expectExpandError("""
+(defmacro swap ([a b]) `(list ,b ,a))
+(swap 1)
+""", "macro argument does not match destructuring pattern shape")
+
+  test "rejects an object pattern in a macro parameter (#47)":
+    expectExpandError("""
+(defmacro bad ([:name n]) n)
+(bad (1))
+""", "object patterns are not supported in macro parameters")
+
+  test "rejects a duplicate name across a macro parameter pattern (#47)":
+    expectExpandError("""
+(defmacro bad ([a a]) a)
+(bad (1 2))
+""", "duplicate macro parameter: a")
+
   test "named block evaluates like an anonymous block in a macro body (#41)":
     let sx = expandOne """
 (defmacro pick ()
@@ -207,6 +252,39 @@ suite "macro expansion":
     check innerBoundName.hygieneId != 0
     check outerBoundName.hygieneId != innerBoundName.hygieneId
 
+  test "a destructuring pattern's bound names are hygienically renamed (#47)":
+    let sx = expandOne """
+(defmacro grab-first-two (xs) `(let (([a b] ,xs)) (+ a b)))
+(let ((a 99)) (grab-first-two [1 2 3]))
+"""
+    let innerLet = sx.items[2]
+    let pattern = innerLet.items[1].items[0].items[0]
+    let boundA = pattern.items[0]
+    let boundB = pattern.items[1]
+    let bodyRefA = innerLet.items[2].items[1]
+    let bodyRefB = innerLet.items[2].items[2]
+    check boundA.hygieneId != 0
+    check boundB.hygieneId != 0
+    check boundA.hygieneId != boundB.hygieneId
+    check bodyRefA.hygieneId == boundA.hygieneId
+    check bodyRefB.hygieneId == boundB.hygieneId
+
+  test "an object pattern's shorthand key is hygienically renamed to an explicit form (#47)":
+    let sx = expandOne """
+(defmacro grab-name (p) `(let (([:name] ,p)) name))
+(let ((name 5)) (grab-name x))
+"""
+    let innerLet = sx.items[2]
+    let pattern = innerLet.items[1].items[0].items[0]
+    check pattern.items.len == 2
+    check pattern.items[0].sym == ":name"
+    check pattern.items[0].hygieneId == 0
+    let boundName = pattern.items[1]
+    check boundName.sym == "name"
+    check boundName.hygieneId != 0
+    let bodyRef = innerLet.items[2]
+    check bodyRef.hygieneId == boundName.hygieneId
+
   test "unhygienic escape hatch leaves the binding and its references unrenamed":
     let sx = expandOne """
 (defmacro with-it (test &body body) `(let (((unhygienic it) ,test)) (block ,@body)))
@@ -260,7 +338,8 @@ suite "golden macro expansion":
   test "core macro fixtures":
     for sourcePath in ["tests/golden/core_macros.nfl",
                        "tests/golden/escaped_symbols.nfl",
-                       "tests/golden/hygiene.nfl"]:
+                       "tests/golden/hygiene.nfl",
+                       "tests/golden/destructuring.nfl"]:
       let expectedPath = sourcePath.changeFileExt("out")
       let actual = expandSource(readFile(sourcePath), sourcePath).renderForms()
       check actual.strip() == readFile(expectedPath).strip()

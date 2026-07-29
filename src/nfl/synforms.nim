@@ -71,3 +71,100 @@ proc lambdaBodyStart*(sx: Syntax): int =
 
 proc formName*(sx: Syntax): string =
   if sx.kind == sxSymbol: sx.sym else: "form"
+
+proc isKeywordSym*(sx: Syntax): bool =
+  ## True for a `:field`-style keyword symbol — used both by macro `&key`
+  ## parameter parsing (expand.nim) and by destructuring object patterns
+  ## (`[:name n]`, #47).
+  sx.kind == sxSymbol and sx.sym.len >= 2 and sx.sym[0] == ':'
+
+proc isObjectPattern*(pattern: Syntax): bool =
+  ## A destructuring vector pattern (#12) is an *object* pattern (matches by
+  ## field name, #47) rather than a positional one when its first element is
+  ## a `:field` keyword; anything else — including an empty vector — is
+  ## positional.
+  pattern.kind == sxVector and pattern.items.len > 0 and pattern.items[0].isKeywordSym()
+
+proc validatePattern*(pattern: Syntax; names: var seq[Syntax]; rejectObjectIn: string = "")
+
+proc validatePatternElem(elem: Syntax; names: var seq[Syntax]; rejectObjectIn: string) =
+  case elem.kind
+  of sxSymbol:
+    if elem.isKeywordSym():
+      raiseCompilerError(elem.span, "a :field key is only valid in an object pattern, whose first element must be a :field keyword")
+    if elem.sym != "_":
+      names.add elem
+  of sxVector:
+    validatePattern(elem, names, rejectObjectIn)
+  else:
+    raiseCompilerError(elem.span, "destructuring pattern element must be a symbol, _, or a nested vector pattern")
+
+proc validateObjectPattern(pattern: Syntax; names: var seq[Syntax]; rejectObjectIn: string) =
+  ## Validates an object pattern `[:field1 target1? :field2 target2? …]` — a
+  ## `:field` keyword optionally followed by a binding target (symbol, `_`,
+  ## or a nested pattern). A bare key with no following target is shorthand,
+  ## binding a variable named after the field. Collects every bound name,
+  ## skipping `_`.
+  var seenFields: seq[string] = @[]
+  var i = 0
+  while i < pattern.items.len:
+    let key = pattern.items[i]
+    if not key.isKeywordSym():
+      if key.kind == sxSymbol and key.sym == "&":
+        raiseCompilerError(key.span, "& rest capture is not supported in an object pattern")
+      raiseCompilerError(key.span, "object pattern key must be a :field keyword")
+    let field = key.sym[1 .. ^1]
+    if field in seenFields:
+      raiseCompilerError(key.span, "duplicate object pattern field: " & field)
+    seenFields.add field
+    if i + 1 < pattern.items.len and not pattern.items[i + 1].isKeywordSym():
+      let target = pattern.items[i + 1]
+      if target.kind == sxSymbol and target.sym == "&":
+        raiseCompilerError(target.span, "& rest capture is not supported in an object pattern")
+      validatePatternElem(target, names, rejectObjectIn)
+      i += 2
+    else:
+      names.add newSymbol(field, key.span)
+      i += 1
+
+proc validatePattern*(pattern: Syntax; names: var seq[Syntax]; rejectObjectIn: string = "") =
+  ## Validates a destructuring pattern (#12/#47) — a positional vector
+  ## pattern `[a b]` / `[head & rest]`, or an object pattern `[:field ...]` —
+  ## optionally nested, and collects every name that must be declared,
+  ## skipping `_` (the discard placeholder). `&` marks the final element of a
+  ## positional pattern as a rest capture binding the remaining slice; at
+  ## most one is allowed, and it must be the second-to-last element
+  ## (immediately before the rest-binding name).
+  ##
+  ## `rejectObjectIn`, when non-empty, names the context (e.g. "match",
+  ## "macro parameters") in which object patterns are not meaningful and
+  ## should be rejected with a dedicated diagnostic; it propagates into
+  ## nested patterns too.
+  if pattern.items.len == 0:
+    raiseCompilerError(pattern.span, "destructuring pattern must not be empty")
+  if pattern.isObjectPattern():
+    if rejectObjectIn.len > 0:
+      raiseCompilerError(pattern.span, "object patterns are not supported in " & rejectObjectIn & "; use a vector pattern")
+    validateObjectPattern(pattern, names, rejectObjectIn)
+    return
+  var ampersands: seq[Syntax] = @[]
+  for elem in pattern.items:
+    if elem.kind == sxSymbol and elem.sym == "&":
+      ampersands.add elem
+  if ampersands.len > 1:
+    raiseCompilerError(ampersands[1].span, "destructuring pattern allows only one & rest capture")
+  if ampersands.len == 1:
+    if not (pattern.items[^2].kind == sxSymbol and pattern.items[^2].sym == "&"):
+      raiseCompilerError(ampersands[0].span, "& must be immediately followed by the final rest binding")
+    let restName = pattern.items[^1]
+    if restName.kind != sxSymbol:
+      raiseCompilerError(restName.span, "destructuring rest binding must be a symbol")
+    if restName.isKeywordSym():
+      raiseCompilerError(restName.span, "a :field key is only valid in an object pattern, whose first element must be a :field keyword")
+    if restName.sym != "_":
+      names.add restName
+    for i in 0 ..< pattern.items.len - 2:
+      validatePatternElem(pattern.items[i], names, rejectObjectIn)
+    return
+  for elem in pattern.items:
+    validatePatternElem(elem, names, rejectObjectIn)

@@ -17,7 +17,10 @@ type
 
   MacroDef* = object
     name*: string
-    params*: seq[string]           # required positional params
+    params*: seq[Syntax]           # required positional params — a bare
+                                    # symbol, or (#47) a destructuring
+                                    # pattern (`sxVector`) matched against
+                                    # the argument's syntax form
     optParams*: seq[MacroOptParam] # &optional params
     restParam*: string             # &rest or dotted-pair rest (empty if none)
     bodyParam*: string             # &body (empty if none)

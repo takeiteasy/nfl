@@ -499,23 +499,43 @@ proc emitLabelledBlock(ctx: var EmitContext; sx: Syntax): NimNode =
     nnkElifBranch.newTree(isVoidCheck, voidBranch),
     nnkElse.newTree(valueBranch)).attachLineInfo(sx)
 
-proc emitVectorPatternIdentDefs(ctx: var EmitContext; pattern: Syntax; valueNode: NimNode; mutable: bool; defs: var seq[NimNode]) =
+proc emitPatternIdentDefs(ctx: var EmitContext; pattern: Syntax; valueNode: NimNode; symKind: NimSymKind; defs: var seq[NimNode]) =
   ## Emits a hidden temp (`genSym`) bound to `valueNode`, plus one
   ## `nnkIdentDefs` per pattern name indexing — or, for a `& rest` capture,
-  ## slicing — into that temp. A nested vector pattern recurses with a fresh
-  ## temp bound to its element's accessor expression. Mirrors lower.nim's
-  ## `validateVectorPattern`, which runs first in the normal compiler
-  ## pipeline (`nflModule`/`nflExpr`) and rejects malformed shapes; this
-  ## assumes a valid pattern, the same division of labor `emitNew` and
-  ## `lowerNew` use for field-initializer shape.
+  ## slicing — into that temp; an object pattern (#47) instead dot-accesses
+  ## each named field. A nested pattern recurses with a fresh temp bound to
+  ## its element's accessor expression. Mirrors lower.nim's `validatePattern`,
+  ## which runs first in the normal compiler pipeline (`nflModule`/`nflExpr`)
+  ## and rejects malformed shapes; this assumes a valid pattern, the same
+  ## division of labor `emitNew` and `lowerNew` use for field-initializer
+  ## shape.
   ##
-  ## `mutable` picks the temp's genSym kind to match the enclosing section
-  ## (`nnkVarSection` vs `nnkLetSection`) — Nim rejects mixing a `genSym`'d
-  ## symbol's declared kind with a different section kind.
+  ## `symKind` picks the temp's genSym kind to match the enclosing section
+  ## (`nnkVarSection`, `nnkLetSection`, or `nnkConstSection`) — Nim rejects
+  ## mixing a `genSym`'d symbol's declared kind with a different section
+  ## kind.
   if pattern.items.len == 0:
     raiseCompilerError(pattern.span, "destructuring pattern must not be empty")
-  let tmp = genSym((if mutable: nskVar else: nskLet), "d")
+  let tmp = genSym(symKind, "d")
   defs.add nnkIdentDefs.newTree(tmp, newEmptyNode(), valueNode).attachLineInfo(pattern)
+  if pattern.isObjectPattern():
+    var i = 0
+    while i < pattern.items.len:
+      let key = pattern.items[i]
+      let field = key.sym[1 .. ^1]
+      let accessor = nnkDotExpr.newTree(tmp.copyNimTree(), ident(field)).attachLineInfo(key)
+      if i + 1 < pattern.items.len and not pattern.items[i + 1].isKeywordSym():
+        let elem = pattern.items[i + 1]
+        if elem.kind == sxSymbol:
+          if elem.sym != "_":
+            defs.add nnkIdentDefs.newTree(ctx.identForSymbol(elem), newEmptyNode(), accessor).attachLineInfo(elem)
+        else:
+          ctx.emitPatternIdentDefs(elem, accessor, symKind, defs)
+        i += 2
+      else:
+        defs.add nnkIdentDefs.newTree(ctx.identForSymbol(newSymbol(field, key.span)), newEmptyNode(), accessor).attachLineInfo(key)
+        i += 1
+    return
   var restIdx = -1
   for i, elem in pattern.items:
     if elem.kind == sxSymbol and elem.sym == "&":
@@ -529,7 +549,7 @@ proc emitVectorPatternIdentDefs(ctx: var EmitContext; pattern: Syntax; valueNode
       if elem.sym != "_":
         defs.add nnkIdentDefs.newTree(ctx.identForSymbol(elem), newEmptyNode(), accessor).attachLineInfo(elem)
     elif elem.kind == sxVector:
-      ctx.emitVectorPatternIdentDefs(elem, accessor, mutable, defs)
+      ctx.emitPatternIdentDefs(elem, accessor, symKind, defs)
     else:
       raiseCompilerError(elem.span, "destructuring pattern element must be a symbol, _, or a nested vector pattern")
   if restIdx >= 0 and restIdx + 1 <= pattern.items.high:
@@ -567,7 +587,7 @@ proc emitBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable: bool):
     if pragma != nil:
       raiseCompilerError(pragma.span, "destructuring pattern cannot carry a pragma clause")
     var defs: seq[NimNode] = @[]
-    ctx.emitVectorPatternIdentDefs(target, value, mutable, defs)
+    ctx.emitPatternIdentDefs(target, value, (if mutable: nskVar else: nskLet), defs)
     return defs
   raiseCompilerError(target.span, "binding name must be a symbol or (name type), or a destructuring pattern")
 
@@ -591,19 +611,23 @@ proc isVarSectionForm(sx: Syntax): bool =
   ## list grammar with no body: `(var ((x 1) (y 2)))`.
   sx.items.len == 2 and not isDefvarForm(sx)
 
-proc emitSectionBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable: bool): NimNode =
+proc emitSectionBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable: bool): seq[NimNode] =
   ## Mirrors lower.nim's sectionBindingParts. Unlike emitBindingIdentDefs
   ## (used by the local mutable-binding form, which always requires a
   ## value), a `var` section binding may omit the value when the target
   ## carries an explicit type — the value slot is then emitted empty
   ## (zero-initialized), matching emitVarDecl's single-declaration behavior.
-  ## `const` sections always require a value.
+  ## `const` sections always require a value. `target` may also (#47) be a
+  ## destructuring pattern, in which case every identDefs the pattern binds
+  ## is returned — a pattern target never carries a type, so it always
+  ## requires a value.
   if binding.kind != sxList or binding.items.len notin {1, 2, 3}:
     raiseCompilerError(binding.span, "binding must be a target, optional pragma, and optional value")
   let target = binding.items[0]
   var nameSx: Syntax
   var typeIdent: NimNode = newEmptyNode()
   var hasType = false
+  var isPattern = false
   if target.kind == sxSymbol:
     nameSx = target
   elif target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and
@@ -611,16 +635,22 @@ proc emitSectionBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable:
     nameSx = target.items[0]
     typeIdent = emitTypeRef(target.items[1])
     hasType = true
+  elif target.kind == sxVector:
+    isPattern = true
   else:
-    raiseCompilerError(target.span, "binding name must be a symbol or (name type)")
+    raiseCompilerError(target.span, "binding name must be a symbol or (name type), or a destructuring pattern")
   var pragma: Syntax = nil
   var valueIdx = -1
   if binding.items.len == 2:
     if binding.items[1].isPragmaClause():
+      if isPattern:
+        raiseCompilerError(binding.items[1].span, "destructuring pattern cannot carry a pragma clause")
       pragma = binding.items[1]
     else:
       valueIdx = 1
   elif binding.items.len == 3:
+    if isPattern:
+      raiseCompilerError(binding.items[1].span, "destructuring pattern cannot carry a pragma clause")
     pragma = binding.items[1]
     valueIdx = 2
   if valueIdx < 0:
@@ -629,11 +659,15 @@ proc emitSectionBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable:
     if not hasType:
       raiseCompilerError(binding.span, "var section binding without a type annotation requires a value")
   let valueNode = if valueIdx >= 0: ctx.emitExpr(binding.items[valueIdx]) else: newEmptyNode()
-  nnkIdentDefs.newTree(
+  if isPattern:
+    var defs: seq[NimNode] = @[]
+    ctx.emitPatternIdentDefs(target, valueNode, (if mutable: nskVar else: nskConst), defs)
+    return defs
+  @[nnkIdentDefs.newTree(
     ctx.pragmaDeclIdent(nameSx, pragma, "binding name"),
     typeIdent,
     valueNode
-  ).attachLineInfo(binding)
+  ).attachLineInfo(binding)]
 
 proc emitVarSection(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
   let bindings = sx.items[1]
@@ -641,15 +675,15 @@ proc emitVarSection(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
     raiseCompilerError(bindings.span, formName(sx.items[0]) & " section expects at least one binding")
   var section = if mutable: nnkVarSection.newTree() else: nnkConstSection.newTree()
   for binding in bindings.items:
-    let identDefs = ctx.emitSectionBindingIdentDefs(binding, mutable)
-    if mutable:
-      section.add identDefs
-    else:
-      # const sections use nnkConstDef rather than nnkIdentDefs; reuse the
-      # same (name, type, value) children emitSectionBindingIdentDefs built.
-      section.add nnkConstDef.newTree(
-        identDefs[0], identDefs[1], identDefs[2]
-      ).attachLineInfo(binding)
+    for identDefs in ctx.emitSectionBindingIdentDefs(binding, mutable):
+      if mutable:
+        section.add identDefs
+      else:
+        # const sections use nnkConstDef rather than nnkIdentDefs; reuse the
+        # same (name, type, value) children emitSectionBindingIdentDefs built.
+        section.add nnkConstDef.newTree(
+          identDefs[0], identDefs[1], identDefs[2]
+        ).attachLineInfo(binding)
   section.attachLineInfo(sx)
 
 proc emitIf(ctx: var EmitContext; sx: Syntax): NimNode =
@@ -677,13 +711,24 @@ proc emitSet(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "set!", sx.items.len - 1, 2)
   nnkAsgn.newTree(ctx.identForSymbol(sx.items[1]), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)
 
-proc emitParam(ctx: var EmitContext; param: Syntax): NimNode =
+proc emitParam(ctx: var EmitContext; param: Syntax; patternDefs: var seq[NimNode]): NimNode =
+  ## Emits one `nnkIdentDefs` for the formal-params list. A destructured
+  ## parameter (#47) — `([a b] Point)` — instead emits a synthetic gensym'd
+  ## carrier param and appends the pattern's accessor `nnkIdentDefs` to
+  ## `patternDefs`, for the caller to assemble into a body-prelude
+  ## `nnkLetSection` (see `emitLambda`/`emitRoutine`).
   if param.kind == sxSymbol:
     return nnkIdentDefs.newTree(ctx.identForSymbol(param), newEmptyNode(), newEmptyNode()).attachLineInfo(param)
   if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and
       (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
     return nnkIdentDefs.newTree(ctx.identForSymbol(param.items[0]), emitTypeRef(param.items[1]), newEmptyNode()).attachLineInfo(param)
-  raiseCompilerError(param.span, "do parameter must be a symbol or (name type)")
+  if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxVector and
+      (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
+    let carrier = genSym(nskParam, "p")
+    let typeIdent = emitTypeRef(param.items[1])
+    ctx.emitPatternIdentDefs(param.items[0], carrier.copyNimTree(), nskLet, patternDefs)
+    return nnkIdentDefs.newTree(carrier, typeIdent, newEmptyNode()).attachLineInfo(param)
+  raiseCompilerError(param.span, "do parameter must be a symbol or (name type), or a typed destructuring pattern")
 
 proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len < 3:
@@ -698,15 +743,23 @@ proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
   if bodyStart == 3:
     returnType = emitTypeRef(sx.items[2].items[1])
   var formalParams = nnkFormalParams.newTree(returnType)
+  var patternDefs: seq[NimNode] = @[]
   for param in params.items:
-    formalParams.add ctx.emitParam(param)
+    formalParams.add ctx.emitParam(param, patternDefs)
   # `break lbl`/`break` cannot cross a routine boundary, so a bare `break`'s
   # target loop (like `namedBlocks`, see its comment in `lowerLambda`) must
   # never leak in from an enclosing routine.
   let savedBareBreak = ctx.bareBreakLabel
   ctx.bareBreakLabel = nil
-  let bodyNode = ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
+  var bodyNode = ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ctx.bareBreakLabel = savedBareBreak
+  if patternDefs.len > 0:
+    # Destructured params (#47) bind via a body-prelude `let` section, same
+    # shape as `emitLetLike` and `emitMatchClauseBody`.
+    var section = nnkLetSection.newTree()
+    for identDefs in patternDefs:
+      section.add identDefs
+    bodyNode = emitBlockExpr(@[section], bodyNode)
   nnkLambda.newTree(
     newEmptyNode(),
     newEmptyNode(),
@@ -786,15 +839,16 @@ proc emitRoutine(ctx: var EmitContext; sx: Syntax; nodeKind: NimNodeKind;
     returnType = emitTypeRef(annotation)
 
   var formalParams = nnkFormalParams.newTree(returnType)
+  var patternDefs: seq[NimNode] = @[]
   for param in params.items:
-    formalParams.add ctx.emitParam(param)
+    formalParams.add ctx.emitParam(param, patternDefs)
 
   # `break lbl`/`break` cannot cross a routine boundary — reset for the same
   # reason as `namedBlocks` (see `lowerRoutine`'s comment): a bare `break`'s
   # target loop from an enclosing routine must never leak into this one.
   let savedBareBreak = ctx.bareBreakLabel
   ctx.bareBreakLabel = nil
-  let bodyNode =
+  var bodyNode =
     if stmtBody:
       # Iterator bodies are pure statement sequences — do not use emitBodyExpr
       # which would wrap the last item as a value-producing expression.
@@ -805,6 +859,23 @@ proc emitRoutine(ctx: var EmitContext; sx: Syntax; nodeKind: NimNodeKind;
     else:
       ctx.emitBodyExpr(sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ctx.bareBreakLabel = savedBareBreak
+
+  if patternDefs.len > 0:
+    var section = nnkLetSection.newTree()
+    for identDefs in patternDefs:
+      section.add identDefs
+    if stmtBody:
+      # A bare `nnkBlockStmt` wrap would retarget an unlabelled `break`
+      # inside an iterator body, so prepend the prelude section into the
+      # existing statement list instead of wrapping it (see emitLambda /
+      # emitLetLike for the expression-body case, which can safely wrap).
+      var stmts = newStmtList()
+      stmts.add section
+      for child in bodyNode.children:
+        stmts.add child
+      bodyNode = stmts
+    else:
+      bodyNode = emitBlockExpr(@[section], bodyNode)
 
   nodeKind.newTree(
     ctx.declIdent(name, formName & " name", allowOperator = true),
@@ -1274,14 +1345,15 @@ proc emitMatchTest(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): NimNode
 proc emitMatchBindings(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): seq[NimNode] =
   ## Emits the accessor `nnkIdentDefs` a match pattern binds against `tmp` —
   ## a bare symbol binds the whole scrutinee; a vector pattern destructures
-  ## it via #12's `emitVectorPatternIdentDefs`; every other pattern kind
+  ## it via #12's `emitPatternIdentDefs` (object patterns are rejected by
+  ## `lowerMatchPattern` before this ever runs); every other pattern kind
   ## (literals, `_`, `'sym`) binds nothing.
   case pattern.kind
   of sxSymbol:
     if pattern.sym != "_":
       result = @[nnkIdentDefs.newTree(ctx.identForSymbol(pattern), newEmptyNode(), tmp.copyNimTree()).attachLineInfo(pattern)]
   of sxVector:
-    ctx.emitVectorPatternIdentDefs(pattern, tmp.copyNimTree(), false, result)
+    ctx.emitPatternIdentDefs(pattern, tmp.copyNimTree(), nskLet, result)
   else:
     discard
 

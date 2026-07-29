@@ -17,6 +17,20 @@ The parameters receive unevaluated s-expressions. The body should return a new s
      (set! ,b tmp)))
 ```
 
+A required parameter may also be a destructuring [vector
+pattern](language-reference.md#destructuring): it destructures the
+*argument's syntax form* (not a runtime value) at expansion time, so the
+call-site argument must literally be a list/vector of matching shape.
+Object patterns aren't supported here — there's no value to dot-access at
+expansion time, only syntax.
+
+```lisp
+(defmacro swap ([a b])
+  `(list ,b ,a))
+
+(swap (1 2))    ; -> (list 2 1)
+```
+
 ## Variadic parameters
 
 Use `&rest` to collect remaining arguments into a list, and `&body` as an alias:
@@ -74,14 +88,12 @@ the caller passes in:
                      ; the caller's own tmp directly into the macro's body.
 ```
 
-This covers a binding target that is a literal symbol or a typed
-`(name type)` pair. It does **not** cover:
-
-- a binding target that is itself unquoted (`,name`) — a name the macro
-  computes at expansion time is the macro author's own symbol and is left
-  as-is (this is how the preamble's `let*` and `as->` work);
-- a [destructuring](language-reference.md#destructuring) vector-pattern
-  target — left unrenamed for now.
+This covers a binding target that is a literal symbol, a typed
+`(name type)` pair, or a [destructuring](language-reference.md#destructuring)
+pattern (every name the pattern binds gets its own renamed identity). It
+does **not** cover a binding target that is itself unquoted (`,name`) — a
+name the macro computes at expansion time is the macro author's own symbol
+and is left as-is (this is how the preamble's `let*` and `as->` work).
 
 ### `(unhygienic sym)` — intentional capture
 
