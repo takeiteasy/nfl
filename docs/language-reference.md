@@ -49,6 +49,41 @@ Multiple bindings in one `var`:
   (echo (+ a b)))
 ```
 
+### Section declarations
+
+A `var` or `const` whose bindings are a *list of bindings* and has no
+body — as opposed to the single-declaration form above, or the
+mutable-binding-with-body form below — declares several names together at
+module/statement scope:
+
+```lisp
+(var ((a 1) (b 2)))
+(const ((pi 3.14159) (e 2.71828)))
+```
+
+It's distinguished from the local mutable-binding form purely by shape:
+no body follows the bindings list. Each binding is one of:
+
+```lisp
+(target)                      ; type annotation only (var; zero-initialized)
+(target value)
+(target {.pragma.})            ; type annotation only, with a pragma
+(target {.pragma.} value)
+```
+
+`target` is a bare symbol, a typed `(name type)` pair, or a
+[destructuring pattern](#destructuring). A value may be omitted only for
+`var`, and only when the target carries an explicit type (Nim
+zero-initializes it) — `const` always requires a value, and a
+destructuring-pattern target never carries a type, so it always requires
+a value too:
+
+```lisp
+(var (((count int)) ((total int))))   ; zero-initialized
+(var (([a b] pair)))                   ; destructuring — requires a value
+(const (([a b] pair)))
+```
+
 ### `let` — local immutable binding
 
 ```lisp
@@ -98,9 +133,10 @@ There is no `&` rest capture for object patterns.
 (var (([a b] pair)) (set! a (+ a 1)) a)
 ```
 
-A `var`/`const` section binding may also destructure — every name the
-pattern binds is declared, and (matching a section's usual rules) the
-binding always requires a value since a pattern never carries a type:
+A `var`/`const` [section](#section-declarations) binding may also
+destructure — every name the pattern binds is declared, and (matching a
+section's usual rules) the binding always requires a value since a
+pattern never carries a type:
 
 ```lisp
 (var (([a b] pair)))
@@ -141,6 +177,9 @@ to dot-access at expansion time — only syntax).
 (const name* value)            ; exported
 (const (name type) value)      ; with type annotation
 ```
+
+Multiple constants can be declared together — see [Section
+declarations](#section-declarations).
 
 ## Procedures
 
