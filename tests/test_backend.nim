@@ -299,6 +299,10 @@ nflModule """
     (age int)))
 (type Mood
   (enum happy sad))
+(type ErrCode
+  (enum (Ok 0) (NotFound 404) ServerError))
+(var errCodeOrdinal (ord NotFound))
+(var errCodeSuccessorOrdinal (ord ServerError))
 (proc incCount ((x Count)) (: Count)
   (+ x 1))
 (proc personAge ((p Person)) (: int)
@@ -648,6 +652,10 @@ suite "nfl module backend":
 
   test "enum type definition":
     check favoriteMood == happy
+
+  test "enum type definition with explicit ordinals":
+    check errCodeOrdinal == 404
+    check errCodeSuccessorOrdinal == 405
 
   test "exported proc is callable under its base name":
     check publicGreet("world") == "WORLD"

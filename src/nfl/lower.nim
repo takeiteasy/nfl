@@ -1066,19 +1066,33 @@ proc lowerRefType(sx: Syntax) =
   else:
     raiseCompilerError(inner.span, "ref base must be a type symbol or (object …) body")
 
-proc lowerEnumType(sx: Syntax) =
+proc checkEnumValueName(name: Syntax; seen: var Table[string, bool]) =
+  ## Shared validation for an enum label name, whether it comes from a bare
+  ## symbol entry or the name slot of a `(Name value)` pair.
+  if name.kind != sxSymbol:
+    raiseCompilerError(name.span, "enum value name must be a symbol")
+  if name.sym.endsWith("*"):
+    raiseCompilerError(name.span, "enum values cannot use export markers; export the enum type instead")
+  let key = name.sym
+  if seen.hasKey(key):
+    raiseCompilerError(name.span, "duplicate enum value: " & key)
+  seen[key] = true
+
+proc lowerEnumType(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len == 1:
     raiseCompilerError(sx.span, "enum type expects values")
   var seen = initTable[string, bool]()
   for value in sx.items.toOpenArray(1, sx.items.high):
-    if value.kind != sxSymbol:
-      raiseCompilerError(value.span, "enum value must be a symbol")
-    if value.sym.endsWith("*"):
-      raiseCompilerError(value.span, "enum values cannot use export markers; export the enum type instead")
-    let key = value.sym
-    if seen.hasKey(key):
-      raiseCompilerError(value.span, "duplicate enum value: " & key)
-    seen[key] = true
+    case value.kind
+    of sxSymbol:
+      checkEnumValueName(value, seen)
+    of sxList:
+      if value.items.len != 2:
+        raiseCompilerError(value.span, "enum value pair must be (Name value), got " & $value.items.len & " item(s)")
+      checkEnumValueName(value.items[0], seen)
+      lowerExpr(ctx, value.items[1])
+    else:
+      raiseCompilerError(value.span, "enum value must be a symbol or (Name value) pair")
 
 proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
   let nargs = sx.items.len - 1
@@ -1107,7 +1121,7 @@ proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
     if body.items[0].isSymbol("object"):
       lowerObjectType(body)
     elif body.items[0].isSymbol("enum"):
-      lowerEnumType(body)
+      lowerEnumType(ctx, body)
     elif body.items[0].isSymbol("tuple"):
       lowerTupleType(body)
     elif body.items[0].isSymbol("distinct"):

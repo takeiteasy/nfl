@@ -207,6 +207,10 @@ suite "lowering validation":
   test "allows type declarations at statement scope":
     discard lowerModule(readAll("(type Count int)\n(type Person (object (name string)))\n(type Mood (enum happy sad))\n", "lower-test.nfl"))
 
+  test "allows enum values with explicit ordinals":
+    discard lowerModule(readAll(
+      "(type ErrCode (enum (Ok 0) (NotFound 404) ServerError))", "lower-test.nfl"))
+
   test "rejects type declarations in expression position":
     expectLowerError("(let ((x (type Count int))) x)", "type is only allowed at statement/module scope")
 
@@ -230,6 +234,11 @@ suite "lowering validation":
     expectLowerModuleError("(type Mood (enum 1))", "enum value must be a symbol")
     expectLowerModuleError("(type Mood (enum happy happy))", "duplicate enum value: happy")
     expectLowerModuleError("(type Mood (enum happy*))", "enum values cannot use export markers")
+    expectLowerModuleError("(type Mood (enum (happy)))", "enum value pair must be (Name value)")
+    expectLowerModuleError("(type Mood (enum (happy 0 1)))", "enum value pair must be (Name value)")
+    expectLowerModuleError("(type Mood (enum (1 0)))", "enum value name must be a symbol")
+    expectLowerModuleError("(type Mood (enum (happy* 0)))", "enum values cannot use export markers")
+    expectLowerModuleError("(type Mood (enum happy (happy 1)))", "duplicate enum value: happy")
 
   test "allows distinct type declaration":
     discard lowerModule(readAll("(type UserId (distinct int))", "lower-test.nfl"))

@@ -476,6 +476,33 @@ With export and pragmas:
 (proc toMetres ((x float)) (: Metres) (Metres x))
 ```
 
+**Enum type** — an ordinal type over a fixed set of labels:
+
+```lisp
+(type Colour (enum Red Green Blue))
+```
+
+Ordinals are implicit (`Red` is 0, `Green` is 1, …) unless overridden with a
+`(Name value)` pair, which mirrors how object fields already pair a name with a
+type:
+
+```lisp
+(type ErrCode
+  (enum (Ok 0) (NotFound 404) (ServerError 500)))
+```
+
+Plain symbols and `(Name value)` pairs can mix freely; a label with no explicit
+value continues from the previous ordinal:
+
+```lisp
+(type HttpStatus
+  (enum (Ok 200) Created (NotFound 404)))  ; Created is 201
+```
+
+A value can be any expression Nim accepts in enum position — an integer or
+string literal, or a named constant — not only a bare integer. Nim rejects
+duplicate values at compile time.
+
 **Tuple type** — a structural named-field record:
 
 ```lisp

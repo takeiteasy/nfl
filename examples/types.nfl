@@ -32,6 +32,12 @@
 (var n (mkNode 99))
 (echo "node value: " (. n val))
 
+; enum — ordinal type with implicit or explicit values, freely mixed.
+(type ErrCode
+  (enum (Ok 0) (NotFound 404) (ServerError 500)))
+(echo "NotFound ordinal: " (ord NotFound))
+(echo "ServerError ordinal: " (ord ServerError))
+
 ; object inheritance — shared base type with dynamic dispatch.
 (type Animal (ref (object (of RootObj) (name string))))
 (type Dog    (ref (object (of Animal))))

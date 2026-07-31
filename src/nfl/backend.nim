@@ -1038,10 +1038,16 @@ proc emitObjectType(ctx: var EmitContext; sx: Syntax): NimNode =
     ).attachLineInfo(field)
   nnkObjectTy.newTree(newEmptyNode(), inheritNode, fields).attachLineInfo(sx)
 
-proc emitEnumType(sx: Syntax): NimNode =
+proc emitEnumType(ctx: var EmitContext; sx: Syntax): NimNode =
   result = nnkEnumTy.newTree(newEmptyNode()).attachLineInfo(sx)
   for value in sx.items.toOpenArray(1, sx.items.high):
-    result.add identForTypeSymbol(value)
+    if value.kind == sxList:
+      result.add nnkEnumFieldDef.newTree(
+        identForTypeSymbol(value.items[0]),
+        ctx.emitExpr(value.items[1])
+      ).attachLineInfo(value)
+    else:
+      result.add identForTypeSymbol(value)
 
 proc emitTupleType(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits `(tuple (name1 type1) …)` as `nnkTupleTy`.
@@ -1060,7 +1066,7 @@ proc emitTypeBody(ctx: var EmitContext; sx: Syntax): NimNode =
     if sx.items[0].isSymbol("object"):
       return ctx.emitObjectType(sx)
     if sx.items[0].isSymbol("enum"):
-      return emitEnumType(sx)
+      return ctx.emitEnumType(sx)
     if sx.items[0].isSymbol("tuple"):
       return ctx.emitTupleType(sx)
     if sx.items[0].isSymbol("distinct"):
