@@ -239,6 +239,13 @@ suite "lowering validation":
     expectLowerModuleError("(type Mood (enum (1 0)))", "enum value name must be a symbol")
     expectLowerModuleError("(type Mood (enum (happy* 0)))", "enum values cannot use export markers")
     expectLowerModuleError("(type Mood (enum happy (happy 1)))", "duplicate enum value: happy")
+    # Routed through splitExportMarker (#72): an escaped name (`|...|`, #46)
+    # ending in `*` gets the marker-specific diagnostic, not the "cannot use
+    # export markers" one — there is no export marker to begin with here.
+    expectLowerModuleError("(type Mood (enum |happy*|))", "export marker is not applied")
+
+  test "rejects generic enum type declarations":
+    expectLowerModuleError("(type Mood [T] (enum happy sad))", "enum type cannot be generic")
 
   test "allows distinct type declaration":
     discard lowerModule(readAll("(type UserId (distinct int))", "lower-test.nfl"))

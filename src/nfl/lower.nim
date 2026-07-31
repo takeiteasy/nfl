@@ -1068,12 +1068,19 @@ proc lowerRefType(sx: Syntax) =
 
 proc checkEnumValueName(name: Syntax; seen: var Table[string, bool]) =
   ## Shared validation for an enum label name, whether it comes from a bare
-  ## symbol entry or the name slot of a `(Name value)` pair.
+  ## symbol entry or the name slot of a `(Name value)` pair. Routes the
+  ## export-marker check through `splitExportMarker`, the same helper every
+  ## other declaration site uses (see `validateExportedDecl` above), so
+  ## escaped names (`|...|`, #46) are handled consistently rather than via an
+  ## ad hoc `endsWith("*")` check.
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "enum value name must be a symbol")
-  if name.sym.endsWith("*"):
+  let split = splitExportMarker(name.sym, name.escaped, false)
+  if split.err.len > 0:
+    raiseCompilerError(name.span, split.err)
+  if split.exported:
     raiseCompilerError(name.span, "enum values cannot use export markers; export the enum type instead")
-  let key = name.sym
+  let key = split.base
   if seen.hasKey(key):
     raiseCompilerError(name.span, "duplicate enum value: " & key)
   seen[key] = true
@@ -1121,6 +1128,8 @@ proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
     if body.items[0].isSymbol("object"):
       lowerObjectType(body)
     elif body.items[0].isSymbol("enum"):
+      if genIdx >= 0:
+        raiseCompilerError(sx.items[genIdx].span, "enum type cannot be generic")
       lowerEnumType(ctx, body)
     elif body.items[0].isSymbol("tuple"):
       lowerTupleType(body)
