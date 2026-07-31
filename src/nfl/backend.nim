@@ -707,6 +707,33 @@ proc emitBegin(ctx: var EmitContext; sx: Syntax): NimNode =
     return ctx.emitLabelledBlock(sx)
   emitBlockExpr(@[], ctx.emitBodyExpr(sx.items.toOpenArray(1, sx.items.high), sx)).attachLineInfo(sx)
 
+proc checkProgNArity(sx: Syntax; captureIdx: int; formName: string) =
+  let minArgs = captureIdx + 1
+  let nargs = sx.items.len - 1
+  if nargs < minArgs:
+    raiseCompilerError(sx.span,
+      formName & " expects at least " & $minArgs & " argument(s), got " & $nargs)
+
+proc emitProgN(ctx: var EmitContext; sx: Syntax; captureIdx: int; formName: string): NimNode =
+  ## Emits `(prog1 expr rest…)` (captureIdx 0) / `(prog2 e1 e2 rest…)`
+  ## (captureIdx 1): sequences the body as statements, in order, capturing
+  ## the `captureIdx`'th form's value into a hidden `let` where it occurs
+  ## and yielding that as the tail expression. Unlike `break-from`'s carrier
+  ## (see `emitLabelledBlock`), the capture is read in straight-line
+  ## position, not from a jump target, so no `typeof`/non-local-exit
+  ## handling is needed — the `let`'s own initializer gives it a type.
+  checkProgNArity(sx, captureIdx, formName)
+  let carrier = genSym(nskLet, formName)
+  var stmts: seq[NimNode] = @[]
+  for i in 1 ..< sx.items.len:
+    let item = sx.items[i]
+    if i - 1 == captureIdx:
+      stmts.add nnkLetSection.newTree(
+        nnkIdentDefs.newTree(carrier, newEmptyNode(), ctx.emitExpr(item))).attachLineInfo(item)
+    else:
+      stmts.add ctx.emitStmt(item)
+  emitBlockExpr(stmts, carrier.copyNimTree()).attachLineInfo(sx)
+
 proc emitSet(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "set!", sx.items.len - 1, 2)
   nnkAsgn.newTree(ctx.identForSymbol(sx.items[1]), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)
@@ -1564,6 +1591,10 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitIf(sx)
     elif sx.items[0].isSymbol("block"):
       ctx.emitBegin(sx)
+    elif sx.items[0].isSymbol("prog1"):
+      ctx.emitProgN(sx, 0, "prog1")
+    elif sx.items[0].isSymbol("prog2"):
+      ctx.emitProgN(sx, 1, "prog2")
     elif sx.items[0].isSymbol("let"):
       ctx.emitLetLike(sx, false)
     elif sx.items[0].isSymbol("var"):
@@ -1681,6 +1712,18 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
     if sx.items[0].isSymbol("block"):
       if sx.items.len > 1 and sx.items[1].isBlockLabel():
         return ctx.emitLabelledBlock(sx)
+      result = newStmtList()
+      for i in 1 ..< sx.items.len:
+        result.add ctx.emitStmt(sx.items[i])
+      return
+    if sx.items[0].isSymbol("prog1"):
+      checkProgNArity(sx, 0, "prog1")
+      result = newStmtList()
+      for i in 1 ..< sx.items.len:
+        result.add ctx.emitStmt(sx.items[i])
+      return
+    if sx.items[0].isSymbol("prog2"):
+      checkProgNArity(sx, 1, "prog2")
       result = newStmtList()
       for i in 1 ..< sx.items.len:
         result.add ctx.emitStmt(sx.items[i])

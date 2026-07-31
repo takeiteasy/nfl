@@ -1187,6 +1187,60 @@ suite "nfl backend — named block / break-from (#41)":
     check stmtPositionLog == @[1, 2]
 
 # ---------------------------------------------------------------------------
+# prog1 / prog2 (#56)
+# ---------------------------------------------------------------------------
+
+nflModule """
+(var (progLog [seq string]) (@ []))
+(var (progXs [seq int]) (@ [1 2 3]))
+
+; --- prog1: returns the FIRST form's value, after running the rest ---
+(proc popFirst () (: int)
+  (prog1
+    (at progXs 0)
+    (set! progXs (slice progXs 1 (- (. progXs len) 1)))))
+
+; --- prog2: returns the SECOND form's value ---
+(proc middleOfThree () (: int)
+  (prog2
+    (. progLog add "first")
+    42
+    (. progLog add "third")))
+
+; --- prog1/prog2 used purely for side effect, value discarded — each is a
+; non-tail statement here (followed by another call), so this never routes
+; through emitProgN's typed-capture path at all; see emitStmt's dedicated
+; prog1/prog2 branch. ---
+(proc sideEffectOnly () (: void)
+  (prog1 (. progLog add "one") (. progLog add "two"))
+  (prog2 (. progLog add "three") (. progLog add "four"))
+  (. progLog add "five"))
+""", "prog-test.nfl"
+
+suite "nfl backend — prog1 / prog2 (#56)":
+  test "prog1 in expression position":
+    check nflExpr"(prog1 1 2 3)" == 1
+    check nflExpr"(var ((x 0)) (prog1 x (set! x 99)))" == 0
+
+  test "prog2 in expression position":
+    check nflExpr"(prog2 1 2 3)" == 2
+
+  test "prog1 evaluates every form, in order, for side effect":
+    progXs = @[1, 2, 3]
+    check popFirst() == 1
+    check progXs == @[2, 3]
+
+  test "prog2 returns the second form's value, not the last":
+    progLog = @[]
+    check middleOfThree() == 42
+    check progLog == @["first", "third"]
+
+  test "prog1 / prog2 in statement position discard their value":
+    progLog = @[]
+    sideEffectOnly()
+    check progLog == @["one", "two", "three", "four", "five"]
+
+# ---------------------------------------------------------------------------
 # labelled break / continue (#54)
 # ---------------------------------------------------------------------------
 

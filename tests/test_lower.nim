@@ -741,6 +741,29 @@ suite "lowering validation":
     expectLowerError("(block :search (break-from search 1))", "break-from target must be a :name label")
 
   # ---------------------------------------------------------------------------
+  # prog1 / prog2 (#56)
+  # ---------------------------------------------------------------------------
+
+  test "allows prog1 with a single expression":
+    discard lowerExpr(readOne("(prog1 1)", "lower-test.nfl"))
+
+  test "allows prog1 with trailing side-effect forms":
+    discard lowerExpr(readOne("(var ((x 1)) (prog1 1 (set! x 2) (echo x)))", "lower-test.nfl"))
+
+  test "allows prog2 with exactly two expressions":
+    discard lowerExpr(readOne("(prog2 1 2)", "lower-test.nfl"))
+
+  test "allows prog2 with trailing side-effect forms":
+    discard lowerExpr(readOne("(prog2 (echo 1) 2 (echo 3))", "lower-test.nfl"))
+
+  test "rejects prog1 with no arguments":
+    expectLowerError("(prog1)", "prog1 expects at least 1 argument(s), got 0")
+
+  test "rejects prog2 with fewer than two arguments":
+    expectLowerError("(prog2 1)", "prog2 expects at least 2 argument(s), got 1")
+    expectLowerError("(prog2)", "prog2 expects at least 2 argument(s), got 0")
+
+  # ---------------------------------------------------------------------------
   # defer
   # ---------------------------------------------------------------------------
 

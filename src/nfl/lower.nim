@@ -272,6 +272,17 @@ proc lowerBegin(ctx: var LowerContext; sx: Syntax) =
   if labelled:
     discard ctx.namedBlocks.pop()
 
+proc lowerProgN(ctx: var LowerContext; sx: Syntax; minArgs: int; formName: string) =
+  ## Validates `(prog1 expr rest…)` (minArgs 1) / `(prog2 e1 e2 rest…)`
+  ## (minArgs 2) — sequences the body like `block`, just with a captured
+  ## non-tail return value (no non-local-exit/typeof complexity, since the
+  ## captured value is read in straight-line position).
+  let nargs = sx.items.len - 1
+  if nargs < minArgs:
+    raiseCompilerError(sx.span,
+      formName & " expects at least " & $minArgs & " argument(s), got " & $nargs)
+  lowerBody(ctx, sx.items.toOpenArray(1, sx.items.high), sx)
+
 proc lowerBreakFrom(ctx: var LowerContext; sx: Syntax) =
   ## Validates `(break-from :name)` (valueless) or `(break-from :name expr)`.
   let nargs = sx.items.len - 1
@@ -1135,6 +1146,10 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerIf(ctx, sx)
     elif sx.items[0].isSymbol("block"):
       lowerBegin(ctx, sx)
+    elif sx.items[0].isSymbol("prog1"):
+      lowerProgN(ctx, sx, 1, "prog1")
+    elif sx.items[0].isSymbol("prog2"):
+      lowerProgN(ctx, sx, 2, "prog2")
     elif sx.items[0].isSymbol("let"):
       lowerLetLike(ctx, sx, false)
     elif sx.items[0].isSymbol("var"):

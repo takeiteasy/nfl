@@ -4,6 +4,9 @@
 (defmacro unless (test &body body)
   `(if ,test nil (block ,@body)))
 
+(defmacro progn (&body body)
+  `(block ,@body))
+
 (defmacro and (&rest args)
   (if (nil? args)
       true

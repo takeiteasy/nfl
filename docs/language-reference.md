@@ -634,6 +634,36 @@ Evaluates multiple forms and returns the last value. Giving it a `:name`
 label lets a nested `break-from` exit it early with a value — see
 [`break-from`](#break-from) below.
 
+### `progn` (preamble macro)
+
+```lisp
+(progn body...)
+```
+
+An alias for the unlabelled form of `block`: evaluates multiple forms and
+returns the last value. Provided for CL familiarity — `progn` and `block`
+(without a `:name` label) are otherwise identical.
+
+### `prog1` / `prog2`
+
+```lisp
+(prog1 first-expr rest...)         ; returns first-expr's value
+(prog2 first-expr second-expr rest...)  ; returns second-expr's value
+```
+
+Evaluate every form in order for side effect, like `block`, but return a
+specific *non-last* form's value instead of the last one — useful for the
+"capture the old value, then mutate, then hand back what was captured"
+idiom without a manual temp binding:
+
+```lisp
+(proc popFirst ((xs [seq int])) (: int)
+  (var ((ys xs))
+    (prog1
+      (at ys 0)
+      (set! ys (slice ys 1 (- (. ys len) 1))))))
+```
+
 ## Loops
 
 ### `for`

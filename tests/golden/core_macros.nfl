@@ -5,3 +5,4 @@
   (true (echo "take")))
 (-> "nfl" toUpperAscii)
 (map [1 2 3] (do ((x int)) (* x 2)))
+(progn (echo "a") (echo "b"))
