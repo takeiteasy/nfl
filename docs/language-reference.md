@@ -865,6 +865,44 @@ Preamble helpers:
 (foldr items initial op)
 ```
 
+### CL-style sequence functions (preamble)
+
+CL-named counterparts to the helpers above, plus a few new operations
+(`make-array`, `sort`, `reverse`, `count-if`, `some`, `every`, `position`).
+Argument order follows this preamble's own convention — items first — even
+where CL itself puts the predicate first (`some`/`every`); this isn't
+literal CL syntax, just CL-flavoured naming over it (see [CL-style
+declaration spellings](#cl-style-declaration-spellings-preamble) above for
+the same idea applied to `proc`/`var`/etc.):
+
+```lisp
+(make-array n fill)             ; a length-n seq filled with `fill` — unlike
+                                 ; CL, both arguments are required: Nim can
+                                 ; only infer the element type from an actual
+                                 ; value, and NFL has no call-site syntax for
+                                 ; a bare type argument instead
+(length items)                  ; same as (. items len)
+(reverse items)
+(sort items)                    ; returns a new sorted seq (non-destructive)
+(mapcar items op)                ; alias for (map items op)
+(reduce items initial op)        ; alias for (foldl items initial op)
+(remove-if items pred)           ; drops elements satisfying pred
+(remove-if-not items pred)       ; alias for (filter items pred)
+(count-if items pred)
+(some items pred)                ; true if any element satisfies pred
+(every items pred)                ; true if all elements satisfy pred
+(position items value)           ; index of the first equal element, or -1
+                                  ; when absent — Nim's own sentinel, not
+                                  ; CL's nil, since a generic element type
+                                  ; has no nil-like value to return instead
+(elt items i)                    ; alias for (at items i)
+(aref items i)                   ; alias for (at items i)
+(subseq items start end)         ; like (slice items start (- end 1)) —
+(subseq items start)             ; CL's end is exclusive, unlike slice's own
+                                  ; inclusive end, and defaults to the
+                                  ; sequence's length when omitted
+```
+
 ## Imports
 
 ```lisp

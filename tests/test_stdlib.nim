@@ -18,3 +18,21 @@ suite "nfl stdlib":
     check foldedLeft == -10
     check foldedRight == -2
     check mappedStrings == @[1, 2, 3]
+
+  test "CL-style sequence functions from nfl file":
+    check madeArray == @[9, 9, 9]
+    check lengthValue == 4
+    check reversedValues == @[4, 3, 2, 1]
+    check sortedValues == @[1, 1, 3, 4, 5]
+    check mapcarValues == @[3, 6, 9, 12]
+    check reducedValue == 10
+    check removedIfValues == @[3, 4]
+    check removedIfNotValues == @[1, 2]
+    check countIfValue == 2
+    check someValue == true
+    check everyValue == true
+    check positionValue == 2
+    check eltValue == 2
+    check arefValue == 2
+    check subseqValue == @[2, 3]
+    check subseqToEndValue == @[3, 4]

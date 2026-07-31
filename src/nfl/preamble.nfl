@@ -100,6 +100,66 @@
 (defmacro foldr (items initial op)
   `(nflSeqFoldr ,items ,initial ,op))
 
+; CL-style sequence functions. Argument order follows the rest of this
+; preamble (items first, like map/filter/foldl above) rather than CL's own
+; order (e.g. CL's `some`/`every` take the predicate first) — kept
+; consistent with NFL's own convention instead of literal CL. `position`
+; and `nflSeqPosition` return -1 when not found (Nim's own sentinel
+; convention), not CL's nil, since a generic element type has no nil-like
+; value to return instead.
+; unlike CL, `n` and `fill` are both required — Nim can only infer the
+; array's element type from an actual argument value, and NFL has no call-
+; site syntax for supplying a bare type argument instead.
+(defmacro make-array (n fill)
+  `(nflMakeArray ,n ,fill))
+
+(defmacro length (items)
+  `(. ,items len))
+
+(defmacro reverse (items)
+  `(nflReversed ,items))
+
+(defmacro sort (items)
+  `(nflSorted ,items))
+
+(defmacro mapcar (items op)
+  `(nflSeqMap ,items ,op))
+
+(defmacro reduce (items initial op)
+  `(nflSeqFoldl ,items ,initial ,op))
+
+(defmacro remove-if (items pred)
+  `(nflSeqRemoveIf ,items ,pred))
+
+(defmacro remove-if-not (items pred)
+  `(nflSeqFilter ,items ,pred))
+
+(defmacro count-if (items pred)
+  `(nflSeqCount ,items ,pred))
+
+(defmacro some (items pred)
+  `(nflSeqAny ,items ,pred))
+
+(defmacro every (items pred)
+  `(nflSeqEvery ,items ,pred))
+
+(defmacro position (items value)
+  `(nflSeqPosition ,items ,value))
+
+(defmacro elt (items i)
+  `(at ,items ,i))
+
+(defmacro aref (items i)
+  `(at ,items ,i))
+
+; CL's subseq takes an exclusive end (and an optional, sequence-length-
+; defaulted one) — unlike NFL's own `slice`, whose end is inclusive — so
+; this isn't a bare alias, it adjusts for that difference.
+(defmacro subseq (items start &rest rest)
+  (if (nil? rest)
+      `(slice ,items ,start (- (. ,items len) 1))
+      `(slice ,items ,start (- ,(first rest) 1))))
+
 (defmacro -> (value &rest forms)
   (if (nil? forms)
       value

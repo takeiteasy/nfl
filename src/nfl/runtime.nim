@@ -1,3 +1,5 @@
+import std/algorithm
+
 type
   NflDatumKind* = enum
     ndNil, ndBool, ndInt, ndFloat, ndString, ndSymbol, ndList, ndVector
@@ -100,3 +102,66 @@ proc nflSeqFoldr*[T, U](items: openArray[T]; initial: U; op: proc(item: T; acc: 
   result = initial
   for i in countdown(items.high, 0):
     result = op(items[i], result)
+
+proc nflSeqRemoveIf*[T](items: openArray[T]; pred: proc(item: T): bool {.nimcall.}): seq[T] =
+  for item in items:
+    if not pred(item):
+      result.add item
+
+proc nflSeqRemoveIf*[T](items: openArray[T]; pred: proc(item: T): bool {.closure.}): seq[T] =
+  for item in items:
+    if not pred(item):
+      result.add item
+
+proc nflSeqCount*[T](items: openArray[T]; pred: proc(item: T): bool {.nimcall.}): int =
+  for item in items:
+    if pred(item):
+      inc result
+
+proc nflSeqCount*[T](items: openArray[T]; pred: proc(item: T): bool {.closure.}): int =
+  for item in items:
+    if pred(item):
+      inc result
+
+proc nflSeqAny*[T](items: openArray[T]; pred: proc(item: T): bool {.nimcall.}): bool =
+  for item in items:
+    if pred(item):
+      return true
+  false
+
+proc nflSeqAny*[T](items: openArray[T]; pred: proc(item: T): bool {.closure.}): bool =
+  for item in items:
+    if pred(item):
+      return true
+  false
+
+proc nflSeqEvery*[T](items: openArray[T]; pred: proc(item: T): bool {.nimcall.}): bool =
+  for item in items:
+    if not pred(item):
+      return false
+  true
+
+proc nflSeqEvery*[T](items: openArray[T]; pred: proc(item: T): bool {.closure.}): bool =
+  for item in items:
+    if not pred(item):
+      return false
+  true
+
+proc nflSeqPosition*[T](items: openArray[T]; value: T): int =
+  ## -1 when `value` isn't present — Nim's own `find`-style sentinel,
+  ## rather than CL's nil, since a generic `T` has no nil-like value.
+  for i, item in items:
+    if item == value:
+      return i
+  -1
+
+proc nflReversed*[T](items: openArray[T]): seq[T] =
+  reversed(items)
+
+proc nflSorted*[T](items: openArray[T]): seq[T] =
+  sorted(items)
+
+proc nflMakeArray*[T](n: int; fill: T): seq[T] =
+  result = newSeq[T](n)
+  for i in 0 ..< n:
+    result[i] = fill
