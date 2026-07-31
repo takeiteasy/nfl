@@ -7,6 +7,42 @@
 (defmacro progn (&body body)
   `(block ,@body))
 
+; CL-style spellings of the Nim declaration forms — plain aliases, not the
+; canonical syntax (which stays Nim-focused); provided for readers who'd
+; rather see a `def...` prefix.
+(defmacro defproc (name &rest args)
+  `(proc ,name ,@args))
+
+(defmacro defun (name &rest args)
+  `(proc ,name ,@args))
+
+(defmacro defvar (name &rest args)
+  `(var ,name ,@args))
+
+(defmacro defconst (name &rest args)
+  `(const ,name ,@args))
+
+(defmacro defconstant (name &rest args)
+  `(const ,name ,@args))
+
+(defmacro deftype (name &rest args)
+  `(type ,name ,@args))
+
+(defmacro deftemplate (name &rest args)
+  `(template ,name ,@args))
+
+(defmacro defiterator (name &rest args)
+  `(iterator ,name ,@args))
+
+(defmacro defmethod (name &rest args)
+  `(method ,name ,@args))
+
+(defmacro deffunc (name &rest args)
+  `(func ,name ,@args))
+
+(defmacro defconverter (name &rest args)
+  `(converter ,name ,@args))
+
 (defmacro and (&rest args)
   (if (nil? args)
       true

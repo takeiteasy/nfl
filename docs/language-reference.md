@@ -899,6 +899,38 @@ See [Selective imports](nim-interop.md#selective-imports) for details.
 ; equivalent to (echo (toUpperAscii "hello"))
 ```
 
+## CL-style declaration spellings (preamble)
+
+Alternate `def...`-prefixed spellings of the Nim declaration forms, for
+readers who'd rather see Common Lisp-style names. These are plain macro
+aliases — each just forwards its arguments unchanged to the form it
+stands in for — not the canonical syntax; the language's own surface
+syntax stays Nim-focused, and the reference above uses the Nim names
+throughout.
+
+| Alias | Expands to |
+|-------|------------|
+| `(defproc name ...)` / `(defun name ...)` | `(proc name ...)` |
+| `(defvar name ...)` | `(var name ...)` |
+| `(defconst name value)` / `(defconstant name value)` | `(const name value)` |
+| `(deftype name ...)` | `(type name ...)` |
+| `(deftemplate name ...)` | `(template name ...)` |
+| `(defiterator name ...)` | `(iterator name ...)` |
+| `(defmethod name ...)` | `(method name ...)` |
+| `(deffunc name ...)` | `(func name ...)` |
+| `(defconverter name ...)` | `(converter name ...)` |
+
+`defun` and `defconstant` are extra synonyms for `defproc` and `defconst`
+respectively, matching Common Lisp's own names for "define a function"
+and "define a constant"; the rest (`template`/`iterator`/`func`/
+`converter` have no CL equivalent, and `var`/`type`/`method` already
+match CL's own names) just take a mechanical `def` prefix.
+
+```lisp
+(defun square ((x int)) (: int) (* x x))
+(defconstant pi 3.14159)
+```
+
 ## Quoting
 
 ```lisp
