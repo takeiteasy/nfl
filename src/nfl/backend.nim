@@ -33,7 +33,7 @@ type
       ## without a per-iteration wrapper at all.
 
   EmitContext = object
-    hygienicSymbols: Table[int, NimNode]
+    hygienicSymbols: Table[int, tuple[node: NimNode, kind: NimSymKind]]
     namedBlocks: seq[NamedBlockFrame]
       ## Enclosing named `block`s and labelled loops, innermost last.
       ## Lowering has already validated every `break-from`/labelled
@@ -233,13 +233,34 @@ proc plainFloatLit(v: BiggestFloat): NimNode =
   result = nnkFloatLit.newNimNode()
   result.floatVal = v
 
-proc identForSymbol(ctx: var EmitContext; sx: Syntax): NimNode =
+proc identForSymbol(ctx: var EmitContext; sx: Syntax; symKind = nskLet): NimNode =
+  ## `symKind` is only consulted the first time a given `hygieneId` is seen
+  ## (i.e. at its declaration site) — it picks the Nim symbol kind the
+  ## `genSym` is created with, so a hygienic/gensym'd symbol declared as a
+  ## `proc`/`do` parameter emits `nskParam` instead of the default `nskLet`
+  ## (see #81; a `let`-kind symbol in `nnkFormalParams` position is a hard
+  ## Nim error, "cannot use symbol of kind 'let' as a 'param'").
+  ## Reference sites pass no `symKind` and must resolve to the exact same
+  ## Nim symbol as the declaration, so the cache is keyed on `hygieneId`
+  ## alone and defaults `symKind` to `nskLet`. That default means a
+  ## reference-site call is indistinguishable from a *declaration* that
+  ## legitimately wants `nskLet` (a `let`/`var`/`for` binding) — only a
+  ## non-`nskLet` declaration (currently just `nskParam`) reaching an id
+  ## already cached under a different kind is caught below and raises;
+  ## the `nskLet` direction passes through silently. This asymmetric guard
+  ## is not currently known to be reachable either way: every `hygieneId`
+  ## is unique per hygiene-rename or `gensym` call, so two declaration
+  ## sites sharing one id should never occur.
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, "expected symbol")
   if sx.hygieneId != 0:
     if not ctx.hygienicSymbols.hasKey(sx.hygieneId):
-      ctx.hygienicSymbols[sx.hygieneId] = genSym(nskLet, sx.sym)
-    return ctx.hygienicSymbols[sx.hygieneId].copyNimTree().attachLineInfo(sx)
+      ctx.hygienicSymbols[sx.hygieneId] = (genSym(symKind, sx.sym), symKind)
+    let entry = ctx.hygienicSymbols[sx.hygieneId]
+    if entry.kind != symKind and symKind != nskLet:
+      raiseCompilerError(sx.span,
+        "internal error: hygienic symbol " & sx.sym & " declared with conflicting kinds")
+    return entry.node.copyNimTree().attachLineInfo(sx)
   ident(sx.sym).attachLineInfo(sx)
 
 proc emitDottedSymbol(sx: Syntax): NimNode =
@@ -759,10 +780,10 @@ proc emitParam(ctx: var EmitContext; param: Syntax; patternDefs: var seq[NimNode
   ## `patternDefs`, for the caller to assemble into a body-prelude
   ## `nnkLetSection` (see `emitLambda`/`emitRoutine`).
   if param.kind == sxSymbol:
-    return nnkIdentDefs.newTree(ctx.identForSymbol(param), newEmptyNode(), newEmptyNode()).attachLineInfo(param)
+    return nnkIdentDefs.newTree(ctx.identForSymbol(param, nskParam), newEmptyNode(), newEmptyNode()).attachLineInfo(param)
   if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and
       (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
-    return nnkIdentDefs.newTree(ctx.identForSymbol(param.items[0]), emitTypeRef(param.items[1]), newEmptyNode()).attachLineInfo(param)
+    return nnkIdentDefs.newTree(ctx.identForSymbol(param.items[0], nskParam), emitTypeRef(param.items[1]), newEmptyNode()).attachLineInfo(param)
   if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxVector and
       (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
     let carrier = genSym(nskParam, "p")
@@ -1893,15 +1914,15 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
   newCall(bindSym"nflStmt", ctx.emitExpr(sx)).attachLineInfo(sx)
 
 proc emitExpr*(sx: Syntax): NimNode =
-  var ctx = EmitContext(hygienicSymbols: initTable[int, NimNode]())
+  var ctx = EmitContext(hygienicSymbols: initTable[int, tuple[node: NimNode, kind: NimSymKind]]())
   ctx.emitExpr(sx)
 
 proc emitStmt*(sx: Syntax): NimNode =
-  var ctx = EmitContext(hygienicSymbols: initTable[int, NimNode]())
+  var ctx = EmitContext(hygienicSymbols: initTable[int, tuple[node: NimNode, kind: NimSymKind]]())
   ctx.emitStmt(sx)
 
 proc emitModule*(forms: seq[Syntax]): NimNode =
-  var ctx = EmitContext(hygienicSymbols: initTable[int, NimNode]())
+  var ctx = EmitContext(hygienicSymbols: initTable[int, tuple[node: NimNode, kind: NimSymKind]]())
   result = newStmtList()
   for form in forms:
     result.add ctx.emitStmt(form)
