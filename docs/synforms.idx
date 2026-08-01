@@ -1,0 +1,12 @@
+nimTitle	synforms	synforms.html	module nfl/synforms		0
+nim	isPragmaClause	synforms.html#isPragmaClause,Syntax	proc isPragmaClause(sx: Syntax): bool		10
+nim	isDefvarForm	synforms.html#isDefvarForm,Syntax	proc isDefvarForm(sx: Syntax): bool		13
+nim	procGenericIdx	synforms.html#procGenericIdx,Syntax	proc procGenericIdx(sx: Syntax): int		30
+nim	procParamsIdx	synforms.html#procParamsIdx,Syntax	proc procParamsIdx(sx: Syntax): int		39
+nim	bodyStartAfterParams	synforms.html#bodyStartAfterParams,Syntax,int,string	proc bodyStartAfterParams(sx: Syntax; paramsIdx: int; formName = "proc"): int		50
+nim	procBodyStart	synforms.html#procBodyStart,Syntax	proc procBodyStart(sx: Syntax): int		64
+nim	lambdaBodyStart	synforms.html#lambdaBodyStart,Syntax	proc lambdaBodyStart(sx: Syntax): int		67
+nim	formName	synforms.html#formName,Syntax	proc formName(sx: Syntax): string		72
+nim	isKeywordSym	synforms.html#isKeywordSym,Syntax	proc isKeywordSym(sx: Syntax): bool		75
+nim	isObjectPattern	synforms.html#isObjectPattern,Syntax	proc isObjectPattern(pattern: Syntax): bool		81
+nim	validatePattern	synforms.html#validatePattern,Syntax,seq[Syntax],string	proc validatePattern(pattern: Syntax; names: var seq[Syntax];\n                rejectObjectIn: string = "")		88

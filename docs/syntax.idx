@@ -1,0 +1,36 @@
+nimTitle	syntax	syntax.html	module nfl/syntax		0
+nim	Span	syntax.html#Span	object Span		8
+nim	sxNil	syntax.html#sxNil	SyntaxKind.sxNil		13
+nim	sxBool	syntax.html#sxBool	SyntaxKind.sxBool		13
+nim	sxInt	syntax.html#sxInt	SyntaxKind.sxInt		13
+nim	sxFloat	syntax.html#sxFloat	SyntaxKind.sxFloat		13
+nim	sxString	syntax.html#sxString	SyntaxKind.sxString		13
+nim	sxSymbol	syntax.html#sxSymbol	SyntaxKind.sxSymbol		13
+nim	sxList	syntax.html#sxList	SyntaxKind.sxList		13
+nim	sxVector	syntax.html#sxVector	SyntaxKind.sxVector		13
+nim	SyntaxKind	syntax.html#SyntaxKind	enum SyntaxKind		13
+nim	Syntax	syntax.html#Syntax	type Syntax		16
+nim	span	syntax.html#span,string,int,int,int,int	proc span(file: string; line, col, endLine, endCol: int): Span		38
+nim	withEnd	syntax.html#withEnd,Span,int,int	proc withEnd(start: Span; endLine, endCol: int): Span		42
+nim	newNil	syntax.html#newNil,Span	proc newNil(span: Span): Syntax		47
+nim	newBool	syntax.html#newBool,bool,Span	proc newBool(value: bool; span: Span): Syntax		51
+nim	newInt	syntax.html#newInt,BiggestInt,Span	proc newInt(value: BiggestInt; span: Span): Syntax		55
+nim	newFloat	syntax.html#newFloat,BiggestFloat,Span	proc newFloat(value: BiggestFloat; span: Span): Syntax		59
+nim	newString	syntax.html#newString,string,Span	proc newString(value: string; span: Span): Syntax		63
+nim	newSymbol	syntax.html#newSymbol,string,Span,int	proc newSymbol(value: string; span: Span; hygieneId = 0; escaped = false): Syntax		67
+nim	newList	syntax.html#newList,seq[Syntax],Span	proc newList(items: seq[Syntax]; span: Span): Syntax		73
+nim	newVector	syntax.html#newVector,seq[Syntax],Span	proc newVector(items: seq[Syntax]; span: Span): Syntax		77
+nim	copySyntax	syntax.html#copySyntax,Syntax	proc copySyntax(sx: Syntax): Syntax		81
+nim	withSpan	syntax.html#withSpan,Syntax,Span	proc withSpan(sx: Syntax; span: Span): Syntax		108
+nim	isSymbol	syntax.html#isSymbol,Syntax,string	proc isSymbol(sx: Syntax; name: string): bool		113
+nim	isOperatorName	syntax.html#isOperatorName,string	proc isOperatorName(s: string): bool		119
+nim	isPlainIdentifier	syntax.html#isPlainIdentifier,string	proc isPlainIdentifier(s: string): bool		134
+nim	isValidRoutineName	syntax.html#isValidRoutineName,string	proc isValidRoutineName(s: string): bool		144
+nim	splitExportMarker	syntax.html#splitExportMarker,string,bool,bool	proc splitExportMarker(sym: string; escaped, allowOperator: bool): tuple[\n    base: string, exported: bool, err: string]		156
+nim	isBlockLabel	syntax.html#isBlockLabel,Syntax	proc isBlockLabel(sx: Syntax): bool		197
+nim	blockLabelName	syntax.html#blockLabelName,Syntax	proc blockLabelName(sx: Syntax): string		206
+nim	isRangeShaped	syntax.html#isRangeShaped,Syntax	proc isRangeShaped(sx: Syntax): bool		211
+nim	isRangeForm	syntax.html#isRangeForm,Syntax	proc isRangeForm(sx: Syntax): bool		217
+nim	isCaseValueList	syntax.html#isCaseValueList,Syntax	proc isCaseValueList(sx: Syntax): bool		222
+nim	sameSyntax	syntax.html#sameSyntax,Syntax,Syntax	proc sameSyntax(a, b: Syntax): bool		235
+nim	renderSyntax	syntax.html#renderSyntax,Syntax	proc renderSyntax(sx: Syntax): string		290

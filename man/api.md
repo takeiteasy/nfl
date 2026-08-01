@@ -8,13 +8,13 @@ NFL's API reference is generated from source with [Nim's docgen](https://nim-lan
 nimble docs
 ```
 
-This runs `nim doc --project` over `src/nfl/cli.nim` (which imports every other module, directly or transitively) and writes one HTML page per module directly into `docs/`, plus a hand-written `docs/index.html` linking to all of them. Output lands in `docs/` (not `docs/api/`) because GitHub Pages serves a repo's `/docs` directory as-is; the prose guides live in `/man` at the repo root instead so they don't collide with generated output.
+This runs `nim doc --project --index:on` over `src/nfl/cli.nim` (which imports every other module, directly or transitively) and writes one HTML page per module directly into `docs/`, plus docgen's search index (`theindex.html`, per-module `*.idx` files and `dochack.js`) and a thin `docs/index.html` landing page linking to the module pages. Every module page therefore has a full-text search box. Output lands in `docs/` (not `docs/api/`) because GitHub Pages serves a repo's `/docs` directory as-is; the prose guides live in `/man` at the repo root instead so they don't collide with generated output.
 
 Regenerate after adding or editing doc comments (`##`) on exported symbols, or after adding a new module under `src/nfl/`.
 
-## Why `--index:off`
+## `--index:on` and `dochack.js`
 
-`nim doc --project` can also build a full-text search index, but that requires compiling `tools/dochack.nim` to JavaScript — a file some Nim distributions (notably Homebrew's) don't ship, which crashes docgen. The `docs` task passes `--index:off` to skip it; the plain module-list `index.html` it writes instead is enough to navigate the per-module pages.
+`nim doc --index:on` builds the search index by copying `tools/dochack/dochack.js` into the output, compiling it from source if missing. Some Nim distributions (notably Homebrew's) don't ship the `tools/` directory, which crashes docgen with an AssertionDefect. The `docs` task therefore calls the `dochack` task first (`nimble dochack`), which installs a compiled `dochack.js` into the Nim compiler prefix — fetched and built from the matching Nim version tag on GitHub if it isn't there already. Because docgen only compiles the file when it's missing, this sidesteps the crash entirely. Re-run `nimble dochack` after upgrading Nim if the docs task fails.
 
 ## Coverage
 

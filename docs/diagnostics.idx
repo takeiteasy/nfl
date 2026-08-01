@@ -1,0 +1,10 @@
+nimTitle	diagnostics	diagnostics.html	module nfl/diagnostics		0
+nim	dsError	diagnostics.html#dsError	DiagnosticSeverity.dsError		6
+nim	DiagnosticSeverity	diagnostics.html#DiagnosticSeverity	enum DiagnosticSeverity		6
+nim	Diagnostic	diagnostics.html#Diagnostic	object Diagnostic		9
+nim	ReaderError	diagnostics.html#ReaderError	object ReaderError		14
+nim	CompilerError	diagnostics.html#CompilerError	object CompilerError		17
+nim	`$`	diagnostics.html#$,Diagnostic	proc `$`(diagnostic: Diagnostic): string		20
+nim	error	diagnostics.html#error,Span,string	proc error(span: Span; message: string): Diagnostic		24
+nim	raiseReaderError	diagnostics.html#raiseReaderError,Span,string	proc raiseReaderError(span: Span; message: string)		27
+nim	raiseCompilerError	diagnostics.html#raiseCompilerError,Span,string	proc raiseCompilerError(span: Span; message: string)		33
