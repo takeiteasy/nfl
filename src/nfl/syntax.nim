@@ -1,15 +1,19 @@
+## The `Syntax` s-expression tree produced by the reader and consumed by the
+## macro expander, lowering, and backend passes, plus the `Span` source-range
+## type attached to every node for diagnostics.
+
 import std/strutils
 
 type
-  Span* = object
+  Span* = object          ## A source range, used to anchor diagnostics.
     file*: string
     line*, col*: int
     endLine*, endCol*: int
 
-  SyntaxKind* = enum
+  SyntaxKind* = enum        ## The shape of a `Syntax` node.
     sxNil, sxBool, sxInt, sxFloat, sxString, sxSymbol, sxList, sxVector
 
-  Syntax* = ref object
+  Syntax* = ref object     ## A single s-expression node.
     span*: Span
     case kind*: SyntaxKind
     of sxNil:
@@ -32,36 +36,51 @@ type
       items*: seq[Syntax]
 
 proc span*(file: string; line, col, endLine, endCol: int): Span =
+  ## Builds a `Span` from explicit start/end coordinates.
   Span(file: file, line: line, col: col, endLine: endLine, endCol: endCol)
 
 proc withEnd*(start: Span; endLine, endCol: int): Span =
+  ## Returns a copy of `start` with its end coordinates replaced — used to
+  ## extend a span once a form's closing delimiter has been read.
   Span(file: start.file, line: start.line, col: start.col, endLine: endLine, endCol: endCol)
 
 proc newNil*(span: Span): Syntax =
+  ## Constructs an `sxNil` node.
   Syntax(kind: sxNil, span: span)
 
 proc newBool*(value: bool; span: Span): Syntax =
+  ## Constructs an `sxBool` node.
   Syntax(kind: sxBool, span: span, boolVal: value)
 
 proc newInt*(value: BiggestInt; span: Span): Syntax =
+  ## Constructs an `sxInt` node.
   Syntax(kind: sxInt, span: span, intVal: value)
 
 proc newFloat*(value: BiggestFloat; span: Span): Syntax =
+  ## Constructs an `sxFloat` node.
   Syntax(kind: sxFloat, span: span, floatVal: value)
 
 proc newString*(value: string; span: Span): Syntax =
+  ## Constructs an `sxString` node.
   Syntax(kind: sxString, span: span, strVal: value)
 
 proc newSymbol*(value: string; span: Span; hygieneId = 0; escaped = false): Syntax =
+  ## Constructs an `sxSymbol` node. `hygieneId` is nonzero for gensym'd or
+  ## hygiene-renamed symbols; `escaped` marks a symbol read via the reader's
+  ## `|...|` syntax.
   Syntax(kind: sxSymbol, span: span, sym: value, hygieneId: hygieneId, escaped: escaped)
 
 proc newList*(items: seq[Syntax]; span: Span): Syntax =
+  ## Constructs an `sxList` node.
   Syntax(kind: sxList, span: span, items: items)
 
 proc newVector*(items: seq[Syntax]; span: Span): Syntax =
+  ## Constructs an `sxVector` node.
   Syntax(kind: sxVector, span: span, items: items)
 
 proc copySyntax*(sx: Syntax): Syntax =
+  ## Deep-copies `sx` and its children, preserving spans.
+
   case sx.kind
   of sxNil:
     newNil(sx.span)
@@ -87,18 +106,20 @@ proc copySyntax*(sx: Syntax): Syntax =
     newVector(items, sx.span)
 
 proc withSpan*(sx: Syntax; span: Span): Syntax =
+  ## Returns a deep copy of `sx` with its top-level span replaced.
   result = sx.copySyntax()
   result.span = span
 
 proc isSymbol*(sx: Syntax; name: string): bool =
+  ## True when `sx` is a symbol node whose name is exactly `name`.
   sx.kind == sxSymbol and sx.sym == name
 
 const operatorChars = {'=', '+', '-', '*', '/', '<', '>', '@', '$', '~', '&', '%', '|', '!', '?', '^', '.', ':'}
 
 proc isOperatorName*(s: string): bool =
   ## True when `s` is non-empty and every character is a Nim operator
-  ## character — the shape Nim requires an accent-quoted proc name
-  ## (`` `+` ``) for, as opposed to a plain identifier.
+  ## character — the shape Nim requires an accent-quoted proc name for
+  ## (e.g. backtick-quoted ``+``), as opposed to a plain identifier.
   if s.len == 0:
     return false
   for c in s:
@@ -212,6 +233,8 @@ proc isCaseValueList*(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and not sx.isRangeShaped
 
 proc sameSyntax*(a, b: Syntax): bool =
+  ## Structural equality: same kind and same value(s), recursively for
+  ## lists/vectors. Symbols must also share a `hygieneId`.
   if a.kind != b.kind:
     return false
   case a.kind
@@ -265,6 +288,8 @@ proc renderSymbol(value: string; escaped = false): string =
   result.add "|"
 
 proc renderSyntax*(sx: Syntax): string =
+  ## Renders `sx` back to NFL source text, escaping symbols and strings as
+  ## needed so the result reads back to an equivalent `Syntax` tree.
   case sx.kind
   of sxNil:
     result = "nil"

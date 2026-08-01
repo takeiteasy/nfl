@@ -1,3 +1,8 @@
+## The `nfl` command-line entry point: parses `run`/`compile`/`check`/
+## `macroexpand` invocations, drives the Nim compiler over a generated
+## wrapper for the first three, and drives the macro expander directly
+## for `macroexpand`.
+
 import std/cmdline
 import std/os
 import std/osproc

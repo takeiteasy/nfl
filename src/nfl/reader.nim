@@ -1,3 +1,8 @@
+## The NFL reader: a hand-written recursive-descent tokenizer/parser that
+## turns source text into a sequence of `Syntax` nodes (see `syntax.nim`).
+## Handles lists, vectors, strings, escaped `|...|` symbols, quote/quasiquote/
+## unquote, Nim pragma clauses `{. .}`, and `;`/`#| |#` comments.
+
 import std/strutils
 
 import ./diagnostics
@@ -256,6 +261,7 @@ proc readForm(r: var Reader): Syntax =
     readAtom(r)
 
 proc readAll*(source: string; file = "<input>"): seq[Syntax] =
+  ## Reads every top-level form in `source`, labelling spans with `file`.
   var reader = Reader(source: source, file: file, line: 1, col: 1)
   while true:
     reader.skipTrivia()
@@ -264,6 +270,8 @@ proc readAll*(source: string; file = "<input>"): seq[Syntax] =
     result.add reader.readForm()
 
 proc readOne*(source: string; file = "<input>"): Syntax =
+  ## Reads `source` as exactly one top-level form; raises `ReaderError` if it
+  ## contains zero or more than one.
   let forms = readAll(source, file)
   if forms.len == 0:
     raiseReaderError(span(file, 1, 1, 1, 1), "expected expression")

@@ -2,9 +2,7 @@
 
 > **WARNING**: Work in progress
 
-**NFL** is a Lisp dialect that compiles to Nim. It processes s-expressions into Nim AST via macros, giving you Lisp syntax with full access to the Nim ecosystem and type system.
-
-Inspired by [Hylang](https://hylang.org/).
+**NFL** is a Lisp dialect that compiles to Nim. It processes s-expressions into Nim AST via macros, giving you Lisp syntax with full access to the Nim ecosystem and type system. Inspired by [Hylang](https://hylang.org/).
 
 ## Quick example
 
@@ -41,10 +39,11 @@ nfl compile file.nfl   # compile to binary
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) — installation, first program, core concepts
-- [Language Reference](docs/language-reference.md) — all language forms
-- [Macro System](docs/macros.md) — writing and using macros
-- [Nim Interop](docs/nim-interop.md) — calling Nim stdlib, dot notation, exports, pragmas
+- [Getting Started](man/getting-started.md) — installation, first program, core concepts
+- [Language Reference](man/language-reference.md) — all language forms
+- [Macro System](man/macros.md) — writing and using macros
+- [Nim Interop](man/nim-interop.md) — calling Nim stdlib, dot notation, exports, pragmas
+- API documentation is generated from source via `nimble docs` (see [man/api.md](man/api.md)) into `docs/`, served via GitHub Pages
 
 ## Examples
 
