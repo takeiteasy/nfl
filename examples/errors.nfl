@@ -46,17 +46,15 @@
 
 ; catch/throw is the dynamic-extent counterpart to block/break-from: throw
 ; unwinds across proc calls (not just lexically, like break-from) to the
-; nearest enclosing catch with a matching tag.
-(proc searchAt ((xs [seq int]) (target int) (i int)) (: int)
-  (if (>= i (len xs))
-      -1
-      (if (== (at xs i) target)
-          (throw :found (at xs i))
-          (searchAt xs target (+ i 1)))))
-
+; nearest enclosing catch with a matching tag. The natural way to write a
+; throw-based search is a loop whose body throws on a match and falls
+; through otherwise, with the catch's own tail supplying the not-found
+; value:
 (proc findInList ((xs [seq int]) (target int)) (: int)
   (catch :found
-    (searchAt xs target 0)))
+    (for (x xs)
+      (if (== x target) (throw :found x) nil))
+    -1))
 
 (echo "found: " (findInList (@ [3 1 4 1 5 9]) 4))
 (echo "not found: " (findInList (@ [3 1 4 1 5 9]) 7))

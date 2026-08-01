@@ -379,8 +379,9 @@ proc emitBreakFrom(ctx: var EmitContext; sx: Syntax): NimNode =
   ## the target named block's carrier var (if it has one — see
   ## `NamedBlockFrame.carrier`) and `break`s to its label. Always builds a
   ## small statement list; expression-position callers wrap it (see the
-  ## `emitExpr` dispatch), mirroring how `for`/`while` wrap their
-  ## statement-only core in expression context.
+  ## `emitExpr` dispatch), since a `break` is noreturn and must type-unify
+  ## with whatever the use site expects rather than being forced to a
+  ## concrete type.
   let frame = ctx.findNamedBlock(sx.items[1])
   result = newStmtList()
   if sx.items.len == 3:
@@ -686,11 +687,24 @@ proc emitVarSection(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
         ).attachLineInfo(binding)
   section.attachLineInfo(sx)
 
+proc emitIfBranchExpr(ctx: var EmitContext; branch: Syntax): NimNode =
+  ## Emits one `if`-expression branch. A literal `nil` branch — the
+  ## established idiom for the dead branch of a statement-shaped `if` (e.g.
+  ## the core `when` macro's `(if test (block …) nil)`) — emits as
+  ## `discard`, giving the branch type `void` rather than `typeof(nil)`. A
+  ## bare `nnkNilLit` there previously unified against the other branch's
+  ## type (or against `void`/noreturn, e.g. `(if c (raise …) nil)`), which
+  ## crashed the Nim compiler with `getTypeDescAux(tyAnything)` (#73).
+  if branch.kind == sxNil:
+    nnkDiscardStmt.newTree(newEmptyNode()).attachLineInfo(branch)
+  else:
+    ctx.emitExpr(branch)
+
 proc emitIf(ctx: var EmitContext; sx: Syntax): NimNode =
   expectArity(sx, "if", sx.items.len - 1, 3)
   nnkIfExpr.newTree(
-    nnkElifExpr.newTree(ctx.emitExpr(sx.items[1]), ctx.emitExpr(sx.items[2])),
-    nnkElseExpr.newTree(ctx.emitExpr(sx.items[3]))
+    nnkElifExpr.newTree(ctx.emitExpr(sx.items[1]), ctx.emitIfBranchExpr(sx.items[2])),
+    nnkElseExpr.newTree(ctx.emitIfBranchExpr(sx.items[3]))
   ).attachLineInfo(sx)
 
 proc emitIfStmt(ctx: var EmitContext; sx: Syntax): NimNode =
@@ -1310,7 +1324,9 @@ proc emitLoopBody(ctx: var EmitContext; owner: Syntax; labelSx: Syntax;
 
 proc emitForCore(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Builds `(for [:name] CLAUSE body…)`, wrapped per `emitLoopBody`.
-  ## Always returns a statement node; wrap in `emitBlockExpr` for expr context.
+  ## Always returns a statement node (`void`) — the same node is used
+  ## unmodified in both statement and expression context; a loop has no
+  ## value (#73).
   let labelSx = loopLabelOrNil(sx)
   let clauseIdx = if labelSx != nil: 2 else: 1
   let clause = sx.items[clauseIdx]
@@ -1544,7 +1560,9 @@ proc emitDefer(ctx: var EmitContext; sx: Syntax): NimNode =
 
 proc emitWhileCore(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Builds `(while [:name] COND body…)`, wrapped per `emitLoopBody`.
-  ## Always returns a statement node; wrap in `emitBlockExpr` for expr context.
+  ## Always returns a statement node (`void`) — the same node is used
+  ## unmodified in both statement and expression context; a loop has no
+  ## value (#73).
   let labelSx = loopLabelOrNil(sx)
   let condIdx = if labelSx != nil: 2 else: 1
   let condNode = ctx.emitExpr(sx.items[condIdx])
@@ -1612,14 +1630,6 @@ proc emitThrow(ctx: var EmitContext; sx: Syntax): NimNode =
   ## `emitRaise`/`emitBreakFrom` — since Nim treats a raw `nnkRaiseStmt` as
   ## noreturn and lets it type-unify with whatever the surrounding
   ## expression expects.
-  ##
-  ## Known pre-existing limitation (unrelated to this form): a `raise` (and
-  ## therefore a `throw`) that fires inside a `for`/`while` loop body — even
-  ## unconditionally, with no `if` involved — currently crashes the Nim
-  ## compiler with an internal error. Reproduces with plain `raise` on
-  ## unmodified trunk, so it isn't specific to this emission. Tracked as a
-  ## bug on the tracker; work around it with recursion instead of a loop
-  ## until it's fixed.
   let tag = blockLabelName(sx.items[1])
   let value = ctx.emitExpr(sx.items[2])
   nnkRaiseStmt.newTree(
@@ -1720,9 +1730,15 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
     elif sx.items[0].isSymbol("tuple-new"):
       ctx.emitTupleNew(sx)
     elif sx.items[0].isSymbol("for"):
-      emitBlockExpr(@[ctx.emitForCore(sx)], newNilLit()).attachLineInfo(sx)
+      # A loop has no value — emit the statement core directly rather than
+      # wrapping it with a `nil` filler. A `block: <loop>; nil` filler gave
+      # the loop type `typeof(nil)`, which an `auto`-inferred routine tail
+      # (or any other value position) could not resolve, crashing the Nim
+      # compiler with `getTypeDescAux(tyAnything)` (#73). `void` is correct:
+      # this is the same node the statement-position dispatch below emits.
+      ctx.emitForCore(sx)
     elif sx.items[0].isSymbol("while"):
-      emitBlockExpr(@[ctx.emitWhileCore(sx)], newNilLit()).attachLineInfo(sx)
+      ctx.emitWhileCore(sx)
     elif sx.items[0].isSymbol("case"):
       ctx.emitCase(sx)
     elif sx.items[0].isSymbol("match"):
@@ -1735,9 +1751,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       # Unwrapped, like `return` just above: a `break` is noreturn, so this
       # statement list (ending in `break`) type-unifies with any expected
       # type at its use site (e.g. as one branch of an `if`-expression whose
-      # other branch has an unrelated type) — wrapping it in a `block:`
-      # with a filler value (the way `for`/`while` do, since those *aren't*
-      # noreturn) would instead give it a concrete, unrelated type.
+      # other branch has an unrelated type) — forcing a concrete type here
+      # (e.g. by wrapping with a filler value) would break that unification.
       ctx.emitBreakFrom(sx)
     elif sx.items[0].isSymbol("catch"):
       ctx.emitCatch(sx)

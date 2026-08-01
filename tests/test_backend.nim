@@ -533,6 +533,39 @@ nflModule """
   (try
     (raise (newException CatchableError "any"))
     (except "handled")))
+; --- regression: raise/loop/nil-branch in value position (#73) ---
+; A `for`/`while` loop is a value-position (auto-return) tail expression
+; here, with no `(: T)` annotation — this used to crash the Nim compiler
+; with `getTypeDescAux(tyAnything)`.
+(proc raiseInForLoop ((xs [seq int]))
+  (for (x xs)
+    (raise (newException ValueError "boom"))))
+(proc raiseInWhileLoop ()
+  (var ((i 0))
+    (while true
+      (set! i (+ i 1))
+      (if (>= i 3) (raise (newException ValueError "boom")) nil))))
+; A `raise` opposite a literal `nil` branch, also in tail position.
+(proc ifRaiseOrNil ((c bool))
+  (if c (raise (newException ValueError "boom")) nil))
+(proc raiseInForLoopSafe ((xs [seq int])) (: string)
+  (try
+    (block
+      (raiseInForLoop xs)
+      "not reached")
+    (except ValueError "caught")))
+(proc raiseInWhileLoopSafe () (: string)
+  (try
+    (block
+      (raiseInWhileLoop)
+      "not reached")
+    (except ValueError "caught")))
+(proc ifRaiseOrNilSafe ((c bool)) (: string)
+  (try
+    (block
+      (ifRaiseOrNil c)
+      "not reached")
+    (except ValueError "caught")))
 ; --- defer tests (#26) ---
 ; defer: runs at scope exit on the success path — the proc's own scope, not
 ; before the caller observes the mutation.
@@ -831,6 +864,15 @@ suite "nfl module backend — for / case / raise / try":
 
   test "try — bare catch-all catches any exception":
     check tryBare() == "handled"
+
+  test "raise inside a for loop tail (no return annotation) no longer ICEs (#73)":
+    check raiseInForLoopSafe(@[1, 2, 3]) == "caught"
+
+  test "raise inside a while loop tail no longer ICEs (#73)":
+    check raiseInWhileLoopSafe() == "caught"
+
+  test "raise opposite a literal nil if-branch no longer ICEs (#73)":
+    check ifRaiseOrNilSafe(true) == "caught"
 
   test "defer — runs at scope exit on success":
     check deferRan == true
@@ -1281,6 +1323,16 @@ nflModule """
   (catch :found
     (searchAt xs target 0)))
 
+; --- the natural loop-based idiom (#73 fix makes this compile): a `for`
+; loop containing an `if` whose taken branch `throw`s and whose other
+; branch is `nil`, as the tail of a `catch` body. Before #73 this ICE'd the
+; Nim compiler, so #55 originally routed around it with `searchAt` above. ---
+(proc findInListLoop ((xs [seq int]) (target int)) (: int)
+  (catch :found
+    (for (x xs)
+      (if (== x target) (throw :found x) nil))
+    -1))
+
 ; --- catch with no throw taken: yields its own ordinary tail value ---
 (proc catchNoThrow () (: int)
   (catch :nope
@@ -1335,6 +1387,10 @@ suite "nfl backend — catch / throw (#55)":
   test "throw crosses a proc boundary to reach the enclosing catch":
     check findInList(@[3, 1, 4, 1, 5, 9], 4) == 4
     check findInList(@[3, 1, 4, 1, 5, 9], 7) == -1
+
+  test "throw from inside a for loop reaches its enclosing catch (#73)":
+    check findInListLoop(@[3, 1, 4, 1, 5, 9], 4) == 4
+    check findInListLoop(@[3, 1, 4, 1, 5, 9], 7) == -1
 
   test "catch yields its own tail value when nothing is thrown":
     check catchNoThrow() == 2
