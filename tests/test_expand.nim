@@ -594,6 +594,134 @@ suite "macro expansion":
 """, "unhygienic expects exactly one symbol argument")
 
   # ---------------------------------------------------------------------------
+  # var/const section and single-declaration hygiene (#62)
+  # ---------------------------------------------------------------------------
+
+  test "a var section's target is hygienically renamed, visible to a following sibling":
+    let sx = expandOne """
+(defmacro m () `(block (var ((tmp 1))) (+ tmp tmp)))
+(m)
+"""
+    let blk = sx
+    let boundName = blk.items[1].items[1].items[0].items[0]
+    let siblingRefA = blk.items[2].items[1]
+    let siblingRefB = blk.items[2].items[2]
+    check boundName.sym == "tmp"
+    check boundName.hygieneId != 0
+    check siblingRefA.hygieneId == boundName.hygieneId
+    check siblingRefB.hygieneId == boundName.hygieneId
+
+  test "a const section's target is hygienically renamed":
+    let sx = expandOne """
+(defmacro m () `(block (const ((k 1))) (+ k k)))
+(m)
+"""
+    let blk = sx
+    let boundName = blk.items[1].items[1].items[0].items[0]
+    check boundName.hygieneId != 0
+    check blk.items[2].items[1].hygieneId == boundName.hygieneId
+
+  test "a single var declaration's target is hygienically renamed, visible to a following sibling":
+    let sx = expandOne """
+(defmacro m () `(block (var tmp 1) (+ tmp tmp)))
+(m)
+"""
+    let blk = sx
+    let boundName = blk.items[1].items[1]
+    check boundName.sym == "tmp"
+    check boundName.hygieneId != 0
+    check blk.items[2].items[1].hygieneId == boundName.hygieneId
+    check blk.items[2].items[2].hygieneId == boundName.hygieneId
+
+  test "a var section value is renamed with the scope from before this section's own targets":
+    # (var ((x tmp) (tmp 2))) — the FIRST binding's value `tmp` must resolve
+    # to the caller's outer `tmp`, not this section's own second `tmp`
+    # target — mirrors lowerVarSection lowering every value before declaring
+    # any target.
+    let sx = expandOne """
+(defmacro m () `(block (var ((x tmp) (tmp 2))) x))
+(let ((tmp 99)) (m))
+"""
+    let varForm = sx.items[2].items[1]
+    let bindingsList = varForm.items[1]
+    let xValue = bindingsList.items[0].items[1]
+    check xValue.hygieneId == 0
+
+  test "unhygienic escape hatch works for a var section target":
+    let sx = expandOne """
+(defmacro with-it () `(block (var (((unhygienic it) 9))) (+ it 1)))
+(with-it)
+"""
+    let blk = sx
+    let boundName = blk.items[1].items[1].items[0].items[0]
+    check boundName.sym == "it"
+    check boundName.hygieneId == 0
+
+  # ---------------------------------------------------------------------------
+  # routine parameter hygiene (#84)
+  # ---------------------------------------------------------------------------
+
+  test "proc params are hygienically renamed; the name and generic params are not (#84)":
+    let sx = expandOne """
+(defmacro m () `(proc adder [T] ((self int)) (: int) (+ self 1)))
+(m)
+"""
+    let procForm = sx
+    check procForm.items[1].sym == "adder"
+    check procForm.items[1].hygieneId == 0
+    check procForm.items[2].items[0].hygieneId == 0     # generic param T
+    let param = procForm.items[3].items[0]
+    let paramName = param.items[0]
+    check paramName.sym == "self"
+    check paramName.hygieneId != 0
+    check param.items[1].hygieneId == 0                 # param type `int`
+    let bodyRef = procForm.items[5].items[1]
+    check bodyRef.hygieneId == paramName.hygieneId
+
+  test "do params are hygienically renamed the same way proc params are (#84)":
+    let sx = expandOne """
+(defmacro m () `(do ((self int)) (: int) (+ self 1)))
+(m)
+"""
+    let doForm = sx
+    let paramName = doForm.items[1].items[0].items[0]
+    check paramName.hygieneId != 0
+    check doForm.items[3].items[1].hygieneId == paramName.hygieneId
+
+  test "a proc param default is renamed with the accumulating scope, seeing an earlier param (#84)":
+    let sx = expandOne """
+(defmacro m () `(proc adder ((a int) (b int a)) (: int) (+ a b)))
+(m)
+"""
+    let procForm = sx
+    let params = procForm.items[2]
+    let aName = params.items[0].items[0]
+    let bDefault = params.items[1].items[2]
+    check aName.hygieneId != 0
+    check bDefault.hygieneId == aName.hygieneId
+
+  test "a proc's own literal param name doesn't capture an identically-named caller symbol (#84)":
+    let sx = expandOne """
+(defmacro m (bodyExpr) `(let ((self 999) (f (proc adder ((self int)) (: int) (+ self 1)))) ,bodyExpr))
+(m self)
+"""
+    let letForm = sx
+    let outerSelf = letForm.items[1].items[0].items[0]
+    let procParamName = letForm.items[1].items[1].items[1].items[2].items[0].items[0]
+    let procBodyRef = letForm.items[1].items[1].items[1].items[4].items[1]
+    let macroArg = letForm.items[2]
+    # The template's own `self` let-binding is itself a hygiene-rename
+    # target (it's a plain literal let binding) — the point of this test is
+    # that it and the proc param `self` get *distinct* hygienic identities,
+    # so neither can capture the other, not that either is left unrenamed.
+    check outerSelf.hygieneId != 0
+    check procParamName.hygieneId != 0
+    check procParamName.hygieneId != outerSelf.hygieneId
+    check procBodyRef.hygieneId == procParamName.hygieneId
+    # `,bodyExpr` substitutes the caller's own `self` — untouched.
+    check macroArg.hygieneId == 0
+
+  # ---------------------------------------------------------------------------
   # labelled loop hygiene (#54)
   # ---------------------------------------------------------------------------
 

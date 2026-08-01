@@ -29,3 +29,25 @@
      (block ,@body)))
 
 (echo (with-it 41 (+ it 1)))   ; -> 42
+
+; A var/const section or single declaration (no body of its own — the
+; local `let`/`var`/`do`/`for` forms above all have one) is covered too: its
+; own binding stays visible to the *following* statements in the same
+; template, just like Nim's own statement-list scoping.
+(defmacro incr-tmp ()
+  `(block (var ((tmp 1))) (set! tmp (+ tmp 41)) tmp))
+
+(let ((tmp 999))
+  (echo tmp)             ; -> 999: unaffected by the macro's own tmp section
+  (echo (incr-tmp)))     ; -> 42
+
+; A proc/template/etc. parameter is a hygiene-rename target too — a macro's
+; own literal param name can't be captured by, or capture, an identically
+; named caller symbol.
+(defmacro mk-adder ()
+  `(proc adder ((self int)) (: int) (+ self 1)))
+
+(mk-adder)
+(echo (let ((self 100)) (adder self)))   ; -> 101: adder's own `self`
+                                          ; param and the caller's `self`
+                                          ; are distinct bindings.

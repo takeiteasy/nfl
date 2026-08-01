@@ -171,10 +171,12 @@ See `examples/macro-procs.nfl` for a runnable demonstration.
 
 ## Hygiene
 
-A quasiquoted template's own `let`, `var` (local binding form), `do`, and
-`for` bindings are renamed automatically — the macro's local variables
-can't be accidentally captured by, or capture, identically-named symbols
-the caller passes in:
+A quasiquoted template's own `let`, `var`/`const` (the local binding form,
+a module/statement-scope section, and a single declaration), `do`, `for`,
+and `proc`/`func`/`method`/`converter`/`iterator`/`template` parameters are
+renamed automatically — the macro's local variables and params can't be
+accidentally captured by, or capture, identically-named symbols the caller
+passes in:
 
 ```lisp
 (defmacro add-one (a)
@@ -186,12 +188,43 @@ the caller passes in:
                      ; the caller's own tmp directly into the macro's body.
 ```
 
+A `var`/`const` section or single declaration has no body of its own to
+confine its binding to — its renamed identity stays visible to the
+*following* statements in the same template, the same way Nim's own
+statement-list scoping works:
+
+```lisp
+(defmacro incr-tmp ()
+  `(block (var ((tmp 1))) (set! tmp (+ tmp 41)) tmp))
+
+(let ((tmp 999))
+  (incr-tmp))    ; -> 42 — the section's own tmp, not the caller's.
+```
+
+A routine parameter is a rename target too, the same way a `do` parameter
+is:
+
+```lisp
+(defmacro mk-adder ()
+  `(proc adder ((self int)) (: int) (+ self 1)))
+
+(mk-adder)
+(let ((self 100))
+  (adder self))    ; -> 101 — adder's own `self` param and the caller's
+                    ; `self` are distinct bindings.
+```
+
+The routine name itself, an optional generic-params vector, and every
+parameter's type annotation are never rename targets.
+
 This covers a binding target that is a literal symbol, a typed
-`(name type)` pair, or a [destructuring](language-reference.md#destructuring)
-pattern (every name the pattern binds gets its own renamed identity). It
-does **not** cover a binding target that is itself unquoted (`,name`) — a
-name the macro computes at expansion time is the macro author's own symbol
-and is left as-is (this is how the preamble's `let*` and `as->` work).
+`(name type)` pair (or, for a parameter, `(name type default)` — the
+default is renamed too, seeing any earlier param in the same list), or a
+[destructuring](language-reference.md#destructuring) pattern (every name
+the pattern binds gets its own renamed identity). It does **not** cover a
+binding target that is itself unquoted (`,name`) — a name the macro
+computes at expansion time is the macro author's own symbol and is left
+as-is (this is how the preamble's `let*` and `as->` work).
 
 ### `(unhygienic sym)` — intentional capture
 
@@ -213,8 +246,8 @@ template; using it anywhere else is an error.
 ### `gensym` — manual hygiene
 
 `gensym` generates a fresh symbol that cannot clash with user code. It
-remains useful for a binding introduced without going through `let`/`var`/
-`do`/`for` — or any name the automatic pass doesn't cover, such as a
+remains useful for a binding introduced without going through one of the
+forms above — or any name the automatic pass doesn't cover, such as a
 computed (unquoted) binding name:
 
 ```lisp
@@ -226,11 +259,14 @@ computed (unquoted) binding name:
            (if ,v ,v (or ,@(rest args)))))))
 ```
 
-See `examples/hygiene.nfl` for a runnable demonstration of all three.
+See `examples/hygiene.nfl` for a runnable demonstration.
 
 A `gensym`'d or auto-renamed symbol may be used anywhere a plain symbol
-could — including as a `proc` or `do` parameter name, e.g.
-`` `(proc ,name ((,(gensym "self") ,className)) ...) ``.
+could — including as a `proc` or `do` parameter name. Since a routine's own
+literal param names are now auto-renamed, `gensym` for a param is only
+needed for a computed (unquoted) name, e.g.
+`` `(proc ,name ((,(gensym "self") ,className)) ...) `` where the param
+name itself varies per expansion.
 
 ## Preamble macros
 

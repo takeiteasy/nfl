@@ -52,6 +52,14 @@ proc isDefvarForm*(sx: Syntax): bool =
   not (nameTarget.kind == sxList and
        (nameTarget.items.len == 0 or nameTarget.items[0].kind == sxList))
 
+proc isVarSectionForm*(sx: Syntax): bool =
+  ## A `var`/`const` section form declares multiple bindings at
+  ## statement/module scope using the same binding-list grammar as the local
+  ## mutable-binding form, but with no body: `(var ((x 1) (y 2)))`. This is
+  ## distinguished from the local form (which requires a body) purely by
+  ## arity — `(var (bindings…) body…)` has 3+ items, a section has exactly 2.
+  sx.items.len == 2 and not isDefvarForm(sx)
+
 proc procGenericIdx*(sx: Syntax): int =
   ## Returns the index of the optional generic-params vector in a `proc` or
   ## `type` form, or -1 if none is present. Generic params appear as a

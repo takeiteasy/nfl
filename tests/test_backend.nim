@@ -704,6 +704,65 @@ nflModule """
     `(do ((,p int)) (: int) (+ ,p ,n))))
 (var adder10 (make-adder 10))
 (var gensymParamResult (adder10 5))
+; --- var/const section and single-declaration hygiene (#62) ---
+; The macro's own section/declaration bindings don't capture — or get
+; captured by — an identically-named caller symbol, and stay visible to a
+; following sibling statement within the same template (sections have no
+; body of their own to confine them to).
+(var tmpSection 999)
+(defmacro incr-tmp-section ()
+  `(block
+     (var ((tmp 1)))
+     (set! tmp (+ tmp 41))
+     tmp))
+(var sectionHygieneResult (incr-tmp-section))
+(var tmpSingleDecl 999)
+(defmacro incr-tmp-single ()
+  `(block
+     (var tmp 10)
+     (set! tmp (+ tmp 32))
+     tmp))
+(var singleDeclHygieneResult (incr-tmp-single))
+(defmacro const-block ()
+  `(block
+     (const ((k 40)))
+     (+ k 2)))
+(var constSectionHygieneResult (const-block))
+; A destructuring pattern target in a var section is renamed too (#47's
+; pattern-rename machinery, reused for the section dispatch #62 adds).
+(defmacro pair-section (p)
+  `(block
+     (var (([a b] ,p)))
+     (+ a b)))
+(var patternSectionResult (pair-section [3 4]))
+; --- routine parameter hygiene (#84) ---
+; A macro's own literal proc/template param name doesn't capture — or get
+; captured by — an identically-named caller symbol.
+(var selfOuter 100)
+(defmacro mk-adder ()
+  `(proc adder84 ((self int)) (: int) (+ self 1)))
+(mk-adder)
+(var procParamHygieneResult (let ((self 100)) (adder84 self)))
+(defmacro mk-dbl-tmpl ()
+  `(template dbl84 ((x int)) (: int) (* x 2)))
+(mk-dbl-tmpl)
+(var templateParamHygieneResult (dbl84 5))
+; A param default may reference an earlier param (#77) — its default value
+; is renamed with the accumulating scope, so it resolves to that earlier
+; renamed param, not a plain unrenamed name.
+(defmacro mk-adder-default ()
+  (let ((v (gensym "v")))
+    `(proc adder84Default ((,v int) (bump int ,v)) (: int) (+ ,v bump))))
+(mk-adder-default)
+(var procDefaultHygieneResult (adder84Default 10))
+; A proc's own literal param name doesn't capture a caller symbol substituted
+; into its body via unquote, and doesn't get captured by an outer binding of
+; the same name in the macro's own template.
+(defmacro with-self-collision (bodyExpr)
+  `(let ((self 999)
+         (f (do ((self int)) (: int) (+ self 1))))
+     (f ,bodyExpr)))
+(var collisionHygieneResult (with-self-collision 41))
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -756,6 +815,33 @@ suite "nfl module backend":
 
   test "unhygienic escape hatch — anaphoric macro binds it for the caller's body":
     check withItResult == 42
+
+  test "a var section's own binding doesn't capture, or get captured by, a caller symbol (#62)":
+    check tmpSection == 999
+    check sectionHygieneResult == 42
+
+  test "a single var declaration's own binding doesn't capture, or get captured by, a caller symbol (#62)":
+    check tmpSingleDecl == 999
+    check singleDeclHygieneResult == 42
+
+  test "a const section's own binding is hygienically renamed (#62)":
+    check constSectionHygieneResult == 42
+
+  test "a destructuring pattern target in a var section is hygienically renamed (#47/#62)":
+    check patternSectionResult == 7
+
+  test "a proc's own literal param name doesn't capture, or get captured by, a caller symbol (#84)":
+    check selfOuter == 100
+    check procParamHygieneResult == 101
+
+  test "a template's own literal param name is hygienically renamed like a proc's (#84)":
+    check templateParamHygieneResult == 10
+
+  test "a proc param default is renamed with the accumulating scope, seeing an earlier renamed param (#84)":
+    check procDefaultHygieneResult == 20
+
+  test "a proc's own param name doesn't capture a caller symbol substituted into its body (#84)":
+    check collisionHygieneResult == 42
 
   test "type alias definition":
     check counted == 3

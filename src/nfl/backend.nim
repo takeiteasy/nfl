@@ -69,7 +69,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode
 proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode
 proc emitNamedArg(ctx: var EmitContext; sx: Syntax): NimNode
 proc emitPragma(ctx: var EmitContext; sx: Syntax): NimNode
-proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: string): NimNode
+proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: string;
+                      symKind = nskLet): NimNode
 
 proc isNamedArg(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol(":")
@@ -292,7 +293,8 @@ proc identForTypeSymbol(sx: Syntax): NimNode =
     raiseCompilerError(sx.span, "expected symbol")
   ident(sx.sym).attachLineInfo(sx)
 
-proc declIdent(ctx: var EmitContext; sx: Syntax; what: string; allowOperator = false): NimNode =
+proc declIdent(ctx: var EmitContext; sx: Syntax; what: string; allowOperator = false;
+                symKind = nskLet): NimNode =
   ## Build the declaration-site identifier for a symbol, handling both the
   ## export postfix (`name*` → `nnkPostfix(*, ident(name))`) and hygiene.
   ## Hygienic symbols cannot carry `*` — they have no stable public name.
@@ -303,6 +305,8 @@ proc declIdent(ctx: var EmitContext; sx: Syntax; what: string; allowOperator = f
   ## so no `nnkAccQuoted` wrapping is needed at the declaration site
   ## (verified: `nnkProcDef` with a plain `ident("+")` name, including
   ## multi-char and exported forms, compiles and is callable infix).
+  ## `symKind` is forwarded to `identForSymbol` — see its doc comment; callers
+  ## outside a `var`/`const` section leave it at the `nskLet` default.
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, what & " must be a symbol")
   let (base, exported, err) = splitExportMarker(sx.sym, sx.escaped, allowOperator)
@@ -317,7 +321,7 @@ proc declIdent(ctx: var EmitContext; sx: Syntax; what: string; allowOperator = f
     ).attachLineInfo(sx)
   if allowOperator and sx.sym.isOperatorName:
     return ident(base).attachLineInfo(sx)
-  ctx.identForSymbol(sx)
+  ctx.identForSymbol(sx, symKind)
 
 proc emitTypeRef(sx: Syntax): NimNode =
   ## Emits a type reference: either a plain/dotted symbol or a generic type
@@ -550,12 +554,12 @@ proc emitPatternIdentDefs(ctx: var EmitContext; pattern: Syntax; valueNode: NimN
         let elem = pattern.items[i + 1]
         if elem.kind == sxSymbol:
           if elem.sym != "_":
-            defs.add nnkIdentDefs.newTree(ctx.identForSymbol(elem), newEmptyNode(), accessor).attachLineInfo(elem)
+            defs.add nnkIdentDefs.newTree(ctx.identForSymbol(elem, symKind), newEmptyNode(), accessor).attachLineInfo(elem)
         else:
           ctx.emitPatternIdentDefs(elem, accessor, symKind, defs)
         i += 2
       else:
-        defs.add nnkIdentDefs.newTree(ctx.identForSymbol(newSymbol(field, key.span)), newEmptyNode(), accessor).attachLineInfo(key)
+        defs.add nnkIdentDefs.newTree(ctx.identForSymbol(newSymbol(field, key.span), symKind), newEmptyNode(), accessor).attachLineInfo(key)
         i += 1
     return
   var restIdx = -1
@@ -569,7 +573,7 @@ proc emitPatternIdentDefs(ctx: var EmitContext; pattern: Syntax; valueNode: NimN
     let accessor = nnkBracketExpr.newTree(tmp.copyNimTree(), newLit(i)).attachLineInfo(elem)
     if elem.kind == sxSymbol:
       if elem.sym != "_":
-        defs.add nnkIdentDefs.newTree(ctx.identForSymbol(elem), newEmptyNode(), accessor).attachLineInfo(elem)
+        defs.add nnkIdentDefs.newTree(ctx.identForSymbol(elem, symKind), newEmptyNode(), accessor).attachLineInfo(elem)
     elif elem.kind == sxVector:
       ctx.emitPatternIdentDefs(elem, accessor, symKind, defs)
     else:
@@ -581,7 +585,7 @@ proc emitPatternIdentDefs(ctx: var EmitContext; pattern: Syntax; valueNode: NimN
         tmp.copyNimTree(),
         nnkInfix.newTree(ident(".."), newLit(headCount), nnkPrefix.newTree(ident("^"), newLit(1)))
       ).attachLineInfo(pattern)
-      defs.add nnkIdentDefs.newTree(ctx.identForSymbol(restName), newEmptyNode(), sliceNode).attachLineInfo(pattern)
+      defs.add nnkIdentDefs.newTree(ctx.identForSymbol(restName, symKind), newEmptyNode(), sliceNode).attachLineInfo(pattern)
 
 proc emitBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable: bool): seq[NimNode] =
   if binding.kind != sxList or binding.items.len notin {2, 3}:
@@ -592,16 +596,17 @@ proc emitBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable: bool):
   if binding.items.len == 3:
     pragma = binding.items[1]
   let value = ctx.emitExpr(binding.items[binding.items.high])
+  let symKind = if mutable: nskVar else: nskLet
   if target.kind == sxSymbol:
     return @[nnkIdentDefs.newTree(
-      ctx.pragmaDeclIdent(target, pragma, "binding name"),
+      ctx.pragmaDeclIdent(target, pragma, "binding name", symKind),
       newEmptyNode(),
       value
     ).attachLineInfo(binding)]
   if target.kind == sxList and target.items.len == 2 and target.items[0].kind == sxSymbol and
       (target.items[1].kind == sxSymbol or target.items[1].kind == sxVector):
     return @[nnkIdentDefs.newTree(
-      ctx.pragmaDeclIdent(target.items[0], pragma, "binding name"),
+      ctx.pragmaDeclIdent(target.items[0], pragma, "binding name", symKind),
       emitTypeRef(target.items[1]),
       value
     ).attachLineInfo(binding)]
@@ -626,12 +631,6 @@ proc emitLetLike(ctx: var EmitContext; sx: Syntax; mutable: bool): NimNode =
       section.add identDefs
 
   emitBlockExpr(@[section.attachLineInfo(sx)], ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)).attachLineInfo(sx)
-
-proc isVarSectionForm(sx: Syntax): bool =
-  ## Mirrors lower.nim's isVarSectionForm: a `var`/`const` section form
-  ## declares multiple bindings at statement/module scope using the binding-
-  ## list grammar with no body: `(var ((x 1) (y 2)))`.
-  sx.items.len == 2 and not isDefvarForm(sx)
 
 proc emitSectionBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable: bool): seq[NimNode] =
   ## Mirrors lower.nim's sectionBindingParts. Unlike emitBindingIdentDefs
@@ -686,7 +685,7 @@ proc emitSectionBindingIdentDefs(ctx: var EmitContext; binding: Syntax; mutable:
     ctx.emitPatternIdentDefs(target, valueNode, (if mutable: nskVar else: nskConst), defs)
     return defs
   @[nnkIdentDefs.newTree(
-    ctx.pragmaDeclIdent(nameSx, pragma, "binding name"),
+    ctx.pragmaDeclIdent(nameSx, pragma, "binding name", (if mutable: nskVar else: nskConst)),
     typeIdent,
     valueNode
   ).attachLineInfo(binding)]
@@ -873,11 +872,13 @@ proc emitPragma(ctx: var EmitContext; sx: Syntax): NimNode =
     else:
       raiseCompilerError(entry.span, "invalid pragma entry")
 
-proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: string): NimNode =
+proc pragmaDeclIdent(ctx: var EmitContext; name: Syntax; pragma: Syntax; what: string;
+                      symKind = nskLet): NimNode =
   ## Returns the declaration identifier for `name`, wrapped in `nnkPragmaExpr`
   ## when `pragma` is non-nil (i.e. a pragma clause was specified).  Handles
-  ## the export postfix (`name*`) correctly in both cases.
-  let nameNode = ctx.declIdent(name, what)
+  ## the export postfix (`name*`) correctly in both cases. `symKind` is
+  ## forwarded to `declIdent`.
+  let nameNode = ctx.declIdent(name, what, symKind = symKind)
   if pragma == nil:
     return nameNode
   nnkPragmaExpr.newTree(nameNode, ctx.emitPragma(pragma)).attachLineInfo(name)
@@ -1000,11 +1001,11 @@ proc emitVarDecl(ctx: var EmitContext; sx: Syntax): NimNode =
   var nameIdent: NimNode
   var typeIdent: NimNode = newEmptyNode()
   if nameTarget.kind == sxSymbol:
-    nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name")
+    nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name", nskVar)
   elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
        nameTarget.items[0].kind == sxSymbol and
        (nameTarget.items[1].kind == sxSymbol or nameTarget.items[1].kind == sxVector):
-    nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name")
+    nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name", nskVar)
     typeIdent = emitTypeRef(nameTarget.items[1])
   else:
     raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
@@ -1015,9 +1016,9 @@ proc emitVarDecl(ctx: var EmitContext; sx: Syntax): NimNode =
     nextIdx += 1
     # Re-emit nameIdent now that pragma is known.
     if nameTarget.kind == sxSymbol:
-      nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name")
+      nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name", nskVar)
     else:
-      nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name")
+      nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name", nskVar)
   let valueSlot: NimNode =
     if nextIdx < sx.items.len: ctx.emitExpr(sx.items[nextIdx])
     else: newEmptyNode()
@@ -1038,11 +1039,11 @@ proc emitConst(ctx: var EmitContext; sx: Syntax): NimNode =
   var nameIdent: NimNode
   var typeIdent: NimNode = newEmptyNode()
   if nameTarget.kind == sxSymbol:
-    nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name")
+    nameIdent = pragmaDeclIdent(ctx, nameTarget, pragma, formName & " name", nskConst)
   elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
        nameTarget.items[0].kind == sxSymbol and
        (nameTarget.items[1].kind == sxSymbol or nameTarget.items[1].kind == sxVector):
-    nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name")
+    nameIdent = pragmaDeclIdent(ctx, nameTarget.items[0], pragma, formName & " name", nskConst)
     typeIdent = emitTypeRef(nameTarget.items[1])
   else:
     raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")

@@ -85,6 +85,10 @@
   <li><a class="reference" href="#isPragmaClause%2CSyntax" title="isPragmaClause(sx: Syntax): bool">isPragmaClause(sx: Syntax): bool</a></li>
 
 </ul>
+<ul class="simple nested-toc-section">isVarSectionForm
+  <li><a class="reference" href="#isVarSectionForm%2CSyntax" title="isVarSectionForm(sx: Syntax): bool">isVarSectionForm(sx: Syntax): bool</a></li>
+
+</ul>
 <ul class="simple nested-toc-section">lambdaBodyStart
   <li><a class="reference" href="#lambdaBodyStart%2CSyntax" title="lambdaBodyStart(sx: Syntax): int">lambdaBodyStart(sx: Syntax): int</a></li>
 
@@ -202,6 +206,17 @@
 </div>
 
 </div>
+<div id="isVarSectionForm-procs-all">
+  <div id="isVarSectionForm,Syntax">
+  <dt><pre><span class="Keyword">proc</span> <a href="#isVarSectionForm%2CSyntax"><span class="Identifier">isVarSectionForm</span></a><span class="Other">(</span><span class="Identifier">sx</span><span class="Other">:</span> <a href="syntax.html#Syntax"><span class="Identifier">Syntax</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">forbids</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+  <dd>
+    
+    A <tt class="docutils literal"><span class="pre"><span class="Keyword">var</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Keyword">const</span></span></tt> section form declares multiple bindings at statement/module scope using the same binding-list grammar as the local mutable-binding form, but with no body: <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Keyword">var</span> <span class="Punctuation">(</span><span class="Punctuation">(</span><span class="Identifier">x</span> <span class="DecNumber">1</span><span class="Punctuation">)</span> <span class="Punctuation">(</span><span class="Identifier">y</span> <span class="DecNumber">2</span><span class="Punctuation">)</span><span class="Punctuation">)</span><span class="Punctuation">)</span></span></tt>. This is distinguished from the local form (which requires a body) purely by arity — <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Keyword">var</span> <span class="Punctuation">(</span><span class="Identifier">bindings…</span><span class="Punctuation">)</span> <span class="Identifier">body…</span><span class="Punctuation">)</span></span></tt> has 3+ items, a section has exactly 2.
+    
+  </dd>
+</div>
+
+</div>
 <div id="lambdaBodyStart-procs-all">
   <div id="lambdaBodyStart,Syntax">
   <dt><pre><span class="Keyword">proc</span> <a href="#lambdaBodyStart%2CSyntax"><span class="Identifier">lambdaBodyStart</span></a><span class="Other">(</span><span class="Identifier">sx</span><span class="Other">:</span> <a href="syntax.html#Syntax"><span class="Identifier">Syntax</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">int</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">CompilerError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span>
@@ -283,7 +298,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-01 21:21:14 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-01 22:09:26 UTC</small>
       </div>
     </div>
   </div>

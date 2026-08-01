@@ -171,14 +171,6 @@ proc lowerLetLike(ctx: var LowerContext; sx: Syntax; mutable: bool) =
   lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
   ctx.popScope()
 
-proc isVarSectionForm(sx: Syntax): bool =
-  ## A `var`/`const` section form declares multiple bindings at
-  ## statement/module scope using the same binding-list grammar as the local
-  ## mutable-binding form, but with no body: `(var ((x 1) (y 2)))`. This is
-  ## distinguished from the local form (which requires a body) purely by
-  ## arity — `(var (bindings…) body…)` has 3+ items, a section has exactly 2.
-  sx.items.len == 2 and not isDefvarForm(sx)
-
 proc sectionBindingParts(binding: Syntax; mutable: bool): tuple[targets: seq[Syntax], valueIdx: int] =
   ## Parses a single binding within a `var`/`const` section — a target,
   ## optional pragma, and optional value: `(target)`, `(target value)`,
@@ -565,15 +557,24 @@ proc lowerVarDecl(ctx: var LowerContext; sx: Syntax) =
   var baseName: string
   var nameSpan: Span
   var hasType = false
-  # Accept `name` (plain symbol) or `(name type)` (typed form).
+  var hygieneId = 0
+  # Accept `name` (plain symbol) or `(name type)` (typed form). `hygieneId`
+  # carries a #62/#84 hygienic-rename id through to `declare` below — a
+  # freshly-`newSymbol`'d name defaults to 0, which would otherwise silently
+  # re-key a hygienic declaration as if it were a plain same-spelling name,
+  # producing a false "duplicate binding" against an unrelated caller symbol
+  # (declare()'s scope-tracking key must match backend.nim's, which reads
+  # `hygieneId` straight off the original syntax node).
   if nameTarget.kind == sxSymbol:
     baseName = nameTarget.validateExportedDecl(formName & " name")
     nameSpan = nameTarget.span
+    hygieneId = nameTarget.hygieneId
   elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
        nameTarget.items[0].kind == sxSymbol and
        (nameTarget.items[1].kind == sxSymbol or nameTarget.items[1].kind == sxVector):
     baseName = nameTarget.items[0].validateExportedDecl(formName & " name")
     nameSpan = nameTarget.items[0].span
+    hygieneId = nameTarget.items[0].hygieneId
     validateTypeReference(nameTarget.items[1], formName & " type")
     hasType = true
   else:
@@ -596,7 +597,7 @@ proc lowerVarDecl(ctx: var LowerContext; sx: Syntax) =
     raiseCompilerError(sx.span, formName & " without a type annotation requires a value")
   if valueIdx >= 0:
     lowerExpr(ctx, sx.items[valueIdx])
-  declare(ctx, newSymbol(baseName, nameSpan), bkMutable)
+  declare(ctx, newSymbol(baseName, nameSpan, hygieneId), bkMutable)
 
 proc lowerConst(ctx: var LowerContext; sx: Syntax) =
   let formName = sx.items[0].sym
@@ -606,14 +607,18 @@ proc lowerConst(ctx: var LowerContext; sx: Syntax) =
   let nameTarget = sx.items[1]
   var baseName: string
   var nameSpan: Span
+  var hygieneId = 0
+  # See lowerVarDecl's comment on `hygieneId` — same reasoning applies here.
   if nameTarget.kind == sxSymbol:
     baseName = nameTarget.validateExportedDecl(formName & " name")
     nameSpan = nameTarget.span
+    hygieneId = nameTarget.hygieneId
   elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
        nameTarget.items[0].kind == sxSymbol and
        (nameTarget.items[1].kind == sxSymbol or nameTarget.items[1].kind == sxVector):
     baseName = nameTarget.items[0].validateExportedDecl(formName & " name")
     nameSpan = nameTarget.items[0].span
+    hygieneId = nameTarget.items[0].hygieneId
     validateTypeReference(nameTarget.items[1], formName & " type")
   else:
     raiseCompilerError(nameTarget.span, formName & " name must be a symbol or (name type)")
@@ -625,7 +630,7 @@ proc lowerConst(ctx: var LowerContext; sx: Syntax) =
     validatePragma(sx.items[2])
     valueIdx = 3
   lowerExpr(ctx, sx.items[valueIdx])
-  declare(ctx, newSymbol(baseName, nameSpan), bkImmutable)
+  declare(ctx, newSymbol(baseName, nameSpan, hygieneId), bkImmutable)
 
 proc isNflModulePath(sym: string): bool =
   sym.endsWith(".nfl")

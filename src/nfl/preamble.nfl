@@ -316,13 +316,13 @@
       (cons (nfl-slot-field (first slots)) (nfl-slot-fields (rest slots)))))
 
 (defmacro-proc nfl-make-getter (className fieldName fieldType getterName)
-  ; A literal `self`, not `(gensym "self")` — still safe without hygiene:
-  ; the generated body only ever references its own `self`, in a proc that
-  ; introduces its own fresh Nim scope, so there is no caller symbol for a
-  ; literal name to capture or be captured by. (A literal name also keeps
-  ; the golden-expansion fixture's output stable — a gensym'd name would
-  ; embed the macro env's running counter, making the fixture's exact text
-  ; depend on unrelated preamble changes.)
+  ; A literal `self`, not `(gensym "self")` — the automatic hygiene pass
+  ; auto-renames a proc's own literal param names, so this can't capture or
+  ; be captured by a caller symbol even without an explicit gensym. (A
+  ; literal name also keeps the golden-expansion fixture's output stable —
+  ; renderSyntax doesn't print hygieneId, but a gensym'd name would embed
+  ; the macro env's running counter in its printed spelling, making the
+  ; fixture's exact text depend on unrelated preamble changes.)
   `(proc ,getterName ((self ,className)) (: ,fieldType) (. self ,fieldName)))
 
 (defmacro-proc nfl-make-setter (className fieldName fieldType setterName)
