@@ -1460,6 +1460,8 @@ proc emitCaseStmt(ctx: var EmitContext; sx: Syntax): NimNode =
 # match (#13)
 # ---------------------------------------------------------------------------
 
+proc emitMatchObjectTest(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): NimNode
+
 proc emitMatchTest(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): NimNode =
   ## Builds the boolean test for one match pattern against `tmp`. Mirrors
   ## lower.nim's `lowerMatchPattern` — see #43 for the general
@@ -1480,32 +1482,98 @@ proc emitMatchTest(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): NimNode
     # unconditionally — the difference is only whether a binding is emitted.
     newLit(true).attachLineInfo(pattern)
   of sxVector:
-    var restIdx = -1
-    for i, elem in pattern.items:
-      if elem.kind == sxSymbol and elem.sym == "&":
-        restIdx = i
-        break
-    let headCount = if restIdx >= 0: restIdx else: pattern.items.len
-    newCall(bindSym"nflMatchArity", tmp.copyNimTree(), newLit(headCount), newLit(restIdx < 0)).attachLineInfo(pattern)
+    if pattern.isObjectPattern():
+      ctx.emitMatchObjectTest(pattern, tmp)
+    else:
+      var restIdx = -1
+      for i, elem in pattern.items:
+        if elem.kind == sxSymbol and elem.sym == "&":
+          restIdx = i
+          break
+      let headCount = if restIdx >= 0: restIdx else: pattern.items.len
+      newCall(bindSym"nflMatchArity", tmp.copyNimTree(), newLit(headCount), newLit(restIdx < 0)).attachLineInfo(pattern)
   of sxList:
     if pattern.items.len == 2 and pattern.items[0].isSymbol("quote") and pattern.items[1].kind == sxSymbol:
       # 'sym — equality against the symbol's value (an enum label, a const, …).
       nnkInfix.newTree(ident("=="), tmp.copyNimTree(), ctx.identForSymbol(pattern.items[1])).attachLineInfo(pattern)
+    elif pattern.items.len > 0 and pattern.items[0].isSymbol("of"):
+      # (of Type) / (of Type pattern) — a runtime type test (#48), `and`ed
+      # with the nested pattern's test evaluated against a `Type(tmp)`
+      # downcast so subclass-only fields resolve.
+      let ofTest = nnkInfix.newTree(ident("of"), tmp.copyNimTree(), identForTypeSymbol(pattern.items[1])).attachLineInfo(pattern)
+      if pattern.items.len == 3:
+        let downcast = newCall(identForTypeSymbol(pattern.items[1]), tmp.copyNimTree()).attachLineInfo(pattern)
+        nnkInfix.newTree(ident("and"), ofTest, ctx.emitMatchTest(pattern.items[2], downcast)).attachLineInfo(pattern)
+      else:
+        ofTest
     else:
       raiseCompilerError(pattern.span, "unsupported match pattern")
+
+proc emitMatchObjectTest(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): NimNode =
+  ## Builds the conjunction of each field target's test against `tmp.field`
+  ## (#48) — a bare-symbol/`_`/shorthand target contributes `true` (matching
+  ## `emitMatchTest`'s `sxSymbol` arm), so a pattern that only binds reduces
+  ## to `true` overall.
+  var i = 0
+  while i < pattern.items.len:
+    let key = pattern.items[i]
+    let field = key.sym[1 .. ^1]
+    let accessor = nnkDotExpr.newTree(tmp.copyNimTree(), ident(field)).attachLineInfo(key)
+    var target: Syntax = nil
+    if i + 1 < pattern.items.len and not pattern.items[i + 1].isKeywordSym():
+      target = pattern.items[i + 1]
+      i += 2
+    else:
+      i += 1
+    let test = if target != nil: ctx.emitMatchTest(target, accessor) else: newLit(true).attachLineInfo(key)
+    result = if result == nil: test else: nnkInfix.newTree(ident("and"), result, test).attachLineInfo(key)
+  if result == nil:
+    result = newLit(true).attachLineInfo(pattern)
+
+proc emitMatchBindings(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): seq[NimNode]
+
+proc emitMatchObjectBindings(ctx: var EmitContext; pattern: Syntax; tmp: NimNode; defs: var seq[NimNode]) =
+  ## Emits each field target's bindings (#48) against `tmp.field`, recursing
+  ## `emitMatchBindings` per target; a bare-symbol/shorthand target binds the
+  ## field's value directly.
+  var i = 0
+  while i < pattern.items.len:
+    let key = pattern.items[i]
+    let field = key.sym[1 .. ^1]
+    let accessor = nnkDotExpr.newTree(tmp.copyNimTree(), ident(field)).attachLineInfo(key)
+    if i + 1 < pattern.items.len and not pattern.items[i + 1].isKeywordSym():
+      let target = pattern.items[i + 1]
+      case target.kind
+      of sxSymbol:
+        if target.sym != "_":
+          defs.add nnkIdentDefs.newTree(ctx.identForSymbol(target), newEmptyNode(), accessor).attachLineInfo(target)
+      else:
+        defs.add ctx.emitMatchBindings(target, accessor)
+      i += 2
+    else:
+      defs.add nnkIdentDefs.newTree(ctx.identForSymbol(newSymbol(field, key.span)), newEmptyNode(), accessor).attachLineInfo(key)
+      i += 1
 
 proc emitMatchBindings(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): seq[NimNode] =
   ## Emits the accessor `nnkIdentDefs` a match pattern binds against `tmp` —
   ## a bare symbol binds the whole scrutinee; a vector pattern destructures
-  ## it via #12's `emitPatternIdentDefs` (object patterns are rejected by
-  ## `lowerMatchPattern` before this ever runs); every other pattern kind
-  ## (literals, `_`, `'sym`) binds nothing.
+  ## it via #12's `emitPatternIdentDefs`, or (#48) an object pattern's field
+  ## targets via `emitMatchObjectBindings`; `(of Type pattern)` (#48) binds
+  ## the nested pattern against a `Type(tmp)` downcast; every other pattern
+  ## kind (literals, `_`, `'sym`) binds nothing.
   case pattern.kind
   of sxSymbol:
     if pattern.sym != "_":
       result = @[nnkIdentDefs.newTree(ctx.identForSymbol(pattern), newEmptyNode(), tmp.copyNimTree()).attachLineInfo(pattern)]
   of sxVector:
-    ctx.emitPatternIdentDefs(pattern, tmp.copyNimTree(), nskLet, result)
+    if pattern.isObjectPattern():
+      ctx.emitMatchObjectBindings(pattern, tmp, result)
+    else:
+      ctx.emitPatternIdentDefs(pattern, tmp.copyNimTree(), nskLet, result)
+  of sxList:
+    if pattern.items.len == 3 and pattern.items[0].isSymbol("of"):
+      let downcast = newCall(identForTypeSymbol(pattern.items[1]), tmp.copyNimTree()).attachLineInfo(pattern)
+      result = ctx.emitMatchBindings(pattern.items[2], downcast)
   else:
     discard
 

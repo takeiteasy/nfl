@@ -732,8 +732,38 @@ suite "lowering validation":
   test "rejects malformed destructuring pattern inside match":
     expectLowerError("(match n ([1 b] b))", "destructuring pattern element must be a symbol")
 
-  test "rejects object patterns in match (#47)":
-    expectLowerError("(match n ([:name a] a))", "object patterns are not supported in match")
+  test "allows object patterns in match, with match-pattern field targets (#48)":
+    discard lowerExpr(readOne("(match n ([:name a] a) (_ \"other\"))", "lower-test.nfl"))
+
+  test "allows an object pattern field target that tests a quoted symbol (#48)":
+    discard lowerExpr(readOne("(match n ([:kind 'skCircle :radius r] r) (_ 0))", "lower-test.nfl"))
+
+  test "allows an object pattern with a bare-key shorthand target (#48)":
+    discard lowerExpr(readOne("(match n ([:name] name) (_ \"other\"))", "lower-test.nfl"))
+
+  test "rejects a non-keyword object pattern key in match (#48)":
+    expectLowerError("(match n ([:name a b] a))", "object pattern key must be a :field keyword")
+
+  test "rejects a duplicate object pattern field in match (#48)":
+    expectLowerError("(match n ([:name a :name b] a))", "duplicate object pattern field: name")
+
+  test "rejects & rest capture inside a match object pattern (#48)":
+    expectLowerError("(match n ([:name & rest] rest))", "& rest capture is not supported in an object pattern")
+
+  test "allows an of pattern with no nested pattern (#48)":
+    discard lowerExpr(readOne("(match n ((of Circle) 1) (_ 0))", "lower-test.nfl"))
+
+  test "allows an of pattern with a nested object pattern (#48)":
+    discard lowerExpr(readOne("(match n ((of Circle [:radius r]) r) (_ 0))", "lower-test.nfl"))
+
+  test "allows an of pattern's guard to reference a field the pattern bound (#48)":
+    discard lowerExpr(readOne("(match n ((of Circle [:radius r]) :when (> r 0) r) (_ 0))", "lower-test.nfl"))
+
+  test "rejects an of pattern with a non-symbol type":
+    expectLowerError("(match n ((of 1 [:radius r]) r))", "of pattern expects a type name")
+
+  test "rejects an of pattern with the wrong arity":
+    expectLowerError("(match n ((of Circle [:radius r] extra) r))", "of pattern expects (of Type) or (of Type pattern)")
 
   # ---------------------------------------------------------------------------
   # raise

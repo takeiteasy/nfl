@@ -9,6 +9,27 @@ type ImportedPerson = object
 type MatchColour = enum
   mcRed, mcGreen, mcBlue
 
+type MatchShape = ref object of RootObj
+type MatchCircle = ref object of MatchShape
+  matchRadius: float
+type MatchRect = ref object of MatchShape
+  matchWidth, matchHeight: float
+
+proc newMatchCircle(r: float): MatchCircle = MatchCircle(matchRadius: r)
+proc newMatchRect(w, h: float): MatchRect = MatchRect(matchWidth: w, matchHeight: h)
+proc asMatchShape(s: MatchShape): MatchShape = s
+
+type MatchVariantKind = enum mvkCircle, mvkRect
+type MatchVariant = object
+  case vKind: MatchVariantKind
+  of mvkCircle:
+    vRadius: float
+  of mvkRect:
+    vWidth, vHeight: float
+
+proc newVariantCircle(r: float): MatchVariant = MatchVariant(vKind: mvkCircle, vRadius: r)
+proc newVariantRect(w, h: float): MatchVariant = MatchVariant(vKind: mvkRect, vWidth: w, vHeight: h)
+
 proc importedPersonAge(p: ImportedPerson): int =
   p.age
 
@@ -250,6 +271,41 @@ suite "nfl backend — for / case / raise / try":
   test "match — no branch matched raises":
     expect(ValueError):
       discard nflExpr"(match 9 (0 0) (1 1))"
+
+  test "match — object pattern tests and binds fields (#48)":
+    check nflExpr"""(match (new ImportedPerson (name "Ada") (age 36))
+      ([:name n :age a] (& n ($ a)))
+      (_ "?"))""" == "Ada36"
+
+  test "match — object pattern shorthand target (#48)":
+    check nflExpr"""(match (new ImportedPerson (name "Ada") (age 36))
+      ([:name] name)
+      (_ "?"))""" == "Ada"
+
+  test "match — object pattern field target is itself a match pattern (#48)":
+    check nflExpr"""(match (new ImportedPerson (name "Ada") (age 36))
+      ([:name "Bob" :age a] "bob")
+      ([:name n :age a] n)
+      (_ "?"))""" == "Ada"
+
+  test "match — of pattern tests runtime type via inheritance (#48)":
+    check nflExpr"""(match (asMatchShape (newMatchCircle 2.0)) ((of MatchCircle) "circle") ((of MatchRect) "rect") (_ "?"))""" == "circle"
+    check nflExpr"""(match (asMatchShape (newMatchRect 3.0 4.0)) ((of MatchCircle) "circle") ((of MatchRect) "rect") (_ "?"))""" == "rect"
+
+  test "match — of pattern with a nested object pattern binds downcast fields (#48)":
+    check nflExpr"(match (asMatchShape (newMatchCircle 2.0)) ((of MatchCircle [:matchRadius r]) r) (_ 0.0))" == 2.0
+    check nflExpr"(match (asMatchShape (newMatchRect 3.0 4.0)) ((of MatchRect [:matchWidth w :matchHeight h]) (* w h)) (_ 0.0))" == 12.0
+
+  test "match — of pattern guard references a field the pattern bound under a downcast (#48)":
+    check nflExpr"""(match (asMatchShape (newMatchCircle 5.0)) ((of MatchCircle [:matchRadius r]) :when (> r 1.0) "big") (_ "small"))""" == "big"
+    check nflExpr"""(match (asMatchShape (newMatchCircle 0.5)) ((of MatchCircle [:matchRadius r]) :when (> r 1.0) "big") (_ "small"))""" == "small"
+
+  test "match — of pattern falls through to _ when the type doesn't match":
+    check nflExpr"(match (asMatchShape (newMatchRect 3.0 4.0)) ((of MatchCircle [:matchRadius r]) r) (_ -1.0))" == -1.0
+
+  test "match — case-object discriminant matched via an object pattern's 'sym field target (#48)":
+    check nflExpr"(match (newVariantCircle 2.0) ([:vKind 'mvkCircle :vRadius r] r) (_ 0.0))" == 2.0
+    check nflExpr"(match (newVariantRect 3.0 4.0) ([:vKind 'mvkCircle :vRadius r] r) ([:vKind 'mvkRect :vWidth w :vHeight h] (* w h)) (_ 0.0))" == 12.0
 
   test "raise caught by enclosing try":
     check nflExpr("(try (raise (newException ValueError \"boom\")) (except ValueError \"caught\"))") == "caught"

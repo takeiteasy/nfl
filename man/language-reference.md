@@ -780,19 +780,37 @@ Pattern kinds:
 - any other bare symbol matches anything and binds the scrutinee to that name
 - `'sym` (the reader's quote sugar) matches by equality against the symbol
   `sym` — for an enum label or a module-level const
-- a vector pattern (`[a b]`, `[head & rest]`, nested) destructures like a
-  `let`/`var` [destructuring pattern](#destructuring) — object patterns
-  (`[:field ...]`) are not supported in `match`, since there is no
-  arity/field-presence test to run against an arbitrary Nim object; use a
-  vector pattern instead
+- a positional vector pattern (`[a b]`, `[head & rest]`, nested) destructures
+  like a `let`/`var` [destructuring pattern](#destructuring)
+- an object pattern (`[:field target?...]`) tests and destructures by field
+  name — each field's target is itself a full match pattern (unlike a
+  destructuring object pattern, whose targets only ever bind), so a field can
+  be tested with a literal, `'sym`, a nested pattern, or bound with a bare
+  symbol / `_` / the bare-key shorthand (`[:name]` binds `name`). This is how
+  a `case object`'s discriminant is matched — it's just another field:
+  `([:kind 'skCircle :radius r] ...)`
+- `(of Type)` / `(of Type pattern)` tests the scrutinee's runtime type via
+  Nim's `of` — for `ref object of Base` inheritance, including CLOS-lite
+  `defclass` hierarchies — and, if given, matches `pattern` against a
+  `Type(...)` downcast so subclass-only fields resolve:
+  `((of Circle [:radius r]) ...)`
+
+```lisp
+(defclass Circle (Shape) ((radius float)))
+(defclass Rect (Shape) ((width float) (height float)))
+
+(match shape
+  ((of Circle [:radius r])        (* pi (* r r)))
+  ((of Rect [:width w :height h]) (* w h))
+  (_                               0.0))
+```
 
 A clause may carry a guard, recognized positionally right after the
 pattern: `(PATTERN :when guard-expr body…)`. The guard can reference names
-the pattern just bound.
+the pattern just bound, including a field bound under `(of Type pattern)`.
 
 If no clause matches, `match` raises `ValueError` at runtime — there is no
-static exhaustiveness check. Object-variant/constructor patterns (matching
-by type, e.g. `(Circle r)`) are not yet supported; see the tracker.
+static exhaustiveness check; see the tracker.
 
 ### `block`
 

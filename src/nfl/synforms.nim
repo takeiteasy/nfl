@@ -169,10 +169,12 @@ proc validatePattern*(pattern: Syntax; names: var seq[Syntax]; rejectObjectIn: s
   ## most one is allowed, and it must be the second-to-last element
   ## (immediately before the rest-binding name).
   ##
-  ## `rejectObjectIn`, when non-empty, names the context (e.g. "match",
-  ## "macro parameters") in which object patterns are not meaningful and
-  ## should be rejected with a dedicated diagnostic; it propagates into
-  ## nested patterns too.
+  ## `rejectObjectIn`, when non-empty, names the context (e.g. "macro
+  ## parameters") in which object patterns are not meaningful and should be
+  ## rejected with a dedicated diagnostic; it propagates into nested patterns
+  ## too. `match` (#48) no longer routes through here for object patterns —
+  ## it validates and lowers them itself, since a match object pattern's
+  ## field targets are arbitrary match patterns, not plain binding targets.
   if pattern.items.len == 0:
     raiseCompilerError(pattern.span, "destructuring pattern must not be empty")
   if pattern.isObjectPattern():

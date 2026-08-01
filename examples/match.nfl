@@ -41,3 +41,47 @@
 (echo (match 0 (0 "zero") (1 "one") (_ "other")))
 (echo (match [1 2] ([a b] (+ a b)) (_ 0)))
 (echo (match (@ [11 2 3]) ([h & _] :when (> h 10) "big") (_ "small")))
+
+; Object-variant patterns (#48) — two composable pattern kinds, neither
+; needing NFL to know a type's field order at compile time:
+;
+;   (of Type)          — tests the scrutinee's runtime type via Nim's `of`
+;   (of Type pattern)  — same test, then matches `pattern` against a
+;                         `Type(...)` downcast, so subclass-only fields
+;                         resolve
+;
+; for `ref object of Base` inheritance (including CLOS-lite `defclass`
+; hierarchies), and an ordinary object pattern `[:field target...]` for
+; `case object` variant records, where the discriminant is just another
+; field — tested with a `'sym` pattern like any other.
+
+; `of` against a defclass hierarchy.
+(defclass Shape2 () ())
+(defclass Circle2 (Shape2) ((radius float)))
+(defclass Square2 (Shape2) ((side float)))
+
+(proc describeShape ((s Shape2)) (: string)
+  (match s
+    ((of Circle2 [:radius r]) (& "circle, radius " ($ r)))
+    ((of Square2 [:side sd]) (& "square, side " ($ sd)))
+    (_ "unknown shape")))
+
+(echo (describeShape (make-instance Circle2 (radius 2.0))))
+(echo (describeShape (make-instance Square2 (side 3.0))))
+
+; An object pattern matching a `case object`'s discriminant field plus its
+; variant-specific fields in one step.
+(type VShapeKind (enum vskCircle vskRect))
+(type VShape
+  (object
+    (case kind VShapeKind)
+    (of vskCircle (radius float))
+    (of vskRect (width float) (height float))))
+
+(proc describeVariant ((s VShape)) (: string)
+  (match s
+    ([:kind 'vskCircle :radius r] (& "circle, radius " ($ r)))
+    ([:kind 'vskRect :width w :height h] (& "rect " (& ($ w) (& "x" ($ h)))))))
+
+(echo (describeVariant (new VShape (kind vskCircle) (radius 2.0))))
+(echo (describeVariant (new VShape (kind vskRect) (width 3.0) (height 4.0))))

@@ -880,6 +880,37 @@ proc lowerCase(ctx: var LowerContext; sx: Syntax) =
     else:
       raiseCompilerError(branch.items[0].span, "case branch must be headed by of or else")
 
+proc lowerMatchPattern(ctx: var LowerContext; pattern: Syntax)
+
+proc lowerMatchObjectPattern(ctx: var LowerContext; pattern: Syntax) =
+  ## Validates a `match` object pattern `[:field1 target1? :field2 target2? …]`
+  ## (#48) and declares every name its targets bind. Unlike #47's destructuring
+  ## object patterns, a target here is a full match pattern (recursing into
+  ## `lowerMatchPattern`) rather than a plain binding target — so `:kind
+  ## 'skCircle` is a *test*, not just a bind. A bare key with no target keeps
+  ## #47's shorthand meaning: bind a name equal to the field.
+  var seenFields: seq[string] = @[]
+  var i = 0
+  while i < pattern.items.len:
+    let key = pattern.items[i]
+    if not key.isKeywordSym():
+      if key.kind == sxSymbol and key.sym == "&":
+        raiseCompilerError(key.span, "& rest capture is not supported in an object pattern")
+      raiseCompilerError(key.span, "object pattern key must be a :field keyword")
+    let field = key.sym[1 .. ^1]
+    if field in seenFields:
+      raiseCompilerError(key.span, "duplicate object pattern field: " & field)
+    seenFields.add field
+    if i + 1 < pattern.items.len and not pattern.items[i + 1].isKeywordSym():
+      let target = pattern.items[i + 1]
+      if target.kind == sxSymbol and target.sym == "&":
+        raiseCompilerError(target.span, "& rest capture is not supported in an object pattern")
+      lowerMatchPattern(ctx, target)
+      i += 2
+    else:
+      declare(ctx, newSymbol(field, key.span), bkImmutable)
+      i += 1
+
 proc lowerMatchPattern(ctx: var LowerContext; pattern: Syntax) =
   ## Validates a single `match` pattern and declares any names it binds.
   ## Mirrors backend.nim's `emitMatchTest`/`emitMatchBindings` (see #43 for
@@ -891,9 +922,20 @@ proc lowerMatchPattern(ctx: var LowerContext; pattern: Syntax) =
   ## reader's quote sugar) matches by equality against the symbol `sym` —
   ## e.g. an enum label or a module-level const; a vector pattern
   ## destructures like #12's `let`/`var` patterns, reusing `validatePattern`.
-  ## Object patterns (#47) are rejected here — there is no arity/field-
-  ## presence test `emitMatchTest` can emit for a Nim object, unlike the
-  ## `nflMatchArity` runtime check available for positional patterns.
+  ##
+  ## Object patterns (#48) test the scrutinee's fields — each field's target
+  ## is itself a match pattern, handled by `lowerMatchObjectPattern` rather
+  ## than delegating to `validatePattern` (#47's destructuring object
+  ## patterns only ever bind, never test). Positional vector patterns keep
+  ## delegating to `validatePattern` unchanged: their elements stay
+  ## symbol/`_`/nested-vector only, with no equivalent test-recursion.
+  ##
+  ## `(of Type)` / `(of Type pattern)` (#48) tests the scrutinee's runtime
+  ## type via Nim's `of` — for `ref object of Base` inheritance (including
+  ## CLOS-lite `defclass` hierarchies) — and, if a nested pattern is given,
+  ## matches it against a `Type(...)` downcast. `Type` is a type name, not a
+  ## value binding, so it is not looked up in scope (mirrors how
+  ## `lowerObjectType` treats `(of Base)`).
   case pattern.kind
   of sxNil, sxBool, sxInt, sxFloat, sxString:
     discard
@@ -901,13 +943,23 @@ proc lowerMatchPattern(ctx: var LowerContext; pattern: Syntax) =
     if pattern.sym != "_":
       declare(ctx, pattern, bkImmutable)
   of sxVector:
-    var names: seq[Syntax] = @[]
-    validatePattern(pattern, names, rejectObjectIn = "match")
-    for name in names:
-      declare(ctx, name, bkImmutable)
+    if pattern.isObjectPattern():
+      lowerMatchObjectPattern(ctx, pattern)
+    else:
+      var names: seq[Syntax] = @[]
+      validatePattern(pattern, names)
+      for name in names:
+        declare(ctx, name, bkImmutable)
   of sxList:
     if pattern.items.len == 2 and pattern.items[0].isSymbol("quote") and pattern.items[1].kind == sxSymbol:
       discard
+    elif pattern.items.len > 0 and pattern.items[0].isSymbol("of"):
+      if pattern.items.len notin {2, 3}:
+        raiseCompilerError(pattern.span, "of pattern expects (of Type) or (of Type pattern)")
+      if pattern.items[1].kind != sxSymbol:
+        raiseCompilerError(pattern.items[1].span, "of pattern expects a type name")
+      if pattern.items.len == 3:
+        lowerMatchPattern(ctx, pattern.items[2])
     else:
       raiseCompilerError(pattern.span, "unsupported match pattern")
 
