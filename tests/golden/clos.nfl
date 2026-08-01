@@ -2,7 +2,7 @@
   ((name string :accessor animalName)))
 
 (defclass Dog (Animal)
-  ((breed string :reader dogBreed)
+  ((breed string :reader dogBreed :initform "mutt")
    (age int)))
 
 (method speak {.base.} ((a Animal)) (: string) "...")

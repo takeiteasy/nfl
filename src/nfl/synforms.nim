@@ -10,6 +10,31 @@ import ./syntax
 proc isPragmaClause*(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("pragma")
 
+proc objectFieldParts*(field: Syntax): tuple[ok: bool, pragma: Syntax, typeIdx, defaultIdx: int] =
+  ## Resolves the shape of an object field spec — `(name Type)`,
+  ## `(name {.pragma.} Type)`, `(name Type default)`, or
+  ## `(name {.pragma.} Type default)` — so `lower.nim` and `backend.nim` agree
+  ## on where the pragma, type, and default sit. `ok` is false for anything
+  ## else (wrong arity, or a 4-element form whose slot 1 is not a pragma
+  ## clause); `pragma` is nil and `defaultIdx` is -1 when absent.
+  if field.kind != sxList:
+    return (false, nil, 0, -1)
+  case field.items.len
+  of 2:
+    (true, nil, 1, -1)
+  of 3:
+    if field.items[1].isPragmaClause():
+      (true, field.items[1], 2, -1)
+    else:
+      (true, nil, 1, 2)
+  of 4:
+    if field.items[1].isPragmaClause():
+      (true, field.items[1], 2, 3)
+    else:
+      (false, nil, 0, -1)
+  else:
+    (false, nil, 0, -1)
+
 proc isDefvarForm*(sx: Syntax): bool =
   ## `var` is overloaded: `(var name value)` / `(var (name type) value)` is a
   ## module/statement-level declaration, while `(var ((name value) …) body…)`

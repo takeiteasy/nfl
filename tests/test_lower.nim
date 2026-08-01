@@ -117,6 +117,19 @@ suite "lowering validation":
   test "allows a typed destructuring do parameter (#47)":
     discard lowerExpr(readOne("(do (([a b] Pair)) (+ a b))", "lower-test.nfl"))
 
+  test "allows a parameter default (#77)":
+    discard lowerExpr(readOne("(do ((x int 5)) x)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(do ((x [seq int] (list 1 2))) x)", "lower-test.nfl"))
+
+  test "allows an earlier parameter in a later parameter's default (#77)":
+    discard lowerExpr(readOne("(do ((a int) (b int a)) b)", "lower-test.nfl"))
+
+  test "rejects a default value on a destructured parameter (#77)":
+    expectLowerError("(do (([a b] Pair (make-pair))) a)", "a destructured parameter cannot have a default value")
+
+  test "rejects a malformed parameter":
+    expectLowerError("(do ((x int 1 2)) x)", "parameter must be a symbol, (name type) or (name type default)")
+
   test "allows an object destructuring pattern (#47)":
     discard lowerExpr(readOne("(let (([:name n :age a] person)) (+ a 1))", "lower-test.nfl"))
     discard lowerExpr(readOne("(let (([:name :age] person)) (+ age 1))", "lower-test.nfl"))
@@ -246,11 +259,23 @@ suite "lowering validation":
 
   test "rejects malformed object type declarations":
     expectLowerModuleError("(type Person (object))", "object type expects fields")
-    expectLowerModuleError("(type Person (object name))", "object field must be (name Type)")
-    expectLowerModuleError("(type Person (object (name)))", "object field must be (name Type)")
+    expectLowerModuleError("(type Person (object name))", "object field must be (name Type [default])")
+    expectLowerModuleError("(type Person (object (name)))", "object field must be (name Type [default])")
     expectLowerModuleError("(type Person (object (1 string)))", "object field name must be a symbol")
     expectLowerModuleError("(type Person (object (name 1)))", "object field type must be a type symbol")
     expectLowerModuleError("(type Person (object (name string) (name int)))", "duplicate object field: name")
+    expectLowerModuleError("(type Person (object (name string 1 2)))", "expected pragma clause between field name and type")
+
+  test "allows an object field default (#76)":
+    discard lowerModule(readAll("(type Person (object (name string \"anon\") (age int 0)))", "lower-test.nfl"))
+
+  test "allows a pragma'd object field default (#76)":
+    discard lowerModule(readAll("(type Person (object (name {.used.} string \"anon\")))", "lower-test.nfl"))
+
+  test "allows a case discriminator default (#76)":
+    discard lowerModule(readAll(
+      "(type S (object (case kind K ka) (of ka (a int)) (of kb (b int))))",
+      "lower-test.nfl"))
 
   test "rejects malformed enum type declarations":
     expectLowerModuleError("(type Mood (enum))", "enum type expects values")
@@ -1204,8 +1229,8 @@ suite "lowering validation":
       "of/else branch must follow a (case …) clause")
 
   test "rejects a malformed case clause":
-    expectLowerModuleError("(type S (object (case kind)))", "case clause must be (case name Type)")
-    expectLowerModuleError("(type S (object (case)))", "case clause must be (case name Type)")
+    expectLowerModuleError("(type S (object (case kind)))", "case clause must be (case name Type [default])")
+    expectLowerModuleError("(type S (object (case)))", "case clause must be (case name Type [default])")
 
   test "rejects a case clause with no branches":
     expectLowerModuleError("(type S (object (case kind K)))", "case clause expects at least one of branch")

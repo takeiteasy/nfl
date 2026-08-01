@@ -18,3 +18,20 @@
 ; :accessor generates a setter as well as a getter (#75).
 (set! (animalName rex) "Fido")
 (var rexRenamed (animalName rex))
+
+; :initform slot defaults (#78) — a non-zero default (string and int) that
+; make-instance applies when a slot is omitted, alongside an inherited slot
+; (name, from Animal) that can still be passed explicitly.
+(defclass Cat (Animal)
+  ((sound string :reader catSound :initform "meow")
+   (lives int :accessor catLives :initform 9)))
+
+(var whiskers (make-instance Cat (name "Whiskers")))
+(var whiskersName (animalName whiskers))
+(var whiskersSound (catSound whiskers))
+(var whiskersLives (catLives whiskers))
+
+; An explicit value still overrides its :initform.
+(var tom (make-instance Cat (name "Tom") (sound "hiss") (lives 1)))
+(var tomSound (catSound tom))
+(var tomLives (catLives tom))

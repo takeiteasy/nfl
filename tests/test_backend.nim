@@ -353,6 +353,32 @@ nflModule """
   (object
     (value int)
     (tag {.used.} string)))
+; Object field defaults (#76) — a literal default, a non-literal
+; (proc-call) default, a pragma'd default, and a defaulted case
+; discriminator.
+(proc defaultLabel () (: string) "auto")
+(type WithDefaults
+  (object
+    (host string "localhost")
+    (count int (+ 1 2))
+    (label {.used.} string (defaultLabel))))
+(var defaultsOmitted (new WithDefaults))
+(var defaultsOverridden (new WithDefaults (host "example.com")))
+(type DiscDefault
+  (object
+    (case kind Mood sad)
+    (of sad (reason string))
+    (of happy (joy int))))
+(var discDefault (default DiscDefault))
+; Parameter defaults (#77) — a literal default, a non-literal default, and
+; an earlier parameter used in a later parameter's default expression.
+(proc greetDefault ((name string "world")) (: string)
+  (& "hi " name))
+(var greetDefaultOmitted (greetDefault))
+(var greetDefaultOverridden (greetDefault "Ada"))
+(proc addWithDefault ((a int) (b int a)) (: int)
+  (+ a b))
+(var addWithDefaultResult (addWithDefault 5))
 ; Pragma on var declaration.
 (var pragmaVar {.used.} 77)
 ; Pragma on const.
@@ -799,6 +825,28 @@ suite "nfl module backend":
     let t = Tagged(value: 3, tag: "hi")
     check t.value == 3
 
+  test "object field defaults apply when omitted, including a non-literal default (#76)":
+    check defaultsOmitted.host == "localhost"
+    check defaultsOmitted.count == 3
+    check defaultsOmitted.label == "auto"
+
+  test "an explicit field value still wins over its default (#76)":
+    check defaultsOverridden.host == "example.com"
+    check defaultsOverridden.count == 3
+
+  test "a defaulted case discriminator picks its default branch (#76)":
+    check discDefault.kind == sad
+    check discDefault.reason == ""
+
+  test "a parameter default applies when the argument is omitted, including a non-literal default (#77)":
+    check greetDefaultOmitted == "hi world"
+
+  test "an explicit argument still wins over its parameter default (#77)":
+    check greetDefaultOverridden == "hi Ada"
+
+  test "an earlier parameter is visible in a later parameter's default (#77)":
+    check addWithDefaultResult == 10
+
   test "pragma on var declaration compiles":
     check pragmaVar == 77
 
@@ -1140,6 +1188,12 @@ nflModule """
 
 (var circ (mkCircle 2.0 "red"))
 (var circColor (. circ color))
+
+; method parameter default (#77).
+(method scaledArea {.base.} ((s Shape) (factor float 1.0)) (: float)
+  (* (area s) factor))
+(var circScaledAreaOmitted (scaledArea circ))
+(var circScaledAreaOverridden (scaledArea circ 2.0))
 """, "method-test.nfl"
 
 suite "nfl backend — method / object inheritance (#30, #33)":
@@ -1152,6 +1206,10 @@ suite "nfl backend — method / object inheritance (#30, #33)":
 
   test "method dispatches on concrete type":
     check circ.area() > 12.0 and circ.area() < 13.0
+
+  test "a method parameter default applies when omitted, and an explicit argument still overrides it (#77)":
+    check circScaledAreaOmitted == circ.area()
+    check circScaledAreaOverridden == circ.area() * 2.0
 
 # ---------------------------------------------------------------------------
 # case object / discriminated union (#65)

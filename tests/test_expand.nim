@@ -455,6 +455,27 @@ suite "macro expansion":
     check rendered.contains("proc cM ")
     check not rendered.contains("cM=")
 
+  test ":initform is accepted and lowers into the object field's default slot (#78)":
+    let forms = expandSource("""(defclass C () ((n string :initform "anon") (m int)))""", "expand-test.nfl")
+    let rendered = renderForms(forms)
+    check rendered.contains("""(n string "anon")""")
+    check rendered.contains("(m int)")
+
+  test ":initform composes with :accessor (#78)":
+    let forms = expandSource("""(defclass C () ((n string :accessor cN :initform "anon")))""", "expand-test.nfl")
+    let rendered = renderForms(forms)
+    check rendered.contains("""(n string "anon")""")
+    check rendered.contains("proc cN ")
+    check rendered.contains("proc cN= ")
+
+  test "rejects a duplicate :initform on one defclass slot (#78)":
+    expectCoreExpandError(
+      "(defclass Bad () ((name string :initform \"a\" :initform \"b\")))",
+      "defclass slot has more than one :initform")
+
+  test "an unknown defclass slot option is still rejected alongside :initform (#78)":
+    expectCoreExpandError("(defclass Bad () ((name string :foo bar :initform \"a\")))", "defclass: unknown slot option :foo")
+
   # ---------------------------------------------------------------------------
   # automatic template hygiene (#11)
   # ---------------------------------------------------------------------------

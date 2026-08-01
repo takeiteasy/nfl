@@ -20,6 +20,15 @@
 (echo "double(21) = " (double 21))
 (echo "identity(7) = " (identity 7))
 
+; A parameter default — a trailing default value fills the parameter when
+; the caller omits it. Unlike an object field default, a parameter default
+; has no compile-time-evaluable restriction: any expression works, and can
+; reference an earlier parameter.
+(func greet ((name string "world")) (: string)
+  (& "hi " name))
+(echo "greet() = " (greet))
+(echo "greet(\"Ada\") = " (greet "Ada"))
+
 ; The converter applies implicitly wherever a float is expected — no
 ; explicit call needed, same as plain Nim.
 (proc addHalf ((f float)) (: float)

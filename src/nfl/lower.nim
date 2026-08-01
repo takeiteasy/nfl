@@ -379,12 +379,22 @@ proc lowerSet(ctx: var LowerContext; sx: Syntax) =
   lowerExpr(ctx, sx.items[2])
 
 proc lowerParam(ctx: var LowerContext; param: Syntax) =
+  ## Accepts a bare symbol `x`; `(x Type)`; `(x Type default)` (#77) — the
+  ## default is any expression, with no compile-time-evaluable restriction
+  ## (unlike an object field default, see `checkObjectField`); or a
+  ## destructured `([a b] Point)`, which may not carry a default since its
+  ## carrier param is a synthetic gensym.
   if param.kind == sxSymbol:
     declare(ctx, param, bkImmutable)
-  elif param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and
+  elif param.kind == sxList and param.items.len in [2, 3] and param.items[0].kind == sxSymbol and
       (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
     validateTypeReference(param.items[1], "parameter type")
+    if param.items.len == 3:
+      lowerExpr(ctx, param.items[2])
     declare(ctx, param.items[0], bkImmutable)
+  elif param.kind == sxList and param.items.len == 3 and param.items[0].kind == sxVector and
+      (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
+    raiseCompilerError(param.items[2].span, "a destructured parameter cannot have a default value")
   elif param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxVector and
       (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
     # A destructured parameter (#47) — `([a b] Point)` — must carry an
@@ -398,7 +408,7 @@ proc lowerParam(ctx: var LowerContext; param: Syntax) =
   elif param.kind == sxVector:
     raiseCompilerError(param.span, "a destructured parameter requires a type annotation, e.g. ([a b] Point)")
   else:
-    raiseCompilerError(param.span, "do parameter must be a symbol or (name type)")
+    raiseCompilerError(param.span, "parameter must be a symbol, (name type) or (name type default)")
 
 proc lowerLambda(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len < 3:
@@ -1073,16 +1083,24 @@ proc lowerTupleType(sx: Syntax) =
     seen[key] = true
     validateTypeReference(field.items[1], "tuple field type")
 
-proc checkObjectField(field: Syntax; seen: var Table[string, bool]) =
-  ## Validates one `(name Type)` / `(name {.p.} Type)` field — shared by
-  ## `lowerObjectType`'s plain-field loop and `checkVariantBranch`'s per-tag
-  ## field lists (#65), since a field inside a `case`/`of` branch has exactly
-  ## the same shape as one in the flat part of the body. `seen` is threaded
-  ## through both so a name can't collide across branches, or with a plain
-  ## field, or with the `case` discriminator itself — Nim requires every
-  ## field name in a record, variant branches included, to be unique.
-  if field.kind != sxList or (field.items.len != 2 and field.items.len != 3):
-    raiseCompilerError(field.span, "object field must be (name Type)")
+proc checkObjectField(ctx: var LowerContext; field: Syntax; seen: var Table[string, bool]) =
+  ## Validates one `(name Type)` / `(name {.p.} Type)` / `(name Type default)`
+  ## / `(name {.p.} Type default)` field — shared by `lowerObjectType`'s
+  ## plain-field loop and `checkVariantBranch`'s per-tag field lists (#65),
+  ## since a field inside a `case`/`of` branch has exactly the same shape as
+  ## one in the flat part of the body. `seen` is threaded through both so a
+  ## name can't collide across branches, or with a plain field, or with the
+  ## `case` discriminator itself — Nim requires every field name in a record,
+  ## variant branches included, to be unique.
+  ##
+  ## A default value must be a compile-time-evaluable Nim expression (Nim
+  ## restriction, not checked here — see `man/language-reference.md`); a
+  ## parameter default (`lowerParam`) carries no such restriction.
+  let parts = field.objectFieldParts()
+  if field.kind != sxList or not parts.ok:
+    if field.kind == sxList and field.items.len == 4:
+      raiseCompilerError(field.items[1].span, "expected pragma clause between field name and type")
+    raiseCompilerError(field.span, "object field must be (name Type [default])")
   let name = field.items[0]
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, "object field name must be a symbol")
@@ -1090,13 +1108,11 @@ proc checkObjectField(field: Syntax; seen: var Table[string, bool]) =
   if seen.hasKey(key):
     raiseCompilerError(name.span, "duplicate object field: " & key)
   seen[key] = true
-  var typeIdx = 1
-  if field.items.len == 3:
-    if not field.items[1].isPragmaClause():
-      raiseCompilerError(field.items[1].span, "expected pragma clause between field name and type")
-    validatePragma(field.items[1])
-    typeIdx = 2
-  validateTypeReference(field.items[typeIdx], "object field type")
+  if parts.pragma != nil:
+    validatePragma(parts.pragma)
+  validateTypeReference(field.items[parts.typeIdx], "object field type")
+  if parts.defaultIdx >= 0:
+    lowerExpr(ctx, field.items[parts.defaultIdx])
 
 proc isCaseClause(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("case")
@@ -1107,7 +1123,7 @@ proc isOfClause(sx: Syntax): bool =
 proc isElseClause(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("else")
 
-proc checkVariantBranch(branch: Syntax; seen: var Table[string, bool]) =
+proc checkVariantBranch(ctx: var LowerContext; branch: Syntax; seen: var Table[string, bool]) =
   ## Validates one variant branch of a `case` clause (#65): `(of tag
   ## field…)`, `(of [tag1 tag2 …] field…)` (multiple tags sharing one
   ## branch), or `(else field…)`. Zero fields is valid — an empty branch
@@ -1131,9 +1147,9 @@ proc checkVariantBranch(branch: Syntax; seen: var Table[string, bool]) =
       raiseCompilerError(tagSlot.span, "of branch tag must be a symbol or a vector of symbols")
     fieldStart = 2
   for field in branch.items.toOpenArray(fieldStart, branch.items.high):
-    checkObjectField(field, seen)
+    checkObjectField(ctx, field, seen)
 
-proc lowerObjectType(sx: Syntax) =
+proc lowerObjectType(ctx: var LowerContext; sx: Syntax) =
   ## Validates `(object [of Base] (field type) … [(case name Type) (of
   ## tag field…)|(else field…) …])`.
   ## The optional `(of Base)` clause immediately after `object` declares a
@@ -1165,14 +1181,14 @@ proc lowerObjectType(sx: Syntax) =
   while i <= sx.items.high and not sx.items[i].isCaseClause():
     if sx.items[i].isOfClause() or sx.items[i].isElseClause():
       raiseCompilerError(sx.items[i].span, "of/else branch must follow a (case …) clause")
-    checkObjectField(sx.items[i], seen)
+    checkObjectField(ctx, sx.items[i], seen)
     inc i
   if i > sx.items.high:
     return
   let caseClause = sx.items[i]
-  if caseClause.items.len != 3:
+  if caseClause.items.len != 3 and caseClause.items.len != 4:
     raiseCompilerError(caseClause.span,
-      "case clause must be (case name Type), got " & $(caseClause.items.len - 1) & " argument(s)")
+      "case clause must be (case name Type [default]), got " & $(caseClause.items.len - 1) & " argument(s)")
   let discName = caseClause.items[1]
   if discName.kind != sxSymbol:
     raiseCompilerError(discName.span, "case discriminator name must be a symbol")
@@ -1181,6 +1197,8 @@ proc lowerObjectType(sx: Syntax) =
     raiseCompilerError(discName.span, "duplicate object field: " & discKey)
   seen[discKey] = true
   validateTypeReference(caseClause.items[2], "case discriminator type")
+  if caseClause.items.len == 4:
+    lowerExpr(ctx, caseClause.items[3])
   inc i
   if i > sx.items.high:
     raiseCompilerError(caseClause.span, "case clause expects at least one of branch")
@@ -1194,17 +1212,17 @@ proc lowerObjectType(sx: Syntax) =
       raiseCompilerError(branch.span, "else must be the last branch in a case clause")
     if branch.isElseClause():
       sawElse = true
-      checkVariantBranch(branch, seen)
+      checkVariantBranch(ctx, branch, seen)
     elif branch.isOfClause():
       sawBranch = true
-      checkVariantBranch(branch, seen)
+      checkVariantBranch(ctx, branch, seen)
     else:
       raiseCompilerError(branch.span,
         "expected an (of …) or (else …) branch after (case …) clause")
   if not sawBranch:
     raiseCompilerError(caseClause.span, "case clause expects at least one of branch")
 
-proc lowerRefType(sx: Syntax) =
+proc lowerRefType(ctx: var LowerContext; sx: Syntax) =
   ## Validates `(ref X)` where X is a type symbol or an `(object …)` / `(tuple …)` body.
   if sx.items.len != 2:
     raiseCompilerError(sx.span, "ref expects a base type, got " & $(sx.items.len - 1) & " arguments")
@@ -1213,7 +1231,7 @@ proc lowerRefType(sx: Syntax) =
     validateTypeReference(inner, "ref base type")
   elif inner.kind == sxList and inner.items.len > 0:
     if inner.items[0].isSymbol("object"):
-      lowerObjectType(inner)
+      lowerObjectType(ctx, inner)
     elif inner.items[0].isSymbol("tuple"):
       lowerTupleType(inner)
     else:
@@ -1281,7 +1299,7 @@ proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
     validateTypeReference(body, "type alias target")
   elif body.kind == sxList and body.items.len > 0:
     if body.items[0].isSymbol("object"):
-      lowerObjectType(body)
+      lowerObjectType(ctx, body)
     elif body.items[0].isSymbol("enum"):
       if genIdx >= 0:
         raiseCompilerError(sx.items[genIdx].span, "enum type cannot be generic")
@@ -1291,7 +1309,7 @@ proc lowerTypeDecl(ctx: var LowerContext; sx: Syntax) =
     elif body.items[0].isSymbol("distinct"):
       lowerDistinctType(body)
     elif body.items[0].isSymbol("ref"):
-      lowerRefType(body)
+      lowerRefType(ctx, body)
     else:
       raiseCompilerError(body.items[0].span, "unknown type declaration form: " & formName(body.items[0]))
   else:

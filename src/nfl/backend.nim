@@ -801,16 +801,17 @@ proc emitParam(ctx: var EmitContext; param: Syntax; patternDefs: var seq[NimNode
   ## `nnkLetSection` (see `emitLambda`/`emitRoutine`).
   if param.kind == sxSymbol:
     return nnkIdentDefs.newTree(ctx.identForSymbol(param, nskParam), newEmptyNode(), newEmptyNode()).attachLineInfo(param)
-  if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxSymbol and
+  if param.kind == sxList and param.items.len in [2, 3] and param.items[0].kind == sxSymbol and
       (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
-    return nnkIdentDefs.newTree(ctx.identForSymbol(param.items[0], nskParam), emitTypeRef(param.items[1]), newEmptyNode()).attachLineInfo(param)
+    let default = if param.items.len == 3: ctx.emitExpr(param.items[2]) else: newEmptyNode()
+    return nnkIdentDefs.newTree(ctx.identForSymbol(param.items[0], nskParam), emitTypeRef(param.items[1]), default).attachLineInfo(param)
   if param.kind == sxList and param.items.len == 2 and param.items[0].kind == sxVector and
       (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
     let carrier = genSym(nskParam, "p")
     let typeIdent = emitTypeRef(param.items[1])
     ctx.emitPatternIdentDefs(param.items[0], carrier.copyNimTree(), nskLet, patternDefs)
     return nnkIdentDefs.newTree(carrier, typeIdent, newEmptyNode()).attachLineInfo(param)
-  raiseCompilerError(param.span, "do parameter must be a symbol or (name type), or a typed destructuring pattern")
+  raiseCompilerError(param.span, "parameter must be a symbol, (name type) or (name type default), or a typed destructuring pattern")
 
 proc emitLambda(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len < 3:
@@ -1071,18 +1072,18 @@ proc isCaseClause(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("case")
 
 proc emitObjectFieldDef(ctx: var EmitContext; field: Syntax): NimNode =
-  ## Emits one `nnkIdentDefs` for a `(name Type)` / `(name {.p.} Type)` field
-  ## — shared by the plain-field loop and each variant branch's field list
+  ## Emits one `nnkIdentDefs` for a `(name Type)` / `(name {.p.} Type)` /
+  ## `(name Type default)` / `(name {.p.} Type default)` field (#76) —
+  ## shared by the plain-field loop and each variant branch's field list
   ## (#65), since lowering already validated both have the same shape.
-  var pragma: Syntax = nil
-  var typeIdx = 1
-  if field.items.len == 3 and field.items[1].isPragmaClause():
-    pragma = field.items[1]
-    typeIdx = 2
+  let parts = field.objectFieldParts()
+  if not parts.ok:
+    raiseCompilerError(field.span, "object field must be (name Type [default])")
+  let default = if parts.defaultIdx >= 0: ctx.emitExpr(field.items[parts.defaultIdx]) else: newEmptyNode()
   nnkIdentDefs.newTree(
-    pragmaDeclIdent(ctx, field.items[0], pragma, "object field name"),
-    emitTypeReference(field.items[typeIdx]),
-    newEmptyNode()
+    pragmaDeclIdent(ctx, field.items[0], parts.pragma, "object field name"),
+    emitTypeReference(field.items[parts.typeIdx]),
+    default
   ).attachLineInfo(field)
 
 proc emitVariantBranch(ctx: var EmitContext; branch: Syntax): NimNode =
@@ -1132,10 +1133,11 @@ proc emitObjectType(ctx: var EmitContext; sx: Syntax): NimNode =
     inc i
   if i <= sx.items.high:
     let caseClause = sx.items[i]
+    let discDefault = if caseClause.items.len == 4: ctx.emitExpr(caseClause.items[3]) else: newEmptyNode()
     let discIdentDefs = nnkIdentDefs.newTree(
       pragmaDeclIdent(ctx, caseClause.items[1], nil, "case discriminator name"),
       emitTypeReference(caseClause.items[2]),
-      newEmptyNode()
+      discDefault
     ).attachLineInfo(caseClause)
     var recCase = nnkRecCase.newTree(discIdentDefs)
     for j in (i + 1) .. sx.items.high:

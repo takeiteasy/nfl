@@ -237,6 +237,27 @@ Omit the return type for void procedures:
   (echo "Hello, " name))
 ```
 
+A parameter may carry a trailing default value, `(name type default)` —
+supplied when a call omits the argument:
+
+```lisp
+(proc greet ((name string "world")) (: string)
+  (& "hi " name))
+
+(greet)        ; "hi world"
+(greet "Ada")  ; "hi Ada"
+```
+
+A default expression may reference an earlier parameter in the same list,
+and, unlike an [object field default](#type--type-declaration), carries no
+compile-time-evaluable restriction — any expression is allowed. NFL does not
+require defaulted parameters to come last; Nim itself permits a defaulted
+parameter before a non-defaulted one (call it with a named argument). A
+destructured parameter (`([a b] Point)`) may not carry a default.
+
+This applies to `proc`, `func`, `method`, and `converter` parameters, and to
+`do` (anonymous procedure) parameters.
+
 ### Operator proc names
 
 A `proc` (or `method`/`func`/`converter`/`template`/`iterator`) name may be
@@ -504,6 +525,28 @@ With export and pragmas:
     (field type)))
 ```
 
+**Object field defaults** — a trailing default value, `(field type
+default)` (or `(field {.pragma.} type default)` alongside a field pragma),
+fills the field when a constructor call (`new`/`make-instance`) omits it; an
+explicit value still overrides it:
+
+```lisp
+(type Config
+  (object
+    (host string "localhost")
+    (port int 8080)))
+
+(new Config)             ; host: "localhost", port: 8080
+(new Config (port 9090)) ; host: "localhost", port: 9090
+```
+
+A field default must be a **compile-time-evaluable** Nim expression — a
+literal, another compile-time constant, or a call to a proc Nim can evaluate
+at compile time. This is a Nim restriction on object-field defaults, not an
+NFL one, so it isn't checked at the NFL level; a violation surfaces as a Nim
+compile error. A [parameter default](#proc--named-procedure) carries no such
+restriction. The `case` discriminator can also carry a default — see below.
+
 **Object inheritance** — the `(of Base)` clause immediately after `object` declares a base type:
 
 ```lisp
@@ -529,8 +572,9 @@ Nim's own variant records:
 
 `case`/`of` clauses live inline in the object body, at the same list level as
 plain fields: zero or more ordinary `(name Type)` fields, then exactly one
-`(case discriminator Type)` clause, then one or more branches running to the
-end of the body. A branch is `(of tag field…)`, `(of [tag1 tag2 …] field…)`
+`(case discriminator Type)` clause — optionally `(case discriminator Type
+default)`, subject to the same compile-time-evaluable restriction as a plain
+field default — then one or more branches running to the end of the body. A branch is `(of tag field…)`, `(of [tag1 tag2 …] field…)`
 — multiple tags sharing one branch — or a final `(else field…)`; a branch
 with no fields (`(of skPoint)`) is valid and lowers to Nim's `discard` in
 that branch. `of`/`else` appearing anywhere before a `case` clause, a second
@@ -1134,7 +1178,7 @@ their own:
   ((name string :accessor animalName)))
 
 (defclass Dog (Animal)
-  ((breed string :reader dogBreed)))
+  ((breed string :reader dogBreed :initform "mutt")))
 
 (method speak {.base.} ((a Animal)) (: string) "...")
 (method speak ((d Dog)) (: string) "woof")
@@ -1143,6 +1187,8 @@ their own:
 (echo (animalName rex) " says " (speak rex))    ; -> "Rex says woof"
 
 (set! (animalName rex) "Fido")                  ; :accessor is settable too
+
+(var stray (make-instance Dog (name "Stray")))  ; breed defaults to "mutt"
 ```
 
 A slot is `(name Type option...)`; a bare `(name Type)` is a plain field
@@ -1153,15 +1199,32 @@ value becomes a real Nim `proc` name, so unlike a `defclass` name itself
 (compile-time only), it must be a plain identifier: `animalName`, not
 `animal-name`.
 
+`:initform` gives a slot a default value, used when `make-instance` omits
+it — it lowers directly into the [object field
+default](#type--type-declaration) `defclass` generates, so it carries the
+same compile-time-evaluable restriction:
+
+```lisp
+(defclass Cat (Animal)
+  ((sound string :reader catSound :initform "meow")))
+
+(make-instance Cat (name "Whiskers"))  ; sound defaults to "meow"
+```
+
+A slot may combine `:initform` with `:accessor`/`:reader`; at most one
+`:initform` per slot.
+
 The superclass list is `()` (→ inherits `RootObj`, so the class is
 dispatchable from the start) or a single `(Parent)` — `defclass` supports
 single inheritance only; multiple superclasses are a `macro-error`. Classes
 are always `ref object`, since that's what `method` dispatch and `RootObj`
 inheritance both require.
 
-Deliberately out of scope for now (tracked separately): `:initform`/
-`:initarg` slot defaults, since NFL object fields have no defaults at all
-yet; and a `defmethod` distinct from the plain [`method`
+Deliberately out of scope for now (tracked separately): `:initarg` (a
+distinct external initializer name for a slot) — `defclass` has no
+visibility into an inherited superclass's slots at macro-expand time, so a
+class-specific initializer mapping isn't possible without a Nim-level
+constructor macro; and a `defmethod` distinct from the plain [`method`
 alias](#cl-style-declaration-spellings-preamble) above — CLOS-lite adds no
 dispatch mechanism of its own. See `examples/clos.nfl` for a runnable
 demonstration.

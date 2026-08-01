@@ -185,8 +185,11 @@
 ; object/new/method forms, in the spirit of the def* aliases and CL sequence
 ; functions above. Deliberate departures from real CLOS, tightened by what
 ; NFL doesn't have yet (see the tracker for the follow-up tickets):
-;   - no :initform/:initarg — NFL has no object-field defaults, so every slot
-;     is effectively a required make-instance argument.
+;   - :initform is supported (a slot default used when make-instance omits
+;     it); :initarg (a distinct external initializer name) is not — defclass
+;     has no visibility into an inherited superclass's slots at macro-expand
+;     time, so a class-specific initializer mapping isn't possible without a
+;     Nim-level constructor macro.
 ;   - :accessor generates both a getter and a setter (`animalName` and
 ;     `animalName=`, callable as `(set! (animalName a) v)`); :reader
 ;     generates a getter only.
@@ -200,6 +203,9 @@
 ;     defclass/defmacro/defmacro-proc name itself, which only ever exists at
 ;     expansion time — they must be plain Nim identifiers (no hyphens);
 ;     `animalName`, not `animal-name`.
+;   - an :initform expression must be a compile-time-evaluable Nim
+;     expression — it lowers straight into a Nim object-field default (see
+;     `man/language-reference.md`), which carries that same restriction.
 
 (defmacro-proc nfl-class-parent (supers)
   (if (nil? supers)
@@ -208,20 +214,8 @@
           (first supers)
           (macro-error "defclass supports a single superclass; see the multiple-dispatch ticket"))))
 
-(defmacro-proc nfl-slot-field (slot)
-  (if (not (list? slot))
-      (macro-error "defclass slot must be a list")
-      (if (< (length slot) 2)
-          (macro-error "defclass slot must be (name Type [options...])")
-          (list (first slot) (nth slot 1)))))
-
-(defmacro-proc nfl-slot-fields (slots)
-  (if (nil? slots)
-      '()
-      (cons (nfl-slot-field (first slots)) (nfl-slot-fields (rest slots)))))
-
 (defmacro-proc nfl-slot-option-key-ok? (key)
-  (if (= key ':accessor) true (= key ':reader)))
+  (if (= key ':accessor) true (if (= key ':reader) true (= key ':initform))))
 
 (defmacro-proc nfl-validate-slot-options (opts)
   (if (nil? opts)
@@ -229,20 +223,52 @@
       (if (nil? (rest opts))
           (macro-error "defclass slot option missing its value")
           (if (nfl-slot-option-key-ok? (first opts))
-              (if (symbol? (nth opts 1))
+              ; :initform's value is an arbitrary expression; :accessor/
+              ; :reader still require a plain symbol (it becomes a proc name).
+              (if (= (first opts) ':initform)
                   (nfl-validate-slot-options (rest (rest opts)))
-                  (macro-error "defclass slot accessor/reader name must be a symbol"))
+                  (if (symbol? (nth opts 1))
+                      (nfl-validate-slot-options (rest (rest opts)))
+                      (macro-error "defclass slot accessor/reader name must be a symbol")))
               (macro-error (string-append "defclass: unknown slot option " (symbol->string (first opts))))))))
 
 (defmacro-proc nfl-slot-names-for-key (opts key)
-  ; Collects the values paired with a given option key (`:accessor` or
-  ; `:reader`), skipping every other key/value pair. Called once per key so
-  ; `:accessor` and `:reader` each generate their own set of procs (see #75).
+  ; Collects the values paired with a given option key (`:accessor`,
+  ; `:reader`, or `:initform`), skipping every other key/value pair. Called
+  ; once per key so `:accessor` and `:reader` each generate their own set of
+  ; procs (see #75).
   (if (nil? opts)
       '()
       (if (= (first opts) key)
           (cons (nth opts 1) (nfl-slot-names-for-key (rest (rest opts)) key))
           (nfl-slot-names-for-key (rest (rest opts)) key))))
+
+(defmacro-proc nfl-slot-initform (slot)
+  ; Extracts a slot's :initform value, if any — the single value paired with
+  ; the :initform key, or nil if the option is absent. More than one
+  ; :initform on a slot is rejected here, since `nfl-validate-slot-options`
+  ; validates each key/value pair independently and never counts repeats.
+  (let ((initforms (nfl-slot-names-for-key (rest (rest slot)) ':initform)))
+    (if (nil? initforms)
+        nil
+        (if (nil? (rest initforms))
+            (first initforms)
+            (macro-error "defclass slot has more than one :initform")))))
+
+(defmacro-proc nfl-slot-field (slot)
+  (if (not (list? slot))
+      (macro-error "defclass slot must be a list")
+      (if (< (length slot) 2)
+          (macro-error "defclass slot must be (name Type [options...])")
+          (let ((initform (nfl-slot-initform slot)))
+            (if (nil? initform)
+                (list (first slot) (nth slot 1))
+                (list (first slot) (nth slot 1) initform))))))
+
+(defmacro-proc nfl-slot-fields (slots)
+  (if (nil? slots)
+      '()
+      (cons (nfl-slot-field (first slots)) (nfl-slot-fields (rest slots)))))
 
 (defmacro-proc nfl-make-getter (className fieldName fieldType getterName)
   ; A literal `self`, not `(gensym "self")` — still safe without hygiene:

@@ -46,3 +46,12 @@ suite "nfl stdlib":
 
   test ":accessor's generated setter assigns through set! (#75)":
     check rexRenamed == "Fido"
+
+  test ":initform fills an omitted slot with a non-zero default, incl. an inherited slot (#78)":
+    check whiskersName == "Whiskers"
+    check whiskersSound == "meow"
+    check whiskersLives == 9
+
+  test "an explicit make-instance argument still overrides its :initform (#78)":
+    check tomSound == "hiss"
+    check tomLives == 1

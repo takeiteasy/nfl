@@ -13,6 +13,18 @@
 (echo "person age: " (personAge ada))
 (echo "person age by named call: " (personAge (: p ada)))
 
+; object field defaults — a trailing default value fills the field when a
+; constructor call (new/make-instance) omits it; an explicit value overrides
+; it. Field defaults must be compile-time-evaluable Nim expressions.
+(type Config
+  (object
+    (host string "localhost")
+    (port int 8080)))
+(var defaultConfig (new Config))
+(var customConfig (new Config (port 9090)))
+(echo "default config: " (. defaultConfig host) ":" (. defaultConfig port))
+(echo "custom config: " (. customConfig host) ":" (. customConfig port))
+
 ; distinct — newtype wrapper: prevents accidental mixing of units.
 (type Metres (distinct float))
 (proc toMetres ((x float)) (: Metres) (Metres x))

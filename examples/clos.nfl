@@ -13,3 +13,11 @@
 ; :accessor generates a setter as well as a getter — :reader stays getter-only.
 (set! (animalName rex) "Fido")
 (echo "renamed to " (animalName rex))
+
+; :initform — a slot default make-instance applies when the slot is omitted.
+; An inherited slot (name, from Animal) can still be passed explicitly.
+(defclass Cat (Animal)
+  ((sound string :reader catSound :initform "meow")))
+
+(var whiskers (make-instance Cat (name "Whiskers")))
+(echo (animalName whiskers) " says " (catSound whiskers))
