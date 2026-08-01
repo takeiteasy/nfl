@@ -757,6 +757,42 @@ suite "lowering validation":
     expectLowerError("(block :search (break-from search 1))", "break-from target must be a :name label")
 
   # ---------------------------------------------------------------------------
+  # catch / throw (#55)
+  # ---------------------------------------------------------------------------
+
+  test "allows a catch with a matching throw inside":
+    discard lowerExpr(readOne("(catch :found (throw :found 1) -1)", "lower-test.nfl"))
+
+  test "allows a throw with no enclosing catch":
+    # The whole point of #55 over #41's lexical break-from: a throw need not
+    # be lexically inside any catch at all — matching happens at runtime.
+    discard lowerExpr(readOne("(throw :found 1)", "lower-test.nfl"))
+
+  test "allows throw crossing a proc boundary inside a catch":
+    discard lowerModule(readAll(
+      "(catch :found (proc f () (throw :found 1)) -1)", "lower-test.nfl"))
+
+  test "allows a catch with no throw inside":
+    discard lowerExpr(readOne("(catch :found 1 2)", "lower-test.nfl"))
+
+  test "rejects catch with an empty body":
+    expectLowerError("(catch :found)", "catch expects at least one body expression")
+
+  test "rejects catch with a malformed target":
+    expectLowerError("(catch found 1)", "catch target must be a :name label")
+
+  test "rejects catch with no target":
+    expectLowerError("(catch)", "catch expects a :name label and at least one expression")
+
+  test "rejects throw with the wrong arity":
+    expectLowerError("(throw :found)", "throw expects 2 arguments, got 1")
+    expectLowerError("(throw :found 1 2)", "throw expects 2 arguments, got 3")
+    expectLowerError("(throw)", "throw expects 2 arguments, got 0")
+
+  test "rejects throw with a malformed target":
+    expectLowerError("(throw found 1)", "throw target must be a :name label")
+
+  # ---------------------------------------------------------------------------
   # prog1 / prog2 (#56)
   # ---------------------------------------------------------------------------
 
@@ -1103,6 +1139,88 @@ suite "lowering validation":
 
   test "rejects object with only the head and no fields or inheritance":
     expectLowerModuleError("(type Bad (object))", "object type expects")
+
+  # ---------------------------------------------------------------------------
+  # case object / discriminated union (#65)
+  # ---------------------------------------------------------------------------
+
+  test "allows a case object with plain fields, multi-tag, empty, and else branches":
+    discard lowerModule(readAll("""
+      (type ShapeKind (enum skCircle skRect skPoint))
+      (type Shape
+        (object
+          (id int)
+          (case kind ShapeKind)
+          (of skCircle (radius float))
+          (of [skRect] (width float) (height float))
+          (of skPoint)
+          (else (extra string))))
+      """, "lower-test.nfl"))
+
+  test "allows a case object with no plain fields before the case clause":
+    discard lowerModule(readAll("""
+      (type K (enum kA kB))
+      (type S (object (case kind K) (of kA) (of kB)))
+      """, "lower-test.nfl"))
+
+  test "allows a case object composed with ref":
+    discard lowerModule(readAll("""
+      (type K (enum kA kB))
+      (type S (ref (object (case kind K) (of kA) (of kB))))
+      """, "lower-test.nfl"))
+
+  test "allows an exported case discriminator":
+    discard lowerModule(readAll("""
+      (type K (enum kA kB))
+      (type S* (object (case kind* K) (of kA) (of kB)))
+      """, "lower-test.nfl"))
+
+  test "rejects an of branch with no preceding case clause":
+    expectLowerModuleError(
+      "(type S (object (id int) (of skA (x int))))",
+      "of/else branch must follow a (case …) clause")
+
+  test "rejects a malformed case clause":
+    expectLowerModuleError("(type S (object (case kind)))", "case clause must be (case name Type)")
+    expectLowerModuleError("(type S (object (case)))", "case clause must be (case name Type)")
+
+  test "rejects a case clause with no branches":
+    expectLowerModuleError("(type S (object (case kind K)))", "case clause expects at least one of branch")
+
+  test "rejects a second case clause in the same object body":
+    expectLowerModuleError(
+      "(type S (object (case kind K) (of skA) (case kind2 K2)))",
+      "object body allows only one case clause")
+
+  test "rejects an else branch that isn't last":
+    expectLowerModuleError(
+      "(type S (object (case kind K) (else (x int)) (of skA)))",
+      "else must be the last branch in a case clause")
+
+  test "rejects a plain field after the case clause's branches":
+    expectLowerModuleError(
+      "(type S (object (case kind K) (of skA) (extra string)))",
+      "expected an (of …) or (else …) branch after (case …) clause")
+
+  test "rejects an of branch with an empty tag vector":
+    expectLowerModuleError(
+      "(type S (object (case kind K) (of [] (x int))))",
+      "of branch tag vector must not be empty")
+
+  test "rejects an of branch with a non-symbol tag":
+    expectLowerModuleError(
+      "(type S (object (case kind K) (of 1 (x int))))",
+      "of branch tag must be a symbol or a vector of symbols")
+
+  test "rejects a duplicate field name across branches":
+    expectLowerModuleError(
+      "(type S (object (case kind K) (of skA (x int)) (of skB (x int))))",
+      "duplicate object field: x")
+
+  test "rejects a branch field name colliding with the discriminator":
+    expectLowerModuleError(
+      "(type S (object (case kind K) (of skA (kind int))))",
+      "duplicate object field: kind")
 
   # ---------------------------------------------------------------------------
   # implicit result variable  (#36)

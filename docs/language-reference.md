@@ -469,6 +469,45 @@ With export and pragmas:
 (type Dog    (ref (object (of Animal))))
 ```
 
+**Case object (variant record)** — a `case`-discriminated object, mirroring
+Nim's own variant records:
+
+```lisp
+(type ShapeKind (enum skCircle skRect skPoint))
+
+(type Shape
+  (object
+    (id int)
+    (case kind ShapeKind)
+    (of skCircle (radius float))
+    (of [skRect skSquare] (width float) (height float))
+    (of skPoint)
+    (else (extra string))))
+```
+
+`case`/`of` clauses live inline in the object body, at the same list level as
+plain fields: zero or more ordinary `(name Type)` fields, then exactly one
+`(case discriminator Type)` clause, then one or more branches running to the
+end of the body. A branch is `(of tag field…)`, `(of [tag1 tag2 …] field…)`
+— multiple tags sharing one branch — or a final `(else field…)`; a branch
+with no fields (`(of skPoint)`) is valid and lowers to Nim's `discard` in
+that branch. `of`/`else` appearing anywhere before a `case` clause, a second
+`case` clause in the same body, or a plain field *after* the branches, are
+all lowering errors — the layout is fixed, unlike Nim's own more permissive
+record grammar.
+
+Composes with everything else `object` supports: `(ref (object … (case …)
+…))`, `(of Base)` inheritance, an exported discriminator (`(case kind*
+ShapeKind)`), and field pragmas. Construct one with `new` like any other
+object, setting the discriminator alongside the branch's own fields:
+
+```lisp
+(new Shape (id 1) (kind skCircle) (radius 2.0))
+```
+
+Reading or setting a field that doesn't belong to the value's current branch
+is a runtime `FieldDefect`, exactly as in Nim.
+
 **Distinct type** — a newtype wrapper that prevents accidental mixing:
 
 ```lisp
@@ -818,6 +857,43 @@ were ever taken (or, if the tail itself is an unconditional `break-from`
 with a value and there's no other fallthrough, from that value). A
 `break-from` value that doesn't match the block's type is a regular Nim
 type-mismatch error at the point it's assigned.
+
+### `catch` / `throw`
+
+`(catch :tag body…)` / `(throw :tag value)` is the dynamic-extent counterpart
+to `block`/`break-from`: where `break-from` can only exit a `block` that
+*lexically* encloses it — and cannot cross a `proc`/`method`/`func`/
+`converter`/`template`/`iterator`/`do` boundary — `throw` unwinds across any
+number of proc calls to the nearest enclosing `catch` with a matching tag,
+resolved at runtime rather than at compile time:
+
+```lisp
+(proc search ((node Tree) (target int))
+  (if (== (. node value) target) (throw :found node) (echo "keep looking")))
+
+(proc findNode ((root Tree) (target int)) (: Tree)
+  (catch :found
+    (search root target)
+    nil))
+```
+
+`search` can call itself arbitrarily deep — `throw :found` unwinds straight
+back to the `catch :found` in `findNode` no matter how many stack frames of
+`search` are in between, which `break-from` cannot do (its label goes out of
+scope the moment `search` is entered, since that's a new proc body).
+
+Unlike `break-from`, `throw` always requires a value — there is no valueless
+`(throw :tag)` — since a `catch`'s value type is inferred from its own body
+(the same way a named `block`'s is), and a valueless throw reaching a
+value-producing catch would have nothing to unify that type against.
+
+Tag matching is by name (the label text after the leading `:`), not by
+lexical identity — a `throw` written inside a macro expansion can still reach
+a `catch` written in ordinary code with the same tag spelling. If no
+enclosing `catch` matches, the throw propagates like any other uncaught
+exception. A `throw` whose value type doesn't match the type already
+established by its `catch`'s own body is not converted — it propagates past
+that `catch` to be handled (or not) further up the call stack.
 
 ### `discard`
 

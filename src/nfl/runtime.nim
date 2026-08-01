@@ -165,3 +165,62 @@ proc nflMakeArray*[T](n: int; fill: T): seq[T] =
   result = newSeq[T](n)
   for i in 0 ..< n:
     result[i] = fill
+
+type
+  NflThrow* = ref object of CatchableError
+    ## Shared base raised by `throw` (#55) — every `catch`/`throw` pair in a
+    ## program raises/catches this same type, discriminated at runtime by
+    ## `tag` rather than by a distinct Nim exception type per label. `tag` is
+    ## the label spelling with its leading `:` stripped (`blockLabelName`),
+    ## matched by string equality — deliberately *not* hygiene-folded like
+    ## `break-from`'s lexical label keys, since `throw` must be able to reach
+    ## a `catch` written in ordinary user code from inside a macro expansion.
+    tag*: string
+  NflThrowVal*[T] = ref object of NflThrow
+    ## Carries the value passed to `(throw :tag value)`. Generic so the same
+    ## exception hierarchy serves every value type; `nflCatch` downcasts to
+    ## the branch's own `typeof(body)` instantiation and re-raises if that
+    ## downcast wouldn't apply, rather than deferring to Nim's `of` semantics
+    ## on a general `NflThrow`.
+    value*: T
+
+proc newNflThrow*[T](tag: string; value: T): NflThrowVal[T] =
+  ## Builds the exception object raised by `(throw :tag value)` (#55). The
+  ## backend wraps the call to this in a raw `nnkRaiseStmt` (see `emitThrow`)
+  ## rather than calling a `{.noreturn.}` proc directly, purely to follow the
+  ## same convention `emitRaise`/`emitBreakFrom` already use for their own
+  ## noreturn forms — a raw `raise`/`break` statement node is unambiguously
+  ## noreturn to Nim's typechecker in any expression position, so keeping
+  ## `throw` in that same shape avoids relying on `{.noreturn.}` inference on
+  ## an ordinary proc call, which is a separate (and less predictable) path
+  ## through the compiler.
+  NflThrowVal[T](tag: tag, value: value, msg: "unhandled nfl throw :" & tag)
+
+template nflCatch*(tagName: static string; body: untyped): untyped =
+  ## Implements `(catch :tag body…)` (#55). `body` is `typeof`'d directly (no
+  ## type slot in the surface syntax to draw the carried type from), unlike
+  ## `emitLabelledBlock`'s carrier for `break-from` — that copies the body
+  ## with same-target `break-from`s erased before taking `typeof`, since a
+  ## lexical, in-place `break`/`return` there would otherwise foul the type
+  ## check. Here `typeof(body)` is expanded in place at the use site, so an
+  ## ordinary `break`/`continue`/`return` inside `body` still semchecks fine.
+  ##
+  ## The `e of NflThrowVal[typeof(body)]` guard matters: without it, a
+  ## same-tag throw carrying a value of a different type is an
+  ## `ObjectConversionDefect` in debug builds and silently unchecked under
+  ## `-d:danger`. With the guard, a tag match with a mismatched value type
+  ## re-raises instead, so it propagates to (and can be handled by) an outer
+  ## catch rather than corrupting the result.
+  when typeof(body) is void:
+    try:
+      body
+    except NflThrow as e:
+      if e.tag != tagName:
+        raise
+  else:
+    try:
+      body
+    except NflThrow as e:
+      if e.tag != tagName or not (e of NflThrowVal[typeof(body)]):
+        raise
+      NflThrowVal[typeof(body)](e).value

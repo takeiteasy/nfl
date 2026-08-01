@@ -1012,9 +1012,56 @@ proc emitFrom(sx: Syntax): NimNode =
     for sym in rest:
       result.add ident(sym.sym).attachLineInfo(sym)
 
+proc isCaseClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("case")
+
+proc emitObjectFieldDef(ctx: var EmitContext; field: Syntax): NimNode =
+  ## Emits one `nnkIdentDefs` for a `(name Type)` / `(name {.p.} Type)` field
+  ## — shared by the plain-field loop and each variant branch's field list
+  ## (#65), since lowering already validated both have the same shape.
+  var pragma: Syntax = nil
+  var typeIdx = 1
+  if field.items.len == 3 and field.items[1].isPragmaClause():
+    pragma = field.items[1]
+    typeIdx = 2
+  nnkIdentDefs.newTree(
+    pragmaDeclIdent(ctx, field.items[0], pragma, "object field name"),
+    emitTypeReference(field.items[typeIdx]),
+    newEmptyNode()
+  ).attachLineInfo(field)
+
+proc emitVariantBranch(ctx: var EmitContext; branch: Syntax): NimNode =
+  ## Emits one `nnkOfBranch`/`nnkElse` for a `case` clause's `(of tag
+  ## field…)` / `(of [tag1 tag2 …] field…)` / `(else field…)` branch (#65).
+  ## An empty field list emits `nnkRecList(newNilLit())` — Nim's spelling for
+  ## an empty variant branch, i.e. `discard` in the record body.
+  let isElse = branch.items[0].isSymbol("else")
+  var fieldStart = 1
+  var head = if isElse: nnkElse.newTree() else: nnkOfBranch.newTree()
+  if not isElse:
+    let tagSlot = branch.items[1]
+    if tagSlot.kind == sxVector:
+      for tag in tagSlot.items:
+        head.add identForTypeSymbol(tag)
+    else:
+      head.add identForTypeSymbol(tagSlot)
+    fieldStart = 2
+  var fields = nnkRecList.newTree()
+  for field in branch.items.toOpenArray(fieldStart, branch.items.high):
+    fields.add ctx.emitObjectFieldDef(field)
+  if fields.len == 0:
+    fields.add newNilLit()
+  head.add fields
+  head.attachLineInfo(branch)
+
 proc emitObjectType(ctx: var EmitContext; sx: Syntax): NimNode =
-  ## Emits `(object [of Base] (field type) …)` as `nnkObjectTy`.
-  ## The optional `(of Base)` clause at items[1] populates the inheritance slot.
+  ## Emits `(object [of Base] (field type) … [(case name Type) (of
+  ## tag field…)|(else field…) …])` as `nnkObjectTy`. The optional `(of
+  ## Base)` clause at items[1] populates the inheritance slot; the optional
+  ## trailing `(case …)` clause (#65) populates an `nnkRecCase` appended to
+  ## the same `nnkRecList` as the plain fields — lowering has already
+  ## validated the body's shape (at most one `case`, running to the end of
+  ## the object), so this just walks it and emits directly.
   var fieldStart = 1
   var inheritNode: NimNode = newEmptyNode()
   if sx.items.len > 1 and sx.items[1].kind == sxList and
@@ -1024,18 +1071,21 @@ proc emitObjectType(ctx: var EmitContext; sx: Syntax): NimNode =
     ).attachLineInfo(sx.items[1])
     fieldStart = 2
   var fields = nnkRecList.newTree().attachLineInfo(sx)
-  for field in sx.items.toOpenArray(fieldStart, sx.items.high):
-    # Field form: `(name Type)` or `(name {.p.} Type)` — 2 or 3 items.
-    var pragma: Syntax = nil
-    var typeIdx = 1
-    if field.items.len == 3 and field.items[1].isPragmaClause():
-      pragma = field.items[1]
-      typeIdx = 2
-    fields.add nnkIdentDefs.newTree(
-      pragmaDeclIdent(ctx, field.items[0], pragma, "object field name"),
-      emitTypeReference(field.items[typeIdx]),
+  var i = fieldStart
+  while i <= sx.items.high and not sx.items[i].isCaseClause():
+    fields.add ctx.emitObjectFieldDef(sx.items[i])
+    inc i
+  if i <= sx.items.high:
+    let caseClause = sx.items[i]
+    let discIdentDefs = nnkIdentDefs.newTree(
+      pragmaDeclIdent(ctx, caseClause.items[1], nil, "case discriminator name"),
+      emitTypeReference(caseClause.items[2]),
       newEmptyNode()
-    ).attachLineInfo(field)
+    ).attachLineInfo(caseClause)
+    var recCase = nnkRecCase.newTree(discIdentDefs)
+    for j in (i + 1) .. sx.items.high:
+      recCase.add ctx.emitVariantBranch(sx.items[j])
+    fields.add recCase.attachLineInfo(caseClause)
   nnkObjectTy.newTree(newEmptyNode(), inheritNode, fields).attachLineInfo(sx)
 
 proc emitEnumType(ctx: var EmitContext; sx: Syntax): NimNode =
@@ -1531,6 +1581,51 @@ proc emitExceptBranch(ctx: var EmitContext; branch: Syntax; asExpr: bool): NimNo
       stmts.add ctx.emitStmt(branch.items[i])
     result.add stmts
 
+proc emitCatchCore(ctx: var EmitContext; sx: Syntax; asExpr: bool): NimNode =
+  ## Shared implementation for `(catch :tag body…)` (#55) in expression and
+  ## statement contexts — mirrors `emitTryCore`'s `asExpr` split. Unlike a
+  ## named `block`, there is no carrier var or label frame to manage here:
+  ## the whole form lowers to a single call/wrap of the runtime's `nflCatch`
+  ## template, which does the tag comparison and value extraction itself.
+  let tag = blockLabelName(sx.items[1])
+  let body =
+    if asExpr:
+      ctx.emitBodyExpr(sx.items.toOpenArray(2, sx.items.high), sx)
+    else:
+      var stmts = newStmtList()
+      for i in 2 ..< sx.items.len:
+        stmts.add ctx.emitStmt(sx.items[i])
+      stmts
+  newCall(bindSym"nflCatch", newLit(tag), body).attachLineInfo(sx)
+
+proc emitCatch(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitCatchCore(sx, true)
+
+proc emitCatchStmt(ctx: var EmitContext; sx: Syntax): NimNode =
+  ctx.emitCatchCore(sx, false)
+
+proc emitThrow(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Emits `(throw :tag value)` (#55) as a raw `nnkRaiseStmt` raising the
+  ## runtime's `newNflThrow(...)` — see the doc comment on `newNflThrow` for
+  ## why this is a literal `raise` node rather than a call to a
+  ## `{.noreturn.}` proc. Left unwrapped in expression position — like
+  ## `emitRaise`/`emitBreakFrom` — since Nim treats a raw `nnkRaiseStmt` as
+  ## noreturn and lets it type-unify with whatever the surrounding
+  ## expression expects.
+  ##
+  ## Known pre-existing limitation (unrelated to this form): a `raise` (and
+  ## therefore a `throw`) that fires inside a `for`/`while` loop body — even
+  ## unconditionally, with no `if` involved — currently crashes the Nim
+  ## compiler with an internal error. Reproduces with plain `raise` on
+  ## unmodified trunk, so it isn't specific to this emission. Tracked as a
+  ## bug on the tracker; work around it with recursion instead of a loop
+  ## until it's fixed.
+  let tag = blockLabelName(sx.items[1])
+  let value = ctx.emitExpr(sx.items[2])
+  nnkRaiseStmt.newTree(
+    newCall(bindSym"newNflThrow", newLit(tag), value)
+  ).attachLineInfo(sx)
+
 proc emitTryCore(ctx: var EmitContext; sx: Syntax; asExpr: bool): NimNode =
   ## Shared implementation for try in expression and statement contexts.
   result = nnkTryStmt.newTree().attachLineInfo(sx)
@@ -1644,6 +1739,13 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       # with a filler value (the way `for`/`while` do, since those *aren't*
       # noreturn) would instead give it a concrete, unrelated type.
       ctx.emitBreakFrom(sx)
+    elif sx.items[0].isSymbol("catch"):
+      ctx.emitCatch(sx)
+    elif sx.items[0].isSymbol("throw"):
+      # Unwrapped for the same reason as `break-from`/`raise` just above:
+      # `nflThrow` is `{.noreturn.}`, so this must type-unify with whatever
+      # the call site expects rather than being forced to a concrete type.
+      ctx.emitThrow(sx)
     elif sx.items[0].isSymbol("try"):
       ctx.emitTry(sx)
     elif sx.items[0].isSymbol(":"):
@@ -1715,6 +1817,10 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return ctx.emitContinue(sx)
     if sx.items[0].isSymbol("try"):
       return ctx.emitTryStmt(sx)
+    if sx.items[0].isSymbol("catch"):
+      return ctx.emitCatchStmt(sx)
+    if sx.items[0].isSymbol("throw"):
+      return ctx.emitThrow(sx)
     if sx.items[0].isSymbol("block"):
       if sx.items.len > 1 and sx.items[1].isBlockLabel():
         return ctx.emitLabelledBlock(sx)

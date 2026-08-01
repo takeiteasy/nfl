@@ -45,3 +45,25 @@
 (method speak ((d Dog)) (: string) "woof")
 (var dog (new Dog (name "Rex")))
 (echo (. dog name) " says: " (speak dog))
+
+; case object — a case-discriminated variant record, mirroring Nim's own.
+; Plain fields, then one case clause, then of/else branches to the end.
+(type ShapeKind (enum skCircle skRect skPoint))
+(type Shape
+  (object
+    (id int)
+    (case kind ShapeKind)
+    (of skCircle (radius float))
+    (of [skRect] (width float) (height float))
+    (of skPoint)))
+
+(proc area ((s Shape)) (: float)
+  (case (. s kind)
+    (of skCircle (* 3.14159 (* (. s radius) (. s radius))))
+    (of skRect (* (. s width) (. s height)))
+    (of skPoint 0.0)))
+
+(var circle (new Shape (id 1) (kind skCircle) (radius 2.0)))
+(var square (new Shape (id 2) (kind skRect) (width 3.0) (height 4.0)))
+(echo "circle area: " (area circle))
+(echo "square area: " (area square))

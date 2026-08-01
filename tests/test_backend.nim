@@ -1054,6 +1054,75 @@ suite "nfl backend — method / object inheritance (#30, #33)":
     check circ.area() > 12.0 and circ.area() < 13.0
 
 # ---------------------------------------------------------------------------
+# case object / discriminated union (#65)
+# ---------------------------------------------------------------------------
+
+nflModule """
+(type VariantShapeKind (enum skCircle skRect skSquare skPoint))
+
+; Plain fields, a case clause, a single-tag branch, a multi-tag branch (of
+; sharing one branch across TWO tags — skRect and skSquare), and an empty
+; branch — every shape the ticket's syntax and the agreed v1 extras allow.
+(type VariantShape
+  (object
+    (id int)
+    (case kind VariantShapeKind)
+    (of skCircle (radius float))
+    (of [skRect skSquare] (width float) (height float))
+    (of skPoint)))
+
+(proc area ((s VariantShape)) (: float)
+  (case (. s kind)
+    (of skCircle (* 3.14159 (* (. s radius) (. s radius))))
+    (of (skRect skSquare) (* (. s width) (. s height)))
+    (of skPoint 0.0)))
+
+(var variantCircle (new VariantShape (id 1) (kind skCircle) (radius 2.0)))
+(var variantSquare (new VariantShape (id 2) (kind skRect) (width 3.0) (height 4.0)))
+; skSquare shares the same Nim record branch as skRect (both declared in the
+; one (of [skRect skSquare] …) clause) — this is the actual multi-tag proof,
+; not just a one-element vector.
+(var variantActualSquare (new VariantShape (id 4) (kind skSquare) (width 2.0) (height 2.0)))
+(var variantPoint (new VariantShape (id 3) (kind skPoint)))
+
+; An `else` branch, and composition with `(ref (object …))` (#33).
+(type NodeKind (enum nkLeft nkRight))
+(type Node
+  (ref
+    (object
+      (case tag NodeKind)
+      (of nkLeft (leftVal int))
+      (else (rightVal string)))))
+
+(var leftNode (new Node (tag nkLeft) (leftVal 5)))
+(var rightNode (new Node (tag nkRight) (rightVal "hi")))
+""", "case-object-test.nfl"
+
+suite "nfl backend — case object / discriminated union (#65)":
+  test "declares, constructs via new, and dispatches on each branch":
+    check area(variantCircle) > 12.0 and area(variantCircle) < 13.0   # π×2² ≈ 12.566
+    check area(variantSquare) == 12.0
+    check area(variantPoint) == 0.0
+
+  test "a multi-tag of branch is shared by both tags, not just the first":
+    check variantSquare.kind == skRect
+    check variantActualSquare.kind == skSquare
+    check area(variantActualSquare) == 4.0
+    # both tags read/write the same underlying fields — proof it's one
+    # shared Nim record branch, not two separate ones.
+    check variantActualSquare.width == 2.0
+
+  test "a case object retains its plain fields alongside the discriminator":
+    check variantCircle.id == 1
+    check variantSquare.id == 2
+
+  test "an else branch composes with ref object inheritance's (object …) body":
+    check leftNode.tag == nkLeft
+    check leftNode.leftVal == 5
+    check rightNode.tag == nkRight
+    check rightNode.rightVal == "hi"
+
+# ---------------------------------------------------------------------------
 # implicit result variable  (#36)
 # ---------------------------------------------------------------------------
 
@@ -1193,6 +1262,101 @@ suite "nfl backend — named block / break-from (#41)":
     stmtPositionLog = @[]
     stmtPositionExit(false)
     check stmtPositionLog == @[1, 2]
+
+# ---------------------------------------------------------------------------
+# catch / throw (#55)
+# ---------------------------------------------------------------------------
+
+nflModule """
+; --- throw crosses a proc boundary to reach the enclosing catch, unlike
+; break-from which cannot escape searchAt's own routine body ---
+(proc searchAt ((xs [seq int]) (target int) (i int)) (: int)
+  (if (>= i (len xs))
+      -1
+      (if (== (at xs i) target)
+          (throw :found (at xs i))
+          (searchAt xs target (+ i 1)))))
+
+(proc findInList ((xs [seq int]) (target int)) (: int)
+  (catch :found
+    (searchAt xs target 0)))
+
+; --- catch with no throw taken: yields its own ordinary tail value ---
+(proc catchNoThrow () (: int)
+  (catch :nope
+    1
+    2))
+
+; --- void-bodied catch: matching throw short-circuits the rest of the body ---
+(var (voidCatchLog [seq int]) (@ []))
+(proc voidCatch ((shouldThrow bool)) (: void)
+  (catch :v
+    (. voidCatchLog add 1)
+    (if shouldThrow (throw :v 0) (. voidCatchLog add 9))
+    (. voidCatchLog add 2)))
+
+; --- non-matching tag re-raises past the inner catch to the outer one ---
+(proc mismatchedTagReachesOuter () (: int)
+  (catch :outer
+    (catch :inner
+      (throw :outer 99))
+    -1))
+
+; --- a break inside a catch's body (no throw involved) still typechecks: the
+; carried type comes from typeof(body) taken on the body as written, so an
+; ordinary loop-control statement inside it must not confuse that. ---
+(proc catchWithBreakInside () (: int)
+  (catch :unused
+    (var ((i 0))
+      (while true
+        (set! i (+ i 1))
+        (if (>= i 3) (break) nil))
+      i)))
+
+; --- same tag, different value type: the `e of NflThrowVal[typeof(body)]`
+; guard in nflCatch must re-raise rather than let a mismatched downcast
+; through, so the throw escapes this catch (typed int) entirely and is only
+; caught by the ordinary try/except wrapping it. ---
+(var mismatchLog "")
+(proc throwStringSame () (: void)
+  (throw :same "oops"))
+
+(proc mismatchedValueTypePropagates () (: int)
+  (try
+    (catch :same
+      (throwStringSame)
+      -1)
+    (except (e NflThrow)
+      (set! mismatchLog (. e tag))
+      -99)))
+""", "catch-throw-test.nfl"
+
+suite "nfl backend — catch / throw (#55)":
+  test "throw crosses a proc boundary to reach the enclosing catch":
+    check findInList(@[3, 1, 4, 1, 5, 9], 4) == 4
+    check findInList(@[3, 1, 4, 1, 5, 9], 7) == -1
+
+  test "catch yields its own tail value when nothing is thrown":
+    check catchNoThrow() == 2
+
+  test "a void-bodied catch short-circuits the rest of its body on a match":
+    voidCatchLog = @[]
+    voidCatch(true)
+    check voidCatchLog == @[1]
+    voidCatchLog = @[]
+    voidCatch(false)
+    check voidCatchLog == @[1, 9, 2]
+
+  test "a throw with a non-matching tag propagates past the inner catch":
+    check mismatchedTagReachesOuter() == 99
+
+  test "a break inside a catch body typechecks and runs normally":
+    check catchWithBreakInside() == 3
+
+  test "a same-tag throw with a mismatched value type escapes the catch":
+    mismatchLog = ""
+    check mismatchedValueTypePropagates() == -99
+    check mismatchLog == "same"
 
 # ---------------------------------------------------------------------------
 # prog1 / prog2 (#56)

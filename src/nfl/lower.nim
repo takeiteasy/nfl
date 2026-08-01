@@ -302,6 +302,35 @@ proc lowerBreakFrom(ctx: var LowerContext; sx: Syntax) =
   if nargs == 2:
     lowerExpr(ctx, sx.items[2])
 
+proc lowerCatch(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(catch :tag body…)` (#55) — the dynamic-extent counterpart to
+  ## `block`/`break-from`: unlike a named `block`, a `catch` is not pushed
+  ## onto `ctx.namedBlocks`, since matching a `throw` to it happens at
+  ## runtime by tag equality, not lexically at compile time. There is
+  ## therefore nothing here for a nested `throw` to look up or validate
+  ## against — any `:tag` is accepted, matching or not is a runtime concern.
+  if sx.items.len < 2:
+    raiseCompilerError(sx.span, "catch expects a :name label and at least one expression")
+  let target = sx.items[1]
+  if not target.isBlockLabel():
+    raiseCompilerError(target.span, "catch target must be a :name label")
+  if sx.items.len == 2:
+    raiseCompilerError(sx.span, "catch expects at least one body expression")
+  lowerBody(ctx, sx.items.toOpenArray(2, sx.items.high), sx)
+
+proc lowerThrow(ctx: var LowerContext; sx: Syntax) =
+  ## Validates `(throw :tag value)` (#55) — a value is always required (unlike
+  ## `break-from`'s optional value): the carried type is inferred at the
+  ## `catch` site from `typeof(body)`, so a valueless throw reaching a
+  ## value-producing catch would have no type to unify with.
+  let nargs = sx.items.len - 1
+  if nargs != 2:
+    raiseCompilerError(sx.span, "throw expects 2 arguments, got " & $nargs)
+  let target = sx.items[1]
+  if not target.isBlockLabel():
+    raiseCompilerError(target.span, "throw target must be a :name label")
+  lowerExpr(ctx, sx.items[2])
+
 proc lowerSet(ctx: var LowerContext; sx: Syntax) =
   expectArity(sx, "set!", sx.items.len - 1, 2)
   let target = sx.items[1]
@@ -1009,10 +1038,77 @@ proc lowerTupleType(sx: Syntax) =
     seen[key] = true
     validateTypeReference(field.items[1], "tuple field type")
 
+proc checkObjectField(field: Syntax; seen: var Table[string, bool]) =
+  ## Validates one `(name Type)` / `(name {.p.} Type)` field — shared by
+  ## `lowerObjectType`'s plain-field loop and `checkVariantBranch`'s per-tag
+  ## field lists (#65), since a field inside a `case`/`of` branch has exactly
+  ## the same shape as one in the flat part of the body. `seen` is threaded
+  ## through both so a name can't collide across branches, or with a plain
+  ## field, or with the `case` discriminator itself — Nim requires every
+  ## field name in a record, variant branches included, to be unique.
+  if field.kind != sxList or (field.items.len != 2 and field.items.len != 3):
+    raiseCompilerError(field.span, "object field must be (name Type)")
+  let name = field.items[0]
+  if name.kind != sxSymbol:
+    raiseCompilerError(name.span, "object field name must be a symbol")
+  let key = name.validateExportedDecl("object field name")
+  if seen.hasKey(key):
+    raiseCompilerError(name.span, "duplicate object field: " & key)
+  seen[key] = true
+  var typeIdx = 1
+  if field.items.len == 3:
+    if not field.items[1].isPragmaClause():
+      raiseCompilerError(field.items[1].span, "expected pragma clause between field name and type")
+    validatePragma(field.items[1])
+    typeIdx = 2
+  validateTypeReference(field.items[typeIdx], "object field type")
+
+proc isCaseClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("case")
+
+proc isOfClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("of")
+
+proc isElseClause(sx: Syntax): bool =
+  sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("else")
+
+proc checkVariantBranch(branch: Syntax; seen: var Table[string, bool]) =
+  ## Validates one variant branch of a `case` clause (#65): `(of tag
+  ## field…)`, `(of [tag1 tag2 …] field…)` (multiple tags sharing one
+  ## branch), or `(else field…)`. Zero fields is valid — an empty branch
+  ## (`(of skPoint)`) lowers to Nim's `discard` record list.
+  let isElse = branch.items[0].isSymbol("else")
+  var fieldStart = 1
+  if not isElse:
+    if branch.items.len < 2:
+      raiseCompilerError(branch.span, "of branch expects a tag")
+    let tagSlot = branch.items[1]
+    case tagSlot.kind
+    of sxSymbol:
+      discard
+    of sxVector:
+      if tagSlot.items.len == 0:
+        raiseCompilerError(tagSlot.span, "of branch tag vector must not be empty")
+      for tag in tagSlot.items:
+        if tag.kind != sxSymbol:
+          raiseCompilerError(tag.span, "of branch tag must be a symbol")
+    else:
+      raiseCompilerError(tagSlot.span, "of branch tag must be a symbol or a vector of symbols")
+    fieldStart = 2
+  for field in branch.items.toOpenArray(fieldStart, branch.items.high):
+    checkObjectField(field, seen)
+
 proc lowerObjectType(sx: Syntax) =
-  ## Validates `(object [of Base] (field type) …)`.
-  ## The optional `(of Base)` clause immediately after `object` declares a base
-  ## type for inheritance; all remaining items are field definitions.
+  ## Validates `(object [of Base] (field type) … [(case name Type) (of
+  ## tag field…)|(else field…) …])`.
+  ## The optional `(of Base)` clause immediately after `object` declares a
+  ## base type for inheritance. After that: zero or more plain fields, then
+  ## at most one `(case name Type)` clause, which if present must be
+  ## followed by one or more variant branches running to the end of the
+  ## body (#65) — no plain fields, and no second `case`, after the first
+  ## branch. `of`/`else` appearing before any `case` clause is rejected with
+  ## a targeted message rather than falling through to the generic
+  ## "object field must be (name Type)" error.
   if sx.items.len == 1:
     raiseCompilerError(sx.span, "object type expects fields or an inheritance clause")
   # Check for optional `(of Base)` inheritance clause at items[1].
@@ -1030,24 +1126,48 @@ proc lowerObjectType(sx: Syntax) =
       # Inheritance-only object with no fields is valid (e.g. pure vtable base).
       return
   var seen = initTable[string, bool]()
-  for field in sx.items.toOpenArray(fieldStart, sx.items.high):
-    # Field form: `(name Type)` or `(name {.p.} Type)` — 2 or 3 items.
-    if field.kind != sxList or (field.items.len != 2 and field.items.len != 3):
-      raiseCompilerError(field.span, "object field must be (name Type)")
-    let name = field.items[0]
-    if name.kind != sxSymbol:
-      raiseCompilerError(name.span, "object field name must be a symbol")
-    let key = name.validateExportedDecl("object field name")
-    if seen.hasKey(key):
-      raiseCompilerError(name.span, "duplicate object field: " & key)
-    seen[key] = true
-    var typeIdx = 1
-    if field.items.len == 3:
-      if not field.items[1].isPragmaClause():
-        raiseCompilerError(field.items[1].span, "expected pragma clause between field name and type")
-      validatePragma(field.items[1])
-      typeIdx = 2
-    validateTypeReference(field.items[typeIdx], "object field type")
+  var i = fieldStart
+  while i <= sx.items.high and not sx.items[i].isCaseClause():
+    if sx.items[i].isOfClause() or sx.items[i].isElseClause():
+      raiseCompilerError(sx.items[i].span, "of/else branch must follow a (case …) clause")
+    checkObjectField(sx.items[i], seen)
+    inc i
+  if i > sx.items.high:
+    return
+  let caseClause = sx.items[i]
+  if caseClause.items.len != 3:
+    raiseCompilerError(caseClause.span,
+      "case clause must be (case name Type), got " & $(caseClause.items.len - 1) & " argument(s)")
+  let discName = caseClause.items[1]
+  if discName.kind != sxSymbol:
+    raiseCompilerError(discName.span, "case discriminator name must be a symbol")
+  let discKey = discName.validateExportedDecl("case discriminator name")
+  if seen.hasKey(discKey):
+    raiseCompilerError(discName.span, "duplicate object field: " & discKey)
+  seen[discKey] = true
+  validateTypeReference(caseClause.items[2], "case discriminator type")
+  inc i
+  if i > sx.items.high:
+    raiseCompilerError(caseClause.span, "case clause expects at least one of branch")
+  var sawElse = false
+  var sawBranch = false
+  for j in i .. sx.items.high:
+    let branch = sx.items[j]
+    if branch.isCaseClause():
+      raiseCompilerError(branch.span, "object body allows only one case clause")
+    if sawElse:
+      raiseCompilerError(branch.span, "else must be the last branch in a case clause")
+    if branch.isElseClause():
+      sawElse = true
+      checkVariantBranch(branch, seen)
+    elif branch.isOfClause():
+      sawBranch = true
+      checkVariantBranch(branch, seen)
+    else:
+      raiseCompilerError(branch.span,
+        "expected an (of …) or (else …) branch after (case …) clause")
+  if not sawBranch:
+    raiseCompilerError(caseClause.span, "case clause expects at least one of branch")
 
 proc lowerRefType(sx: Syntax) =
   ## Validates `(ref X)` where X is a type symbol or an `(object …)` / `(tuple …)` body.
@@ -1234,6 +1354,10 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       lowerReturn(ctx, sx)
     elif sx.items[0].isSymbol("break-from"):
       lowerBreakFrom(ctx, sx)
+    elif sx.items[0].isSymbol("catch"):
+      lowerCatch(ctx, sx)
+    elif sx.items[0].isSymbol("throw"):
+      lowerThrow(ctx, sx)
     elif sx.items[0].isSymbol("try"):
       lowerTry(ctx, sx)
     elif sx.items[0].isSymbol("quote"):
