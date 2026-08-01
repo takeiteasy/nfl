@@ -785,16 +785,27 @@ proc evalBuiltin(env: MacroEnv; scope: var EvalScope; call: Syntax): Syntax =
         raiseCompilerError(call.items[i].span, "string-append expects strings")
       parts.add value.strVal
     newString(parts.join(""), call.span)
-  of "syntax?":
-    expectArity(call, name, call.items.len - 1, 1)
-    discard evalMacroExpr(env, scope, call.items[1])
-    newBool(true, call.span)
   of "symbol?":
     expectArity(call, name, call.items.len - 1, 1)
     newBool(evalMacroExpr(env, scope, call.items[1]).kind == sxSymbol, call.span)
   of "list?":
     expectArity(call, name, call.items.len - 1, 1)
     newBool(evalMacroExpr(env, scope, call.items[1]).kind == sxList, call.span)
+  of "vector?":
+    expectArity(call, name, call.items.len - 1, 1)
+    newBool(evalMacroExpr(env, scope, call.items[1]).kind == sxVector, call.span)
+  of "string?":
+    expectArity(call, name, call.items.len - 1, 1)
+    newBool(evalMacroExpr(env, scope, call.items[1]).kind == sxString, call.span)
+  of "int?":
+    expectArity(call, name, call.items.len - 1, 1)
+    newBool(evalMacroExpr(env, scope, call.items[1]).kind == sxInt, call.span)
+  of "float?":
+    expectArity(call, name, call.items.len - 1, 1)
+    newBool(evalMacroExpr(env, scope, call.items[1]).kind == sxFloat, call.span)
+  of "bool?":
+    expectArity(call, name, call.items.len - 1, 1)
+    newBool(evalMacroExpr(env, scope, call.items[1]).kind == sxBool, call.span)
   of "nil?":
     expectArity(call, name, call.items.len - 1, 1)
     let value = evalMacroExpr(env, scope, call.items[1])

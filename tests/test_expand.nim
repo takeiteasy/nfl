@@ -288,6 +288,27 @@ suite "macro expansion":
 """
     check sx.renderSyntax() == """("foo" bar "abc")"""
 
+  test "type predicates discriminate each syntax kind (#80)":
+    let sx = expandOne """
+(defmacro test1 ()
+  (list (symbol? 'a) (symbol? 1)
+        (list? '(1 2)) (list? [1 2])
+        (vector? [1 2]) (vector? '(1 2))
+        (string? "s") (string? 1)
+        (int? 1) (int? 1.0)
+        (float? 1.0) (float? 1)
+        (bool? true) (bool? 1)))
+(test1)
+"""
+    check sx.renderSyntax() ==
+      "(true false true false true false true false true false true false true false)"
+
+  test "syntax? is no longer a macro-time builtin (#80)":
+    expectExpandError("""
+(defmacro bad () (syntax? 1))
+(bad)
+""", "unknown macro-time function: syntax?")
+
   test "rejects wrong arity for a new builtin":
     expectExpandError("""
 (defmacro bad () (not 1 2))
@@ -397,6 +418,9 @@ suite "macro expansion":
 
   test "rejects a defmacro-proc that shadows a builtin":
     expectExpandError("(defmacro-proc first (x) x)", "cannot redefine macro-time builtin: first")
+
+  test "rejects a defmacro-proc that shadows a new type predicate (#80)":
+    expectExpandError("(defmacro-proc vector? (x) x)", "cannot redefine macro-time builtin: vector?")
 
   test "rejects a defmacro-proc that shadows a special form":
     expectExpandError("(defmacro-proc if (x) x)", "cannot redefine macro-time builtin: if")

@@ -67,10 +67,14 @@ values they'll eventually evaluate to:
 
 | Form | Meaning |
 |------|---------|
-| `(syntax? x)` | always `true` (evaluates `x` for its side effects/errors) |
 | `(nil? x)` | x is nil / empty list / empty vector |
 | `(symbol? x)` | x is a symbol |
-| `(list? x)` | x is a list |
+| `(list? x)` | x is a list (not a vector) |
+| `(vector? x)` | x is a vector |
+| `(string? x)` | x is a string |
+| `(int? x)` | x is an integer |
+| `(float? x)` | x is a float |
+| `(bool? x)` | x is a boolean |
 | `(first x)` | first element of a list/vector (`nil` if empty) |
 | `(rest x)` | tail of a list/vector (all but first) |
 | `(cons head tail)` | prepends `head` onto list `tail` |
@@ -223,6 +227,10 @@ computed (unquoted) binding name:
 ```
 
 See `examples/hygiene.nfl` for a runnable demonstration of all three.
+
+A `gensym`'d or auto-renamed symbol may be used anywhere a plain symbol
+could — including as a `proc` or `do` parameter name, e.g.
+`` `(proc ,name ((,(gensym "self") ,className)) ...) ``.
 
 ## Preamble macros
 

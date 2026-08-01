@@ -53,7 +53,8 @@ const macroReservedNames* = [
   # special forms, matched ahead of the builtin/macro-proc fallthrough
   "quote", "quasiquote", "if", "block", "let", "break-from",
   # macro-time builtins (evalBuiltin, expand.nim)
-  "syntax?", "symbol?", "list?", "nil?", "first", "rest", "cons", "list",
+  "symbol?", "list?", "vector?", "string?", "int?", "float?", "bool?",
+  "nil?", "first", "rest", "cons", "list",
   "append", "syntax->datum", "datum->syntax", "gensym", "macro-error",
   "+", "-", "*", "/", "div", "mod", "<", "<=", ">", ">=", "=", "/=", "not",
   "nth", "length", "reverse", "member", "symbol->string", "string->symbol",
