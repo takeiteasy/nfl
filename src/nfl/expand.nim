@@ -11,6 +11,13 @@ import ./syntax
 import ./synforms
 
 const maxExpansionDepth = 100
+# Deliberately well below a round number: each defmacro-proc recursion level
+# costs ~4 native Nim call frames (evalMacroExpr -> applyMacroProc -> evalBody
+# -> evalMacroExpr), and Nim's own debug-build call depth guard trips at 2000
+# frames by default — a limit like 512 would hit that native guard (an
+# uncatchable fatal error) before this counter ever got to report a clean
+# CompilerError.
+const maxMacroProcDepth = 200
 
 type EvalScope = Table[string, Syntax]
 
@@ -37,6 +44,7 @@ proc lookup(scope: EvalScope; sx: Syntax): Option[Syntax] =
     none(Syntax)
 
 proc evalMacroExpr(env: MacroEnv; scope: var EvalScope; sx: Syntax): Syntax
+proc applyMacroProc(env: MacroEnv; scope: var EvalScope; def: MacroDef; call: Syntax): Syntax
 
 proc evalBody(env: MacroEnv; scope: var EvalScope; body: openArray[Syntax]; owner: Syntax): Syntax =
   if body.len == 0:
@@ -200,6 +208,30 @@ proc parseDefmacro(sx: Syntax): MacroDef =
     body: sx.items[3 .. ^1],
     span: sx.span)
 
+proc parseDefmacroProc(sx: Syntax): MacroDef =
+  ## Like `parseDefmacro`, but rejects `&key` — a macro-proc's arguments are
+  ## evaluated (call-by-value) before binding, and `bindMacroArgs`'s
+  ## `splitCallArgs` would misread an evaluated keyword-symbol argument (e.g.
+  ## `':accessor` passed as a value, as CLOS-lite's helpers do) as the start
+  ## of a `&key` section.
+  if sx.items.len < 4:
+    raiseCompilerError(sx.span, "defmacro-proc expects name, parameters, and body")
+  let name = sx.items[1]
+  if name.kind != sxSymbol:
+    raiseCompilerError(name.span, "defmacro-proc name must be a symbol")
+  let parsed = parseMacroParams(sx.items[2])
+  if parsed.keyParams.len > 0:
+    raiseCompilerError(sx.items[2].span, "&key is not supported in a defmacro-proc parameter list")
+  MacroDef(
+    name: name.sym,
+    params: parsed.names,
+    optParams: parsed.optParams,
+    restParam: parsed.restParam,
+    bodyParam: parsed.bodyParam,
+    keyParams: parsed.keyParams,
+    body: sx.items[3 .. ^1],
+    span: sx.span)
+
 # ---------- argument binding ----------
 
 proc splitCallArgs(call: Syntax): tuple[positional: seq[Syntax], keywords: Table[string, Syntax]] =
@@ -258,19 +290,24 @@ proc bindMacroParam(scope: var EvalScope; paramSx: Syntax; argForm: Syntax) =
     if restName.kind == sxSymbol and restName.sym != "_":
       scope[restName.sym] = newList(argForm.items[headCount .. argForm.items.high], argForm.span)
 
-proc bindMacroArgs(env: MacroEnv; def: MacroDef; call: Syntax): EvalScope =
-  let (positional, keywords) = splitCallArgs(call)
+proc bindPositionalArgs(env: MacroEnv; def: MacroDef; positional: seq[Syntax]; span: Span; hasKeyParams = false): EvalScope =
+  ## Binds required → `&optional` → `&rest`/`&body` params against an
+  ## already-split (`bindMacroArgs`) or already-evaluated (`applyMacroProc`)
+  ## positional argument list. `hasKeyParams` only affects error phrasing —
+  ## whether "expects N arguments" (exact) or "expects at least/most N
+  ## arguments" is reported — since a macro-proc never has `&key` params
+  ## (`parseDefmacroProc`), it always passes the `false` default.
   let hasRest = def.restParam.len > 0 or def.bodyParam.len > 0
   let minArgs = def.params.len
   let maxArgs = def.params.len + def.optParams.len
-  let isExact = not hasRest and def.optParams.len == 0 and def.keyParams.len == 0
+  let isExact = not hasRest and def.optParams.len == 0 and not hasKeyParams
 
   # required params
   if positional.len < minArgs:
     if isExact:
-      raiseCompilerError(call.span, def.name & " expects " & $minArgs & " arguments, got " & $positional.len)
+      raiseCompilerError(span, def.name & " expects " & $minArgs & " arguments, got " & $positional.len)
     else:
-      raiseCompilerError(call.span, def.name & " expects at least " & $minArgs & " arguments, got " & $positional.len)
+      raiseCompilerError(span, def.name & " expects at least " & $minArgs & " arguments, got " & $positional.len)
 
   result = initTable[string, Syntax]()
   for i, paramSx in def.params:
@@ -285,7 +322,7 @@ proc bindMacroArgs(env: MacroEnv; def: MacroDef; call: Syntax): EvalScope =
     elif opt.default.isSome:
       result[opt.name] = evalMacroExpr(env, result, opt.default.get())
     else:
-      result[opt.name] = newNil(call.span)
+      result[opt.name] = newNil(span)
 
   # rest / body
   let restName = if def.restParam.len > 0: def.restParam else: def.bodyParam
@@ -293,12 +330,16 @@ proc bindMacroArgs(env: MacroEnv; def: MacroDef; call: Syntax): EvalScope =
     var restItems: seq[Syntax] = @[]
     for i in pos ..< positional.len:
       restItems.add positional[i]
-    result[restName] = newList(restItems, call.span)
+    result[restName] = newList(restItems, span)
   elif pos < positional.len:
     if isExact:
-      raiseCompilerError(call.span, def.name & " expects " & $minArgs & " arguments, got " & $positional.len)
+      raiseCompilerError(span, def.name & " expects " & $minArgs & " arguments, got " & $positional.len)
     else:
-      raiseCompilerError(call.span, def.name & " expects at most " & $maxArgs & " arguments, got " & $positional.len)
+      raiseCompilerError(span, def.name & " expects at most " & $maxArgs & " arguments, got " & $positional.len)
+
+proc bindMacroArgs(env: MacroEnv; def: MacroDef; call: Syntax): EvalScope =
+  let (positional, keywords) = splitCallArgs(call)
+  result = bindPositionalArgs(env, def, positional, call.span, def.keyParams.len > 0)
 
   # key params
   for kp in def.keyParams:
@@ -582,9 +623,168 @@ proc evalQuasiquote(env: MacroEnv; scope: var EvalScope; sx: Syntax; allowSplice
 
 # ---------- built-in macro-time functions ----------
 
+proc expectNumber(sx: Syntax): Syntax =
+  if sx.kind notin {sxInt, sxFloat}:
+    raiseCompilerError(sx.span, "expected a number, got " & $sx.kind)
+  sx
+
+proc asFloat(sx: Syntax): BiggestFloat =
+  if sx.kind == sxFloat: sx.floatVal else: sx.intVal.BiggestFloat
+
+proc evalNumericArgs(env: MacroEnv; scope: var EvalScope; call: Syntax; minArgs: int): seq[Syntax] =
+  if call.items.len - 1 < minArgs:
+    raiseCompilerError(call.span, call.items[0].sym & " expects at least " & $minArgs & " arguments, got " & $(call.items.len - 1))
+  for i in 1 ..< call.items.len:
+    result.add expectNumber(evalMacroExpr(env, scope, call.items[i]))
+
+proc anyFloat(args: openArray[Syntax]): bool =
+  for a in args:
+    if a.kind == sxFloat:
+      return true
+  false
+
 proc evalBuiltin(env: MacroEnv; scope: var EvalScope; call: Syntax): Syntax =
   let name = call.items[0].sym
   case name
+  of "+", "*":
+    let args = evalNumericArgs(env, scope, call, 1)
+    if anyFloat(args):
+      var acc = if name == "+": 0.0 else: 1.0
+      for a in args:
+        acc = if name == "+": acc + a.asFloat else: acc * a.asFloat
+      newFloat(acc, call.span)
+    else:
+      var acc = if name == "+": 0.BiggestInt else: 1.BiggestInt
+      for a in args:
+        acc = if name == "+": acc + a.intVal else: acc * a.intVal
+      newInt(acc, call.span)
+  of "-":
+    let args = evalNumericArgs(env, scope, call, 1)
+    if anyFloat(args):
+      if args.len == 1:
+        newFloat(-args[0].asFloat, call.span)
+      else:
+        var acc = args[0].asFloat
+        for i in 1 ..< args.len:
+          acc -= args[i].asFloat
+        newFloat(acc, call.span)
+    else:
+      if args.len == 1:
+        newInt(-args[0].intVal, call.span)
+      else:
+        var acc = args[0].intVal
+        for i in 1 ..< args.len:
+          acc -= args[i].intVal
+        newInt(acc, call.span)
+  of "/":
+    let args = evalNumericArgs(env, scope, call, 1)
+    var vals: seq[BiggestFloat] = @[]
+    for a in args: vals.add a.asFloat
+    if vals.len == 1:
+      if vals[0] == 0.0:
+        raiseCompilerError(call.span, "division by zero")
+      newFloat(1.0 / vals[0], call.span)
+    else:
+      var acc = vals[0]
+      for i in 1 ..< vals.len:
+        if vals[i] == 0.0:
+          raiseCompilerError(call.span, "division by zero")
+        acc = acc / vals[i]
+      newFloat(acc, call.span)
+  of "div", "mod":
+    let args = evalNumericArgs(env, scope, call, 2)
+    if anyFloat(args):
+      raiseCompilerError(call.span, name & " expects integer arguments")
+    var acc = args[0].intVal
+    for i in 1 ..< args.len:
+      if args[i].intVal == 0:
+        raiseCompilerError(call.span, "division by zero")
+      acc = if name == "div": acc div args[i].intVal else: acc mod args[i].intVal
+    newInt(acc, call.span)
+  of "<", "<=", ">", ">=":
+    let args = evalNumericArgs(env, scope, call, 2)
+    var ok = true
+    for i in 1 ..< args.len:
+      let a = args[i - 1].asFloat
+      let b = args[i].asFloat
+      let step = case name
+        of "<": a < b
+        of "<=": a <= b
+        of ">": a > b
+        else: a >= b
+      if not step:
+        ok = false
+        break
+    newBool(ok, call.span)
+  of "=", "/=":
+    expectArity(call, name, call.items.len - 1, 2)
+    let a = evalMacroExpr(env, scope, call.items[1])
+    let b = evalMacroExpr(env, scope, call.items[2])
+    let eq = sameSyntax(a, b)
+    newBool(if name == "=": eq else: not eq, call.span)
+  of "not":
+    expectArity(call, name, call.items.len - 1, 1)
+    newBool(not evalMacroExpr(env, scope, call.items[1]).truthy, call.span)
+  of "nth":
+    expectArity(call, name, call.items.len - 1, 2)
+    let value = evalMacroExpr(env, scope, call.items[1])
+    if value.kind != sxList and value.kind != sxVector:
+      raiseCompilerError(call.items[1].span, "nth expects a list or vector")
+    let idxSx = evalMacroExpr(env, scope, call.items[2])
+    if idxSx.kind != sxInt:
+      raiseCompilerError(call.items[2].span, "nth expects an integer index")
+    let idx = idxSx.intVal
+    if idx < 0 or idx >= value.items.len:
+      newNil(call.span)
+    else:
+      value.items[idx].copySyntax()
+  of "length":
+    expectArity(call, name, call.items.len - 1, 1)
+    let value = evalMacroExpr(env, scope, call.items[1])
+    if value.kind != sxList and value.kind != sxVector:
+      raiseCompilerError(call.items[1].span, "length expects a list or vector")
+    newInt(value.items.len, call.span)
+  of "reverse":
+    expectArity(call, name, call.items.len - 1, 1)
+    let value = evalMacroExpr(env, scope, call.items[1])
+    if value.kind != sxList and value.kind != sxVector:
+      raiseCompilerError(call.items[1].span, "reverse expects a list or vector")
+    var items: seq[Syntax] = @[]
+    for i in countdown(value.items.high, 0):
+      items.add value.items[i].copySyntax()
+    newList(items, call.span)
+  of "member":
+    expectArity(call, name, call.items.len - 1, 2)
+    let target = evalMacroExpr(env, scope, call.items[1])
+    let value = evalMacroExpr(env, scope, call.items[2])
+    if value.kind != sxList and value.kind != sxVector:
+      raiseCompilerError(call.items[2].span, "member expects a list or vector")
+    var found = false
+    for item in value.items:
+      if sameSyntax(item, target):
+        found = true
+        break
+    newBool(found, call.span)
+  of "symbol->string":
+    expectArity(call, name, call.items.len - 1, 1)
+    let value = evalMacroExpr(env, scope, call.items[1])
+    if value.kind != sxSymbol:
+      raiseCompilerError(call.items[1].span, "symbol->string expects a symbol")
+    newString(value.sym, call.span)
+  of "string->symbol":
+    expectArity(call, name, call.items.len - 1, 1)
+    let value = evalMacroExpr(env, scope, call.items[1])
+    if value.kind != sxString:
+      raiseCompilerError(call.items[1].span, "string->symbol expects a string")
+    newSymbol(value.strVal, call.span)
+  of "string-append":
+    var parts: seq[string] = @[]
+    for i in 1 ..< call.items.len:
+      let value = evalMacroExpr(env, scope, call.items[i])
+      if value.kind != sxString:
+        raiseCompilerError(call.items[i].span, "string-append expects strings")
+      parts.add value.strVal
+    newString(parts.join(""), call.span)
   of "syntax?":
     expectArity(call, name, call.items.len - 1, 1)
     discard evalMacroExpr(env, scope, call.items[1])
@@ -715,6 +915,8 @@ proc evalMacroExpr(env: MacroEnv; scope: var EvalScope; sx: Syntax): Syntax =
       return evalBody(env, child, sx.items.toOpenArray(2, sx.items.high), sx)
     if head.kind != sxSymbol:
       raiseCompilerError(head.span, "macro-time call target must be a symbol")
+    if env.hasMacroProc(head.sym):
+      return applyMacroProc(env, scope, env.getMacroProc(head.sym), sx)
     evalBuiltin(env, scope, sx)
   else:
     sx.copySyntax()
@@ -726,6 +928,28 @@ proc applyMacro(env: MacroEnv; def: MacroDef; call: Syntax): Syntax =
   except CompilerError as err:
     let message = "error expanding macro " & def.name & ": " & err.diagnostic.message
     raiseCompilerError(call.span, message)
+
+proc applyMacroProc(env: MacroEnv; scope: var EvalScope; def: MacroDef; call: Syntax): Syntax =
+  ## Applies a `defmacro-proc` at a call site — unlike `applyMacro`, this is
+  ## call-by-value: every argument is evaluated in the *caller's* scope
+  ## before binding, and `maxExpansionDepth` (which only counts `defmacro`
+  ## expansions) does not bound this recursion, so `macroProcDepth` is
+  ## tracked separately and always unwound via `finally`, even when a
+  ## builtin or `macro-error` raises mid-call.
+  var args: seq[Syntax] = @[]
+  for i in 1 ..< call.items.len:
+    args.add evalMacroExpr(env, scope, call.items[i])
+  var procScope = bindPositionalArgs(env, def, args, call.span)
+  inc env.macroProcDepth
+  try:
+    if env.macroProcDepth > maxMacroProcDepth:
+      raiseCompilerError(call.span, "macro-time procedure recursion depth exceeded")
+    evalBody(env, procScope, def.body, call).withSpan(call.span)
+  except CompilerError as err:
+    let message = "error expanding macro-proc " & def.name & ": " & err.diagnostic.message
+    raiseCompilerError(call.span, message)
+  finally:
+    dec env.macroProcDepth
 
 proc expandList(env: MacroEnv; sx: Syntax; depth: int): Syntax =
   if sx.items.len == 0:
@@ -741,6 +965,8 @@ proc expandList(env: MacroEnv; sx: Syntax; depth: int): Syntax =
     raiseCompilerError(sx.span, "unhygienic is only valid as a binding target inside a quasiquote template")
   if head.isSymbol("defmacro"):
     raiseCompilerError(sx.span, "defmacro is only allowed at statement/module scope")
+  if head.isSymbol("defmacro-proc"):
+    raiseCompilerError(sx.span, "defmacro-proc is only allowed at statement/module scope")
   if head.kind == sxSymbol and env.hasMacro(head.sym):
     if depth >= maxExpansionDepth:
       raiseCompilerError(sx.span, "macro expansion depth exceeded")
@@ -800,6 +1026,8 @@ proc expandModule*(forms: seq[Syntax]; env: MacroEnv = newMacroEnv(); currentDir
   for form in forms:
     if form.kind == sxList and form.items.len > 0 and form.items[0].isSymbol("defmacro"):
       env.defineMacro parseDefmacro(form)
+    elif form.kind == sxList and form.items.len > 0 and form.items[0].isSymbol("defmacro-proc"):
+      env.defineMacroProc parseDefmacroProc(form)
     elif form.isNflImportForm():
       result.add expandModuleFile(resolveNflImportPath(currentDir, form.items[1].sym), env, form.span)
     else:

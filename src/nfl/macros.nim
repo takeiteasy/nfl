@@ -36,6 +36,10 @@ type
   MacroEnv* = ref object   ## Expansion-time state: registered macros, gensym
                            ## counter, and import-cycle tracking.
     macros*: Table[string, MacroDef]
+    macroProcs*: Table[string, MacroDef]  ## `defmacro-proc` definitions (#70)
+    macroProcDepth*: int    ## current `defmacro-proc` call nesting — guards
+                             ## against unbounded evaluator recursion, since
+                             ## `maxExpansionDepth` only counts expansions
     gensymCounter*: int
     includedFiles*: HashSet[string]  ## resolved paths of .nfl files already
                                       ## inlined (#10) — a second `(import
@@ -45,10 +49,20 @@ type
                                       ## inlined, in inclusion order — used to
                                       ## detect and report circular imports
 
+const macroReservedNames* = [
+  # special forms, matched ahead of the builtin/macro-proc fallthrough
+  "quote", "quasiquote", "if", "block", "let", "break-from",
+  # macro-time builtins (evalBuiltin, expand.nim)
+  "syntax?", "symbol?", "list?", "nil?", "first", "rest", "cons", "list",
+  "append", "syntax->datum", "datum->syntax", "gensym", "macro-error",
+  "+", "-", "*", "/", "div", "mod", "<", "<=", ">", ">=", "=", "/=", "not",
+  "nth", "length", "reverse", "member", "symbol->string", "string->symbol",
+  "string-append"]
+
 proc newMacroEnv*(): MacroEnv =
   ## Creates an empty `MacroEnv` ready for expansion.
-  MacroEnv(macros: initTable[string, MacroDef](), gensymCounter: 0,
-           includedFiles: initHashSet[string](), includingStack: @[])
+  MacroEnv(macros: initTable[string, MacroDef](), macroProcs: initTable[string, MacroDef](),
+           gensymCounter: 0, includedFiles: initHashSet[string](), includingStack: @[])
 
 proc hasMacro*(env: MacroEnv; name: string): bool =
   ## True if a macro named `name` is registered in `env`.
@@ -65,6 +79,26 @@ proc defineMacro*(env: MacroEnv; def: MacroDef) =
   if env.macros.hasKey(def.name):
     raiseCompilerError(def.span, "duplicate macro definition: " & def.name)
   env.macros[def.name] = def
+
+proc hasMacroProc*(env: MacroEnv; name: string): bool =
+  ## True if a `defmacro-proc` named `name` is registered in `env`.
+  env.macroProcs.hasKey(name)
+
+proc getMacroProc*(env: MacroEnv; name: string): MacroDef =
+  ## Looks up the macro-proc named `name`; raises `KeyError` if absent —
+  ## callers should check `hasMacroProc` first.
+  env.macroProcs[name]
+
+proc defineMacroProc*(env: MacroEnv; def: MacroDef) =
+  ## Registers `def` in `env`; raises `CompilerError` if a macro-proc with the
+  ## same name is already defined, or if `def.name` shadows a macro-time
+  ## special form or builtin (`macroReservedNames`) — both would otherwise be
+  ## silently unreachable behind the reserved name's own dispatch.
+  if def.name in macroReservedNames:
+    raiseCompilerError(def.span, "cannot redefine macro-time builtin: " & def.name)
+  if env.macroProcs.hasKey(def.name):
+    raiseCompilerError(def.span, "duplicate macro-proc definition: " & def.name)
+  env.macroProcs[def.name] = def
 
 proc gensym*(env: MacroEnv; hint: string; span: Span): Syntax =
   ## Allocates a fresh, guaranteed-unique symbol prefixed with `hint` (or
