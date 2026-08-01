@@ -9,3 +9,7 @@
 
 (var rex (make-instance Dog (name "Rex") (breed "corgi")))
 (echo (animalName rex) " says " (speak rex))
+
+; :accessor generates a setter as well as a getter — :reader stays getter-only.
+(set! (animalName rex) "Fido")
+(echo "renamed to " (animalName rex))

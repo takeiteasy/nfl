@@ -35,6 +35,29 @@ suite "lowering validation":
   test "rejects set! for unknown bindings":
     expectLowerError("(set! x 2)", "not a mutable local")
 
+  test "allows set! to a dot-field place, incl. on a let binding (#75)":
+    discard lowerExpr(readOne("(let ((o 1)) (set! (. o field) 2))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(var ((o 1)) (set! (. o field) 2))", "lower-test.nfl"))
+
+  test "allows set! to an at-index place, incl. on a let binding (#75)":
+    discard lowerExpr(readOne("(let ((s 1)) (set! (at s 0) 2))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(var ((s 1)) (set! (at s 0) 2))", "lower-test.nfl"))
+
+  test "allows set! to a slice place (#75)":
+    discard lowerExpr(readOne("(let ((s 1)) (set! (slice s 0 1) 2))", "lower-test.nfl"))
+
+  test "allows set! to an accessor-call place (#75)":
+    discard lowerExpr(readOne("(let ((o 1)) (set! (fieldName o) 2))", "lower-test.nfl"))
+
+  test "rejects set! to a dot-method-call place":
+    expectLowerError("(let ((o 1)) (set! (. o method extra) 2))", "field access, not a method call")
+
+  test "rejects set! to a non-identifier accessor call place":
+    expectLowerError("(let ((o 1)) (set! (+ o 1) 2))", "must be a plain identifier")
+
+  test "rejects set! to a non-place, non-symbol target":
+    expectLowerError("(set! 1 2)", "must be a symbol or a place")
+
   test "rejects duplicate bindings":
     expectLowerError("(let ((x 1) (x 2)) x)", "duplicate binding")
 

@@ -4,12 +4,12 @@ nim	MacroKeyParam	macros.html#MacroKeyParam	object MacroKeyParam		18
 nim	MacroDef	macros.html#MacroDef	object MacroDef		23
 nim	MacroEnv	macros.html#MacroEnv	type MacroEnv		36
 nim	macroReservedNames	macros.html#macroReservedNames	const macroReservedNames		52
-nim	newMacroEnv	macros.html#newMacroEnv	proc newMacroEnv(): MacroEnv		62
-nim	hasMacro	macros.html#hasMacro,MacroEnv,string	proc hasMacro(env: MacroEnv; name: string): bool		67
-nim	getMacro	macros.html#getMacro,MacroEnv,string	proc getMacro(env: MacroEnv; name: string): MacroDef		71
-nim	defineMacro	macros.html#defineMacro,MacroEnv,MacroDef	proc defineMacro(env: MacroEnv; def: MacroDef)		76
-nim	hasMacroProc	macros.html#hasMacroProc,MacroEnv,string	proc hasMacroProc(env: MacroEnv; name: string): bool		83
-nim	getMacroProc	macros.html#getMacroProc,MacroEnv,string	proc getMacroProc(env: MacroEnv; name: string): MacroDef		87
-nim	defineMacroProc	macros.html#defineMacroProc,MacroEnv,MacroDef	proc defineMacroProc(env: MacroEnv; def: MacroDef)		92
-nim	gensym	macros.html#gensym,MacroEnv,string,Span	proc gensym(env: MacroEnv; hint: string; span: Span): Syntax		103
-nim	newHygienicId	macros.html#newHygienicId,MacroEnv	proc newHygienicId(env: MacroEnv): int		110
+nim	newMacroEnv	macros.html#newMacroEnv	proc newMacroEnv(): MacroEnv		63
+nim	hasMacro	macros.html#hasMacro,MacroEnv,string	proc hasMacro(env: MacroEnv; name: string): bool		68
+nim	getMacro	macros.html#getMacro,MacroEnv,string	proc getMacro(env: MacroEnv; name: string): MacroDef		72
+nim	defineMacro	macros.html#defineMacro,MacroEnv,MacroDef	proc defineMacro(env: MacroEnv; def: MacroDef)		77
+nim	hasMacroProc	macros.html#hasMacroProc,MacroEnv,string	proc hasMacroProc(env: MacroEnv; name: string): bool		84
+nim	getMacroProc	macros.html#getMacroProc,MacroEnv,string	proc getMacroProc(env: MacroEnv; name: string): MacroDef		88
+nim	defineMacroProc	macros.html#defineMacroProc,MacroEnv,MacroDef	proc defineMacroProc(env: MacroEnv; def: MacroDef)		93
+nim	gensym	macros.html#gensym,MacroEnv,string,Span	proc gensym(env: MacroEnv; hint: string; span: Span): Syntax		104
+nim	newHygienicId	macros.html#newHygienicId,MacroEnv	proc newHygienicId(env: MacroEnv): int		111

@@ -638,6 +638,46 @@ nflModule """
 (from std/os import (except getEnv))
 (var fromImportResult (sqrt 16.0))
 (var fromImportExceptResult (. (getCurrentDir) len))
+; --- set! places (#75) ---
+(type PlaceDog (ref (object (name string))))
+(proc placeDogName ((self PlaceDog)) (: string) (. self name))
+(proc |placeDogName=| ((self PlaceDog) (v string)) (set! (. self name) v))
+; A dot-field place on a `let`-bound ref works, same as var (ref objects are
+; heap boxes — reassigning the field doesn't rebind the local).
+(var dotSetResult
+  (block
+    (let ((d (new PlaceDog (name "Rex"))))
+      (set! (. d name) "Fido")
+      (. d name))))
+; An accessor-call place lowers to a call on the derived `f=` setter.
+(var accessorSetResult
+  (block
+    (let ((d (new PlaceDog (name "Rex"))))
+      (set! (placeDogName d) "Buddy")
+      (placeDogName d))))
+(var atSetResult
+  (block
+    (var ((xs [1 2 3]))
+      (set! (at xs 0) 99)
+      xs)))
+(var sliceSetResult
+  (block
+    (var ((ys [1 2 3 4]))
+      (set! (slice ys 1 2) [8 9])
+      ys)))
+; --- hygienic symbol in parameter position (#81) ---
+; Reproduces the ticket's own repro: a `do` form's params are auto-renamed
+; by the #11 hygiene pass, and used to crash the backend (a hygienic symbol
+; was always emitted as a Nim `nskLet`, illegal in param position).
+(defmacro double-each (xs) `(map ,xs (do ((x int)) (* x 2))))
+(var doEachResult (double-each [1 2 3]))
+; An explicit `(gensym ...)` used directly as a `proc` param name — the
+; other reachable path into the same bug.
+(defmacro make-adder (n)
+  (let ((p (gensym "p")))
+    `(do ((,p int)) (: int) (+ ,p ,n))))
+(var adder10 (make-adder 10))
+(var gensymParamResult (adder10 5))
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -656,6 +696,24 @@ suite "nfl module backend":
 
   test "from-import-except imports everything but the excepted symbol (#31)":
     check fromImportExceptResult > 0
+
+  test "set! assigns through a dot-field place, even on a let-bound ref (#75)":
+    check dotSetResult == "Fido"
+
+  test "set! through an accessor-call place dispatches to the derived setter (#75)":
+    check accessorSetResult == "Buddy"
+
+  test "set! assigns through an at-index place (#75)":
+    check atSetResult == @[99, 2, 3]
+
+  test "set! assigns through a slice place (#75)":
+    check sliceSetResult == @[1, 8, 9, 4]
+
+  test "a hygienically-renamed do param no longer crashes the backend (#81)":
+    check doEachResult == @[2, 4, 6]
+
+  test "an explicit gensym used as a proc param no longer crashes the backend (#81)":
+    check gensymParamResult == 15
 
   test "gensym bindings do not collide with matching source names":
     check hygienicResult == 3

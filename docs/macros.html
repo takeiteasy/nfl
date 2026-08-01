@@ -100,12 +100,13 @@
     <summary><a class="reference reference-toplevel" href="#10" id="60">Consts</a></summary>
     <ul class="simple simple-toc-section">
       <li><a class="reference" href="#macroReservedNames" title="macroReservedNames = [&quot;quote&quot;, &quot;quasiquote&quot;, &quot;if&quot;, &quot;block&quot;, &quot;let&quot;, &quot;break-from&quot;,
-                      &quot;syntax?&quot;, &quot;symbol?&quot;, &quot;list?&quot;, &quot;nil?&quot;, &quot;first&quot;, &quot;rest&quot;,
-                      &quot;cons&quot;, &quot;list&quot;, &quot;append&quot;, &quot;syntax-&gt;datum&quot;,
-                      &quot;datum-&gt;syntax&quot;, &quot;gensym&quot;, &quot;macro-error&quot;, &quot;+&quot;, &quot;-&quot;, &quot;*&quot;,
-                      &quot;/&quot;, &quot;div&quot;, &quot;mod&quot;, &quot;&lt;&quot;, &quot;&lt;=&quot;, &quot;&gt;&quot;, &quot;&gt;=&quot;, &quot;=&quot;, &quot;/=&quot;, &quot;not&quot;,
-                      &quot;nth&quot;, &quot;length&quot;, &quot;reverse&quot;, &quot;member&quot;, &quot;symbol-&gt;string&quot;,
-                      &quot;string-&gt;symbol&quot;, &quot;string-append&quot;]">macroReservedNames</a></li>
+                      &quot;symbol?&quot;, &quot;list?&quot;, &quot;vector?&quot;, &quot;string?&quot;, &quot;int?&quot;,
+                      &quot;float?&quot;, &quot;bool?&quot;, &quot;nil?&quot;, &quot;first&quot;, &quot;rest&quot;, &quot;cons&quot;,
+                      &quot;list&quot;, &quot;append&quot;, &quot;syntax-&gt;datum&quot;, &quot;datum-&gt;syntax&quot;,
+                      &quot;gensym&quot;, &quot;macro-error&quot;, &quot;+&quot;, &quot;-&quot;, &quot;*&quot;, &quot;/&quot;, &quot;div&quot;, &quot;mod&quot;,
+                      &quot;&lt;&quot;, &quot;&lt;=&quot;, &quot;&gt;&quot;, &quot;&gt;=&quot;, &quot;=&quot;, &quot;/=&quot;, &quot;not&quot;, &quot;nth&quot;, &quot;length&quot;,
+                      &quot;reverse&quot;, &quot;member&quot;, &quot;symbol-&gt;string&quot;, &quot;string-&gt;symbol&quot;,
+                      &quot;string-append&quot;]">macroReservedNames</a></li>
 
     </ul>
   </details>
@@ -238,12 +239,13 @@
   <dl class="item">
     <div id="macroReservedNames">
   <dt><pre><a href="#macroReservedNames"><span class="Identifier">macroReservedNames</span></a> <span class="Other">=</span> <span class="Other">[</span><span class="StringLit">&quot;quote&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;quasiquote&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;if&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;block&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;let&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;break-from&quot;</span><span class="Other">,</span>
-                      <span class="StringLit">&quot;syntax?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;symbol?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;list?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;nil?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;first&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;rest&quot;</span><span class="Other">,</span>
-                      <span class="StringLit">&quot;cons&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;list&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;append&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;syntax-&gt;datum&quot;</span><span class="Other">,</span>
-                      <span class="StringLit">&quot;datum-&gt;syntax&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;gensym&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;macro-error&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;+&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;-&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;*&quot;</span><span class="Other">,</span>
-                      <span class="StringLit">&quot;/&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;div&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;mod&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;&lt;&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;&lt;=&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;&gt;&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;&gt;=&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;=&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;/=&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;not&quot;</span><span class="Other">,</span>
-                      <span class="StringLit">&quot;nth&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;length&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;reverse&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;member&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;symbol-&gt;string&quot;</span><span class="Other">,</span>
-                      <span class="StringLit">&quot;string-&gt;symbol&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;string-append&quot;</span><span class="Other">]</span></pre></dt>
+                      <span class="StringLit">&quot;symbol?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;list?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;vector?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;string?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;int?&quot;</span><span class="Other">,</span>
+                      <span class="StringLit">&quot;float?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;bool?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;nil?&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;first&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;rest&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;cons&quot;</span><span class="Other">,</span>
+                      <span class="StringLit">&quot;list&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;append&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;syntax-&gt;datum&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;datum-&gt;syntax&quot;</span><span class="Other">,</span>
+                      <span class="StringLit">&quot;gensym&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;macro-error&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;+&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;-&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;*&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;/&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;div&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;mod&quot;</span><span class="Other">,</span>
+                      <span class="StringLit">&quot;&lt;&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;&lt;=&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;&gt;&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;&gt;=&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;=&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;/=&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;not&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;nth&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;length&quot;</span><span class="Other">,</span>
+                      <span class="StringLit">&quot;reverse&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;member&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;symbol-&gt;string&quot;</span><span class="Other">,</span> <span class="StringLit">&quot;string-&gt;symbol&quot;</span><span class="Other">,</span>
+                      <span class="StringLit">&quot;string-append&quot;</span><span class="Other">]</span></pre></dt>
   <dd>
     
     
@@ -372,7 +374,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-01 15:19:58 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-01 16:29:47 UTC</small>
       </div>
     </div>
   </div>

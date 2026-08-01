@@ -14,3 +14,7 @@
 (var rexBreed (dogBreed rex))
 (var rexSpeaks (speak rex))
 (var genericSpeaks (speak genericAnimal))
+
+; :accessor generates a setter as well as a getter (#75).
+(set! (animalName rex) "Fido")
+(var rexRenamed (animalName rex))

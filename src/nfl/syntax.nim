@@ -141,12 +141,21 @@ proc isPlainIdentifier*(s: string): bool =
       return false
   true
 
+proc isSetterName*(s: string): bool =
+  ## `ident=` — Nim's setter-proc name form, callable as `self.foo = v`
+  ## when `s` is `foo=`. Requires at least one base character before the
+  ## trailing `=` so the base is itself a plain identifier.
+  s.len >= 2 and s[^1] == '=' and isPlainIdentifier(s[0 ..< s.high])
+
 proc isValidRoutineName*(s: string): bool =
   ## A routine (proc/method/func/…) name must be a plain identifier
-  ## (optionally with a trailing `*` export marker) or entirely operator
-  ## characters (see #29) — not a mix of the two, which Nim cannot express
-  ## as either an `ident` or an `nnkAccQuoted` operator.
+  ## (optionally with a trailing `*` export marker), a setter name
+  ## (`ident=`, see #75), or entirely operator characters (see #29) — not a
+  ## mix of plain-identifier and operator characters otherwise, which Nim
+  ## cannot express as an `ident`, an `nnkAccQuoted` operator, or a setter.
   if isOperatorName(s):
+    return true
+  if isSetterName(s):
     return true
   if s.len > 0 and s[^1] == '*':
     isPlainIdentifier(s[0 ..< s.high])

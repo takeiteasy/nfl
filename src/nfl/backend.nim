@@ -770,8 +770,28 @@ proc emitProgN(ctx: var EmitContext; sx: Syntax; captureIdx: int; formName: stri
   emitBlockExpr(stmts, carrier.copyNimTree()).attachLineInfo(sx)
 
 proc emitSet(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## See `lowerSet` (lower.nim) for the accepted target shapes; lowering has
+  ## already validated the target, so this only needs to pick the right Nim
+  ## AST shape per case. `(. o f)`/`(at s i)`/`(slice s a b)` all emit
+  ## straight through `emitExpr` into `nnkAsgn` over the matching
+  ## `nnkDotExpr`/`nnkBracketExpr` node (verified against Nim: assignment to
+  ## any of those, including a `.`-getter name that resolves to a setter
+  ## proc, works even when the base is a `let`-bound `ref object`). An
+  ## accessor call target is different: `nnkAsgn` over an `nnkCall` LHS does
+  ## NOT compile ("cannot be assigned to" — verified), so it must instead
+  ## be emitted as an explicit call on the derived `` `f=` `` setter name.
   expectArity(sx, "set!", sx.items.len - 1, 2)
-  nnkAsgn.newTree(ctx.identForSymbol(sx.items[1]), ctx.emitExpr(sx.items[2])).attachLineInfo(sx)
+  let target = sx.items[1]
+  let value = ctx.emitExpr(sx.items[2])
+  if target.kind == sxList and target.items.len > 0 and target.items[0].kind == sxSymbol and
+      not target.items[0].isSymbol(".") and not target.items[0].isSymbol("at") and
+      not target.items[0].isSymbol("slice"):
+    result = newCall(nnkAccQuoted.newTree(ident(target.items[0].sym), ident("=")).attachLineInfo(target.items[0])).attachLineInfo(sx)
+    for i in 1 ..< target.items.len:
+      result.add ctx.emitExpr(target.items[i])
+    result.add value
+    return result
+  nnkAsgn.newTree(ctx.emitExpr(target), value).attachLineInfo(sx)
 
 proc emitParam(ctx: var EmitContext; param: Syntax; patternDefs: var seq[NimNode]): NimNode =
   ## Emits one `nnkIdentDefs` for the formal-params list. A destructured

@@ -170,6 +170,33 @@ to dot-access at expansion time — only syntax).
 (set! name new-value)
 ```
 
+`name` must resolve to a `var`-bound local (a plain `let` binding is
+immutable and `set!` on it is a compile error).
+
+`set!` also assigns through a *place* — an object field, a sequence/array
+index, a slice, or an accessor call — rather than only a plain symbol:
+
+```lisp
+(set! (. obj field) new-value)      ; object field
+(set! (at seq index) new-value)     ; sequence/array element
+(set! (slice seq a b) new-values)   ; sub-range
+(set! (getter obj) new-value)       ; accessor call — see below
+```
+
+Unlike the plain-symbol form, a place target has no mutability requirement
+of its own: `(let ((rex (make-instance Dog ...))) (set! (. rex name) "Rex"))`
+is legal, because reassigning a `ref object`'s field doesn't rebind the
+`let`. Whether a place is actually assignable (e.g. `(at s i)` on a
+`let`-bound `seq`) is checked by the underlying Nim compiler, the same as
+any other Nim assignment.
+
+The last form, `(set! (getter obj) new-value)`, assigns through an
+*accessor call*: `getter` must be a plain identifier, and NFL emits a call
+to the setter proc named `getter=` — Nim's convention for a settable
+property. This is how `defclass`'s generated `:accessor` setters are used
+(see [CLOS-lite classes](#clos-lite-classes-preamble)); it works for any
+`ident=` proc, not just generated ones (see the `proc` section below).
+
 ## Constants
 
 ```lisp
@@ -248,6 +275,21 @@ that differs in meaning from its unescaped form:
 | `\|**\|`  | operator `**`, unexported     |
 | `***`   | operator `**`, exported       |
 | `\|+*\|`  | operator `+*`, unexported (a different name from unescaped `+*`, which is exported `+`) |
+
+### Setter proc names
+
+A `proc` name may also be `ident=` — a plain identifier followed by `=`,
+Nim's convention for a settable property:
+
+```lisp
+(proc animalName ((self Animal)) (: string) (. self name))
+(proc animalName= ((self Animal) (v string)) (set! (. self name) v))
+```
+
+This makes `(set! (animalName a) "Rex")` compile to a call on
+`animalName=` — see [`set!`](#set-mutation) above. `defclass`'s `:accessor`
+option generates exactly this pair (see [CLOS-lite
+classes](#clos-lite-classes-preamble)).
 
 ### `func` — side-effect-free procedure
 
@@ -1083,8 +1125,8 @@ A CL-flavoured `defclass`/`make-instance` layer over the [`type`/`ref`/
 `object`](#types), [`new`](#new--object-construction), and
 [`method`](#method--method-definition) forms above, for readers who'd
 rather see CLOS-style class syntax. These are plain macros — `defclass`
-expands to a `type` declaration plus one accessor `proc` per named slot
-option, and `make-instance` is sugar for `new` — not new machinery of
+expands to a `type` declaration plus one or two accessor `proc`s per named
+slot option, and `make-instance` is sugar for `new` — not new machinery of
 their own:
 
 ```lisp
@@ -1099,15 +1141,17 @@ their own:
 
 (var rex (make-instance Dog (name "Rex") (breed "corgi")))
 (echo (animalName rex) " says " (speak rex))    ; -> "Rex says woof"
+
+(set! (animalName rex) "Fido")                  ; :accessor is settable too
 ```
 
 A slot is `(name Type option...)`; a bare `(name Type)` is a plain field
-with no generated accessor. `:accessor` and `:reader` are currently
-synonyms — both generate a getter proc named by their value — since
-NFL has no field-assignment syntax yet for `:accessor` to grow a setter
-from. That value becomes a real Nim `proc` name, so unlike a `defclass`
-name itself (compile-time only), it must be a plain identifier: `animalName`,
-not `animal-name`.
+with no generated accessor. `:accessor` generates a getter *and* a setter
+(`animalName` and `animalName=`, so `(set! (animalName rex) "Fido")` works —
+see [`set!`](#set-mutation)); `:reader` generates a getter only. Either
+value becomes a real Nim `proc` name, so unlike a `defclass` name itself
+(compile-time only), it must be a plain identifier: `animalName`, not
+`animal-name`.
 
 The superclass list is `()` (→ inherits `RootObj`, so the class is
 dispatchable from the start) or a single `(Parent)` — `defclass` supports

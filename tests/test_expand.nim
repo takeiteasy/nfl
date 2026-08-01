@@ -447,6 +447,14 @@ suite "macro expansion":
   test "rejects more than one defclass superclass":
     expectCoreExpandError("(defclass Bad (A B) ((name string)))", "defclass supports a single superclass")
 
+  test ":accessor generates a getter and a setter; :reader generates a getter only (#75)":
+    let forms = expandSource("(defclass C () ((n string :accessor cN) (m string :reader cM)))", "expand-test.nfl")
+    let rendered = renderForms(forms)
+    check rendered.contains("proc cN ")
+    check rendered.contains("proc cN= ")
+    check rendered.contains("proc cM ")
+    check not rendered.contains("cM=")
+
   # ---------------------------------------------------------------------------
   # automatic template hygiene (#11)
   # ---------------------------------------------------------------------------

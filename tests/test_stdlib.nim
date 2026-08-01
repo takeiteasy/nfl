@@ -43,3 +43,6 @@ suite "nfl stdlib":
     check rexBreed == "corgi"
     check rexSpeaks == "woof"
     check genericSpeaks == "..."
+
+  test ":accessor's generated setter assigns through set! (#75)":
+    check rexRenamed == "Fido"

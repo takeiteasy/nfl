@@ -25,12 +25,13 @@ nim	withSpan	syntax.html#withSpan,Syntax,Span	proc withSpan(sx: Syntax; span: Sp
 nim	isSymbol	syntax.html#isSymbol,Syntax,string	proc isSymbol(sx: Syntax; name: string): bool		113
 nim	isOperatorName	syntax.html#isOperatorName,string	proc isOperatorName(s: string): bool		119
 nim	isPlainIdentifier	syntax.html#isPlainIdentifier,string	proc isPlainIdentifier(s: string): bool		134
-nim	isValidRoutineName	syntax.html#isValidRoutineName,string	proc isValidRoutineName(s: string): bool		144
-nim	splitExportMarker	syntax.html#splitExportMarker,string,bool,bool	proc splitExportMarker(sym: string; escaped, allowOperator: bool): tuple[\n    base: string, exported: bool, err: string]		156
-nim	isBlockLabel	syntax.html#isBlockLabel,Syntax	proc isBlockLabel(sx: Syntax): bool		197
-nim	blockLabelName	syntax.html#blockLabelName,Syntax	proc blockLabelName(sx: Syntax): string		206
-nim	isRangeShaped	syntax.html#isRangeShaped,Syntax	proc isRangeShaped(sx: Syntax): bool		211
-nim	isRangeForm	syntax.html#isRangeForm,Syntax	proc isRangeForm(sx: Syntax): bool		217
-nim	isCaseValueList	syntax.html#isCaseValueList,Syntax	proc isCaseValueList(sx: Syntax): bool		222
-nim	sameSyntax	syntax.html#sameSyntax,Syntax,Syntax	proc sameSyntax(a, b: Syntax): bool		235
-nim	renderSyntax	syntax.html#renderSyntax,Syntax	proc renderSyntax(sx: Syntax): string		290
+nim	isSetterName	syntax.html#isSetterName,string	proc isSetterName(s: string): bool		144
+nim	isValidRoutineName	syntax.html#isValidRoutineName,string	proc isValidRoutineName(s: string): bool		150
+nim	splitExportMarker	syntax.html#splitExportMarker,string,bool,bool	proc splitExportMarker(sym: string; escaped, allowOperator: bool): tuple[\n    base: string, exported: bool, err: string]		165
+nim	isBlockLabel	syntax.html#isBlockLabel,Syntax	proc isBlockLabel(sx: Syntax): bool		206
+nim	blockLabelName	syntax.html#blockLabelName,Syntax	proc blockLabelName(sx: Syntax): string		215
+nim	isRangeShaped	syntax.html#isRangeShaped,Syntax	proc isRangeShaped(sx: Syntax): bool		220
+nim	isRangeForm	syntax.html#isRangeForm,Syntax	proc isRangeForm(sx: Syntax): bool		226
+nim	isCaseValueList	syntax.html#isCaseValueList,Syntax	proc isCaseValueList(sx: Syntax): bool		231
+nim	sameSyntax	syntax.html#sameSyntax,Syntax,Syntax	proc sameSyntax(a, b: Syntax): bool		244
+nim	renderSyntax	syntax.html#renderSyntax,Syntax	proc renderSyntax(sx: Syntax): string		299

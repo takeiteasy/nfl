@@ -107,6 +107,10 @@ proc lookup(ctx: LowerContext; name: Syntax): Option[BindingKind] =
 proc lowerExpr(ctx: var LowerContext; sx: Syntax)
 proc lowerStmt(ctx: var LowerContext; sx: Syntax)
 proc validateTypeReference(sx: Syntax; what: string)
+proc lowerDot(ctx: var LowerContext; sx: Syntax)
+proc lowerAt(ctx: var LowerContext; sx: Syntax)
+proc lowerSlice(ctx: var LowerContext; sx: Syntax)
+proc lowerCall(ctx: var LowerContext; sx: Syntax)
 
 proc isNamedArg(sx: Syntax): bool =
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol(":")
@@ -332,15 +336,46 @@ proc lowerThrow(ctx: var LowerContext; sx: Syntax) =
   lowerExpr(ctx, sx.items[2])
 
 proc lowerSet(ctx: var LowerContext; sx: Syntax) =
+  ## `set!` accepts a plain symbol (a mutable local) or a *place*: `(. o f)`,
+  ## `(at s i)`, `(slice s a b)`, or an accessor call `(f a...)` where `f` is
+  ## a plain identifier — the last lowers to a call on the derived setter
+  ## name `f=` (see #75). Place targets deliberately impose no mutability
+  ## requirement of their own: unlike a plain symbol, `o.field = v` is legal
+  ## Nim even when `o` is a `let`-bound `ref object` (the common
+  ## `(let ((rex (make-instance Dog ...))) (set! (. rex name) "Rex"))` case),
+  ## and a genuinely illegal case — e.g. `(at s i)` on a `let`-bound seq — is
+  ## left for Nim's semantic pass to reject, the same deferral `lowerYield`
+  ## already makes for its own target checks.
   expectArity(sx, "set!", sx.items.len - 1, 2)
   let target = sx.items[1]
-  if target.kind != sxSymbol:
-    raiseCompilerError(target.span, "set! target must be a symbol")
-  let binding = ctx.lookup(target)
-  if binding.isNone:
-    raiseCompilerError(target.span, "set! target is not a mutable local: " & target.sym)
-  if binding.get() != bkMutable:
-    raiseCompilerError(target.span, "cannot set! immutable binding: " & target.sym)
+  case target.kind
+  of sxSymbol:
+    let binding = ctx.lookup(target)
+    if binding.isNone:
+      raiseCompilerError(target.span, "set! target is not a mutable local: " & target.sym)
+    if binding.get() != bkMutable:
+      raiseCompilerError(target.span, "cannot set! immutable binding: " & target.sym)
+  of sxList:
+    if target.items.len == 0 or target.items[0].kind != sxSymbol:
+      raiseCompilerError(target.span,
+        "set! target must be a symbol or a place ((. o f), (at s i), (slice s a b), or an accessor call)")
+    let head = target.items[0]
+    if head.isSymbol("."):
+      if target.items.len != 3:
+        raiseCompilerError(target.span, "set! target (. o f) must be a field access, not a method call")
+      lowerDot(ctx, target)
+    elif head.isSymbol("at"):
+      lowerAt(ctx, target)
+    elif head.isSymbol("slice"):
+      lowerSlice(ctx, target)
+    else:
+      if not head.sym.isPlainIdentifier:
+        raiseCompilerError(head.span,
+          "set! accessor target must be a plain identifier (its derived setter name must be a valid Nim identifier followed by '='): " & head.sym)
+      lowerCall(ctx, target)
+  else:
+    raiseCompilerError(target.span,
+      "set! target must be a symbol or a place ((. o f), (at s i), (slice s a b), or an accessor call)")
   lowerExpr(ctx, sx.items[2])
 
 proc lowerParam(ctx: var LowerContext; param: Syntax) =
@@ -431,7 +466,7 @@ proc lowerRoutine(ctx: var LowerContext; sx: Syntax; formName: string;
   if name.kind != sxSymbol:
     raiseCompilerError(name.span, formName & " name must be a symbol")
   if not name.sym.isValidRoutineName:
-    raiseCompilerError(name.span, formName & " name must be a plain identifier or an operator (e.g. |+|), not a mix of both: " & name.sym)
+    raiseCompilerError(name.span, formName & " name must be a plain identifier or an operator (e.g. |+|), or a setter name (ident=): " & name.sym)
   # Validate the export marker early so errors point at the name, not the body.
   let baseName = name.validateExportedDecl(formName & " name", allowOperator = true)
   # Optional generic-params vector immediately after the name.

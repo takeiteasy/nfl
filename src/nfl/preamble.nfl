@@ -187,9 +187,9 @@
 ; NFL doesn't have yet (see the tracker for the follow-up tickets):
 ;   - no :initform/:initarg — NFL has no object-field defaults, so every slot
 ;     is effectively a required make-instance argument.
-;   - accessors are read-only — NFL's set! only assigns symbols, not object
-;     fields, so :accessor cannot yet generate a setter; it is currently a
-;     plain synonym for :reader.
+;   - :accessor generates both a getter and a setter (`animalName` and
+;     `animalName=`, callable as `(set! (animalName a) v)`); :reader
+;     generates a getter only.
 ;   - single inheritance only — a defclass superclass list may name at most
 ;     one parent; full CLOS multiple dispatch is tracked separately.
 ;   - defmethod stays the plain `method` alias defined above; CLOS-lite adds
@@ -234,34 +234,54 @@
                   (macro-error "defclass slot accessor/reader name must be a symbol"))
               (macro-error (string-append "defclass: unknown slot option " (symbol->string (first opts))))))))
 
-(defmacro-proc nfl-slot-accessor-names (opts)
+(defmacro-proc nfl-slot-names-for-key (opts key)
+  ; Collects the values paired with a given option key (`:accessor` or
+  ; `:reader`), skipping every other key/value pair. Called once per key so
+  ; `:accessor` and `:reader` each generate their own set of procs (see #75).
   (if (nil? opts)
       '()
-      (cons (nth opts 1) (nfl-slot-accessor-names (rest (rest opts))))))
+      (if (= (first opts) key)
+          (cons (nth opts 1) (nfl-slot-names-for-key (rest (rest opts)) key))
+          (nfl-slot-names-for-key (rest (rest opts)) key))))
 
-(defmacro-proc nfl-make-accessor (className fieldName fieldType accessorName)
-  ; A literal `self` — not `(gensym "self")` — deliberately: `proc` params
-  ; are not covered by the automatic hygiene-rename pass (see expand.nim's
-  ; module comment on hygienicRename), and the backend emits ANY hygienic
-  ; (gensym'd) symbol as a Nim `nskLet`, which cannot be used in param
-  ; position at all. Safe without hygiene regardless: the accessor body
-  ; only ever references its own `self`, in a proc that introduces its own
-  ; fresh Nim scope, so there is no caller symbol for a literal name to
-  ; capture or be captured by.
-  `(proc ,accessorName ((self ,className)) (: ,fieldType) (. self ,fieldName)))
+(defmacro-proc nfl-make-getter (className fieldName fieldType getterName)
+  ; A literal `self`, not `(gensym "self")` — still safe without hygiene:
+  ; the generated body only ever references its own `self`, in a proc that
+  ; introduces its own fresh Nim scope, so there is no caller symbol for a
+  ; literal name to capture or be captured by. (A literal name also keeps
+  ; the golden-expansion fixture's output stable — a gensym'd name would
+  ; embed the macro env's running counter, making the fixture's exact text
+  ; depend on unrelated preamble changes.)
+  `(proc ,getterName ((self ,className)) (: ,fieldType) (. self ,fieldName)))
 
-(defmacro-proc nfl-make-accessors-for-names (className fieldName fieldType names)
+(defmacro-proc nfl-make-setter (className fieldName fieldType setterName)
+  `(proc ,setterName ((self ,className) (v ,fieldType)) (set! (. self ,fieldName) v)))
+
+(defmacro-proc nfl-make-getters-for-names (className fieldName fieldType names)
   (if (nil? names)
       '()
-      (cons (nfl-make-accessor className fieldName fieldType (first names))
-            (nfl-make-accessors-for-names className fieldName fieldType (rest names)))))
+      (cons (nfl-make-getter className fieldName fieldType (first names))
+            (nfl-make-getters-for-names className fieldName fieldType (rest names)))))
+
+(defmacro-proc nfl-setter-name (accessorName)
+  (string->symbol (string-append (symbol->string accessorName) "=")))
+
+(defmacro-proc nfl-make-setters-for-names (className fieldName fieldType names)
+  (if (nil? names)
+      '()
+      (cons (nfl-make-setter className fieldName fieldType (nfl-setter-name (first names)))
+            (nfl-make-setters-for-names className fieldName fieldType (rest names)))))
 
 (defmacro-proc nfl-slot-accessors (className slot)
   (let ((fieldName (first slot))
         (fieldType (nth slot 1))
         (opts (rest (rest slot))))
     (nfl-validate-slot-options opts)
-    (nfl-make-accessors-for-names className fieldName fieldType (nfl-slot-accessor-names opts))))
+    (let ((accessorNames (nfl-slot-names-for-key opts ':accessor))
+          (readerNames (nfl-slot-names-for-key opts ':reader)))
+      (append (nfl-make-getters-for-names className fieldName fieldType accessorNames)
+              (append (nfl-make-setters-for-names className fieldName fieldType accessorNames)
+                      (nfl-make-getters-for-names className fieldName fieldType readerNames))))))
 
 (defmacro-proc nfl-class-accessors (className slots)
   (if (nil? slots)
