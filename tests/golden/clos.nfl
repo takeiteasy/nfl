@@ -1,0 +1,12 @@
+(defclass Animal ()
+  ((name string :accessor animalName)))
+
+(defclass Dog (Animal)
+  ((breed string :reader dogBreed)
+   (age int)))
+
+(method speak {.base.} ((a Animal)) (: string) "...")
+(method speak ((d Dog)) (: string) "woof")
+
+(var rex (make-instance Dog (name "Rex") (breed "corgi") (age 3)))
+(echo (animalName rex) " says " (speak rex))

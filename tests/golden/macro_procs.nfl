@@ -1,0 +1,20 @@
+(defmacro-proc plist-len (plist)
+  (if (nil? plist)
+      0
+      (+ 1 (plist-len (rest plist)))))
+
+(defmacro-proc plist-get (plist key)
+  (if (nil? plist)
+      nil
+      (if (= (first plist) key)
+          (nth plist 1)
+          (plist-get (rest (rest plist)) key))))
+
+(defmacro count-plist (&rest items)
+  (plist-len items))
+
+(defmacro get-plist (key &rest items)
+  `(quote ,(plist-get items key)))
+
+(count-plist a 1 b 2 c 3)
+(get-plist c a 1 b 2 c 3)

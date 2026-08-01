@@ -1,0 +1,26 @@
+; A compile-time list-length/accumulator helper: sums a list of macro
+; arguments at expansion time, so the generated code embeds one literal
+; int instead of an expression tree of nested (+ ...) calls.
+(defmacro-proc list-sum (xs)
+  (if (nil? xs)
+      0
+      (+ (first xs) (list-sum (rest xs)))))
+
+(defmacro sum-of (&rest items)
+  (list-sum items))
+
+(echo "compile-time sum: " (sum-of 1 2 3 4 5))
+
+; An accumulator that drives a *generated* form: builds a list of `echo`
+; forms at expansion time, then splices them into a single block — the
+; kind of loop-over-macro-arguments that a self-recursive defmacro alone
+; could only do by burning one expansion-depth level per iteration.
+(defmacro-proc build-echoes (n acc)
+  (if (= n 0)
+      acc
+      (build-echoes (- n 1) (cons `(echo "tick " ,n) acc))))
+
+(defmacro countdown (n)
+  `(block ,@(build-echoes n '())))
+
+(countdown 3)

@@ -3,6 +3,7 @@ import std/unittest
 import nfl/compiler
 
 nflModule staticRead("sequence_helpers.nfl"), "tests/sequence_helpers.nfl"
+nflModule staticRead("clos.nfl"), "tests/clos.nfl"
 
 suite "nfl stdlib":
   test "sequence helpers from nfl file":
@@ -36,3 +37,9 @@ suite "nfl stdlib":
     check arefValue == 2
     check subseqValue == @[2, 3]
     check subseqToEndValue == @[3, 4]
+
+  test "CLOS-lite defclass/make-instance from nfl file (#66)":
+    check rexName == "Rex"
+    check rexBreed == "corgi"
+    check rexSpeaks == "woof"
+    check genericSpeaks == "..."

@@ -580,6 +580,10 @@ Dispatch is determined at runtime by the concrete type:
 (echo (speak base))  ; → "woof"
 ```
 
+See also [CLOS-lite classes](#clos-lite-classes-preamble) for a
+`defclass`/`method` combination that generates the `(of Base)` inheritance
+clause and field accessors for you.
+
 ### `new` — object construction
 
 ```lisp
@@ -595,7 +599,8 @@ Dispatch is determined at runtime by the concrete type:
 ```
 
 `new` is for object types (`(object …)`, `(ref (object …))`) — see `tuple-new`
-below for named tuples.
+below for named tuples. [`make-instance`](#clos-lite-classes-preamble) is
+sugar over `new` for a `defclass`-declared type.
 
 ### `tuple-new` — named tuple construction
 
@@ -1071,6 +1076,51 @@ match CL's own names) just take a mechanical `def` prefix.
 (defun square ((x int)) (: int) (* x x))
 (defconstant pi 3.14159)
 ```
+
+## CLOS-lite classes (preamble)
+
+A CL-flavoured `defclass`/`make-instance` layer over the [`type`/`ref`/
+`object`](#types), [`new`](#new--object-construction), and
+[`method`](#method--method-definition) forms above, for readers who'd
+rather see CLOS-style class syntax. These are plain macros — `defclass`
+expands to a `type` declaration plus one accessor `proc` per named slot
+option, and `make-instance` is sugar for `new` — not new machinery of
+their own:
+
+```lisp
+(defclass Animal ()
+  ((name string :accessor animalName)))
+
+(defclass Dog (Animal)
+  ((breed string :reader dogBreed)))
+
+(method speak {.base.} ((a Animal)) (: string) "...")
+(method speak ((d Dog)) (: string) "woof")
+
+(var rex (make-instance Dog (name "Rex") (breed "corgi")))
+(echo (animalName rex) " says " (speak rex))    ; -> "Rex says woof"
+```
+
+A slot is `(name Type option...)`; a bare `(name Type)` is a plain field
+with no generated accessor. `:accessor` and `:reader` are currently
+synonyms — both generate a getter proc named by their value — since
+NFL has no field-assignment syntax yet for `:accessor` to grow a setter
+from. That value becomes a real Nim `proc` name, so unlike a `defclass`
+name itself (compile-time only), it must be a plain identifier: `animalName`,
+not `animal-name`.
+
+The superclass list is `()` (→ inherits `RootObj`, so the class is
+dispatchable from the start) or a single `(Parent)` — `defclass` supports
+single inheritance only; multiple superclasses are a `macro-error`. Classes
+are always `ref object`, since that's what `method` dispatch and `RootObj`
+inheritance both require.
+
+Deliberately out of scope for now (tracked separately): `:initform`/
+`:initarg` slot defaults, since NFL object fields have no defaults at all
+yet; and a `defmethod` distinct from the plain [`method`
+alias](#cl-style-declaration-spellings-preamble) above — CLOS-lite adds no
+dispatch mechanism of its own. See `examples/clos.nfl` for a runnable
+demonstration.
 
 ## Quoting
 

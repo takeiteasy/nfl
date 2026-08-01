@@ -23,6 +23,16 @@ proc expectExpandError(source, messagePart: string) =
     check err.diagnostic.span.file == "expand-test.nfl"
     check err.diagnostic.message.contains(messagePart)
 
+proc expectCoreExpandError(source, messagePart: string) =
+  ## Like `expectExpandError`, but auto-loads the preamble (`expandSource`'s
+  ## default) — needed for anything exercising a preamble macro, like
+  ## `defclass`, that `expandOne`'s bare `newMacroEnv()` never registers.
+  try:
+    discard expandSource(source, "expand-test.nfl")
+    fail()
+  except CompilerError as err:
+    check err.diagnostic.message.contains(messagePart)
+
 proc renderForms(forms: seq[Syntax]): string =
   for form in forms:
     if result.len > 0:
@@ -217,6 +227,203 @@ suite "macro expansion":
 """, "macro expansion depth exceeded")
 
   # ---------------------------------------------------------------------------
+  # macro-time builtins (#70)
+  # ---------------------------------------------------------------------------
+
+  test "arithmetic builtins incl. int/float promotion":
+    let sx = expandOne """
+(defmacro test1 ()
+  (list (+ 1 2 3) (+ 1 2.0) (- 5) (- 5.0) (- 10 3 2) (* 2 3 4) (* 2 2.0)
+        (/ 2) (/ 10 4) (/ 10 5) (div 10 3) (mod 10 3)))
+(test1)
+"""
+    check sx.renderSyntax() == "(6 3.0 -5 -5.0 5 24 4.0 0.5 2.5 2.0 3 1)"
+
+  test "division by zero raises a compiler error, not a Nim trap":
+    expectExpandError("""
+(defmacro bad () (/ 1 0))
+(bad)
+""", "division by zero")
+    expectExpandError("""
+(defmacro bad () (div 1 0))
+(bad)
+""", "division by zero")
+    expectExpandError("""
+(defmacro bad () (mod 1 0))
+(bad)
+""", "division by zero")
+
+  test "comparison builtins":
+    let sx = expandOne """
+(defmacro test1 ()
+  (list (< 1 2 3) (< 1 3 2) (<= 1 1 2) (> 3 2 1) (> 1 2 3)
+        (>= 3 3 2) (not nil) (not true) (not false)))
+(test1)
+"""
+    check sx.renderSyntax() == "(true false true true false true true false true)"
+
+  test "= is structural, not numeric — (= 1 1.0) is false":
+    let sx = expandOne """
+(defmacro test1 ()
+  (list (= 1 1) (= 1 1.0) (= '(1) '(1.0)) (= 'a 'a) (/= 1 2) (/= 1 1)))
+(test1)
+"""
+    check sx.renderSyntax() == "(true false false true true false)"
+
+  test "list builtins incl. out-of-range nth and failed member":
+    let sx = expandOne """
+(defmacro test1 ()
+  (list (nth '(a b c) 1) (nth '(a b c) 5) (nth '(a b c) -1)
+        (length '(1 2 3)) (reverse '(1 2 3))
+        (member 2 '(1 2 3)) (member 5 '(1 2 3))))
+(test1)
+"""
+    check sx.renderSyntax() == "(b nil nil 3 (3 2 1) true false)"
+
+  test "symbol/string builtins":
+    let sx = expandOne """
+(defmacro test1 ()
+  (list (symbol->string 'foo) (string->symbol "bar") (string-append "a" "b" "c")))
+(test1)
+"""
+    check sx.renderSyntax() == """("foo" bar "abc")"""
+
+  test "rejects wrong arity for a new builtin":
+    expectExpandError("""
+(defmacro bad () (not 1 2))
+(bad)
+""", "not expects 1 arguments, got 2")
+
+  test "rejects wrong argument type for a new builtin":
+    expectExpandError("""
+(defmacro bad () (+ 1 "x"))
+(bad)
+""", "expected a number")
+
+  test "unknown macro-time function still reports clearly":
+    expectExpandError("""
+(defmacro bad () (frobnicate 1))
+(bad)
+""", "unknown macro-time function: frobnicate")
+
+  # ---------------------------------------------------------------------------
+  # defmacro-proc (#70)
+  # ---------------------------------------------------------------------------
+
+  test "defmacro-proc recursion drives a defmacro":
+    let sx = expandOne """
+(defmacro-proc plist-get (plist key)
+  (if (nil? plist)
+      nil
+      (if (= (first plist) key)
+          (nth plist 1)
+          (plist-get (rest (rest plist)) key))))
+(defmacro get-it (key &rest items) `(quote ,(plist-get items key)))
+(get-it b a 1 b 2 c 3)
+"""
+    check sx.renderSyntax() == "(quote 2)"
+
+  test "mutually recursive defmacro-procs":
+    let sx = expandOne """
+(defmacro-proc my-even? (n) (if (= n 0) true (my-odd? (- n 1))))
+(defmacro-proc my-odd? (n) (if (= n 0) false (my-even? (- n 1))))
+(defmacro check (n) (my-even? n))
+(check 10)
+"""
+    check sx.renderSyntax() == "true"
+
+  test "defmacro-proc with a rest parameter":
+    let sx = expandOne """
+(defmacro-proc first-and-rest-len (&rest xs) (list (first xs) (length (rest xs))))
+(defmacro test1 () (first-and-rest-len 10 20 30))
+(test1)
+"""
+    check sx.renderSyntax() == "(10 2)"
+
+  test "defmacro-proc with a destructuring parameter":
+    let sx = expandOne """
+(defmacro-proc swapped ([a b]) (list b a))
+(defmacro s2 (pair) `(quote ,(swapped pair)))
+(s2 (1 2))
+"""
+    check sx.renderSyntax() == "(quote (2 1))"
+
+  test "an evaluated keyword-symbol argument does not confuse macro-proc binding":
+    let sx = expandOne """
+(defmacro-proc echo-arg (x) x)
+(defmacro test-kw () (echo-arg ':accessor))
+(test-kw)
+"""
+    check sx.renderSyntax() == ":accessor"
+
+  test "&key is rejected in a defmacro-proc lambda list":
+    expectExpandError("""
+(defmacro-proc bad (x &key y) x)
+""", "&key is not supported in a defmacro-proc parameter list")
+
+  test "rejects defmacro-proc recursion depth exceeded":
+    expectExpandError("""
+(defmacro-proc loop (n) (if (= n 0) 0 (loop (- n 1))))
+(defmacro run (n) (loop n))
+(run 1000)
+""", "macro-time procedure recursion depth exceeded")
+
+  test "the macro-proc depth counter unwinds after a failed call, allowing a later legal deep recursion":
+    let env = newMacroEnv()
+    let defForms = expandModule(readAll("""
+(defmacro-proc loop (n) (if (= n 0) 0 (loop (- n 1))))
+(defmacro run (n) (loop n))
+""", "expand-test.nfl"), env)
+    check defForms.len == 0
+    let overflowCall = readAll("(run 1000)", "expand-test.nfl")[0]
+    var raised = false
+    try:
+      discard expandExpr(env, overflowCall)
+    except CompilerError as err:
+      raised = true
+      check err.diagnostic.message.contains("macro-time procedure recursion depth exceeded")
+    check raised
+    let legalCall = readAll("(run 150)", "expand-test.nfl")[0]
+    check expandExpr(env, legalCall).renderSyntax() == "0"
+
+  test "defmacro-proc is rejected in expression position":
+    expectExpandError("(+ 1 (defmacro-proc bad (x) x))", "defmacro-proc is only allowed at statement/module scope")
+
+  test "rejects duplicate defmacro-proc definition":
+    expectExpandError("""
+(defmacro-proc dup (x) x)
+(defmacro-proc dup (x) x)
+""", "duplicate macro-proc definition: dup")
+
+  test "rejects a defmacro-proc that shadows a builtin":
+    expectExpandError("(defmacro-proc first (x) x)", "cannot redefine macro-time builtin: first")
+
+  test "rejects a defmacro-proc that shadows a special form":
+    expectExpandError("(defmacro-proc if (x) x)", "cannot redefine macro-time builtin: if")
+
+  # ---------------------------------------------------------------------------
+  # CLOS-lite defclass/make-instance (#66)
+  # ---------------------------------------------------------------------------
+
+  test "rejects a defclass slot that isn't a list":
+    expectCoreExpandError("(defclass Bad () (name))", "defclass slot must be a list")
+
+  test "rejects a defclass slot shorter than (name Type)":
+    expectCoreExpandError("(defclass Bad () ((name)))", "defclass slot must be (name Type [options...])")
+
+  test "rejects an unknown defclass slot option":
+    expectCoreExpandError("(defclass Bad () ((name string :foo bar)))", "defclass: unknown slot option :foo")
+
+  test "rejects a defclass slot option missing its value":
+    expectCoreExpandError("(defclass Bad () ((name string :accessor)))", "defclass slot option missing its value")
+
+  test "rejects a non-symbol defclass accessor name":
+    expectCoreExpandError("(defclass Bad () ((name string :accessor 1)))", "defclass slot accessor/reader name must be a symbol")
+
+  test "rejects more than one defclass superclass":
+    expectCoreExpandError("(defclass Bad (A B) ((name string)))", "defclass supports a single superclass")
+
+  # ---------------------------------------------------------------------------
   # automatic template hygiene (#11)
   # ---------------------------------------------------------------------------
 
@@ -339,7 +546,9 @@ suite "golden macro expansion":
     for sourcePath in ["tests/golden/core_macros.nfl",
                        "tests/golden/escaped_symbols.nfl",
                        "tests/golden/hygiene.nfl",
-                       "tests/golden/destructuring.nfl"]:
+                       "tests/golden/destructuring.nfl",
+                       "tests/golden/macro_procs.nfl",
+                       "tests/golden/clos.nfl"]:
       let expectedPath = sourcePath.changeFileExt("out")
       let actual = expandSource(readFile(sourcePath), sourcePath).renderForms()
       check actual.strip() == readFile(expectedPath).strip()

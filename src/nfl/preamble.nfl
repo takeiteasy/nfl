@@ -180,3 +180,101 @@
   (if (nil? forms)
       value
       `(let ((,name ,value)) (as-> ,(first forms) ,name ,@(rest forms)))))
+
+; CLOS-lite: a defclass/make-instance layer over the existing type/ref/
+; object/new/method forms, in the spirit of the def* aliases and CL sequence
+; functions above. Deliberate departures from real CLOS, tightened by what
+; NFL doesn't have yet (see the tracker for the follow-up tickets):
+;   - no :initform/:initarg — NFL has no object-field defaults, so every slot
+;     is effectively a required make-instance argument.
+;   - accessors are read-only — NFL's set! only assigns symbols, not object
+;     fields, so :accessor cannot yet generate a setter; it is currently a
+;     plain synonym for :reader.
+;   - single inheritance only — a defclass superclass list may name at most
+;     one parent; full CLOS multiple dispatch is tracked separately.
+;   - defmethod stays the plain `method` alias defined above; CLOS-lite adds
+;     no dispatch mechanism of its own.
+;   - every slot carries an explicit Nim type, because Nim object fields
+;     must be typed and NFL has no type-inference story for them.
+;   - :accessor/:reader names become real `proc` names, so — unlike a
+;     defclass/defmacro/defmacro-proc name itself, which only ever exists at
+;     expansion time — they must be plain Nim identifiers (no hyphens);
+;     `animalName`, not `animal-name`.
+
+(defmacro-proc nfl-class-parent (supers)
+  (if (nil? supers)
+      'RootObj
+      (if (nil? (rest supers))
+          (first supers)
+          (macro-error "defclass supports a single superclass; see the multiple-dispatch ticket"))))
+
+(defmacro-proc nfl-slot-field (slot)
+  (if (not (list? slot))
+      (macro-error "defclass slot must be a list")
+      (if (< (length slot) 2)
+          (macro-error "defclass slot must be (name Type [options...])")
+          (list (first slot) (nth slot 1)))))
+
+(defmacro-proc nfl-slot-fields (slots)
+  (if (nil? slots)
+      '()
+      (cons (nfl-slot-field (first slots)) (nfl-slot-fields (rest slots)))))
+
+(defmacro-proc nfl-slot-option-key-ok? (key)
+  (if (= key ':accessor) true (= key ':reader)))
+
+(defmacro-proc nfl-validate-slot-options (opts)
+  (if (nil? opts)
+      nil
+      (if (nil? (rest opts))
+          (macro-error "defclass slot option missing its value")
+          (if (nfl-slot-option-key-ok? (first opts))
+              (if (symbol? (nth opts 1))
+                  (nfl-validate-slot-options (rest (rest opts)))
+                  (macro-error "defclass slot accessor/reader name must be a symbol"))
+              (macro-error (string-append "defclass: unknown slot option " (symbol->string (first opts))))))))
+
+(defmacro-proc nfl-slot-accessor-names (opts)
+  (if (nil? opts)
+      '()
+      (cons (nth opts 1) (nfl-slot-accessor-names (rest (rest opts))))))
+
+(defmacro-proc nfl-make-accessor (className fieldName fieldType accessorName)
+  ; A literal `self` — not `(gensym "self")` — deliberately: `proc` params
+  ; are not covered by the automatic hygiene-rename pass (see expand.nim's
+  ; module comment on hygienicRename), and the backend emits ANY hygienic
+  ; (gensym'd) symbol as a Nim `nskLet`, which cannot be used in param
+  ; position at all. Safe without hygiene regardless: the accessor body
+  ; only ever references its own `self`, in a proc that introduces its own
+  ; fresh Nim scope, so there is no caller symbol for a literal name to
+  ; capture or be captured by.
+  `(proc ,accessorName ((self ,className)) (: ,fieldType) (. self ,fieldName)))
+
+(defmacro-proc nfl-make-accessors-for-names (className fieldName fieldType names)
+  (if (nil? names)
+      '()
+      (cons (nfl-make-accessor className fieldName fieldType (first names))
+            (nfl-make-accessors-for-names className fieldName fieldType (rest names)))))
+
+(defmacro-proc nfl-slot-accessors (className slot)
+  (let ((fieldName (first slot))
+        (fieldType (nth slot 1))
+        (opts (rest (rest slot))))
+    (nfl-validate-slot-options opts)
+    (nfl-make-accessors-for-names className fieldName fieldType (nfl-slot-accessor-names opts))))
+
+(defmacro-proc nfl-class-accessors (className slots)
+  (if (nil? slots)
+      '()
+      (append (nfl-slot-accessors className (first slots)) (nfl-class-accessors className (rest slots)))))
+
+(defmacro defclass (name supers slots)
+  (let ((fields (nfl-slot-fields slots))
+        (accessors (nfl-class-accessors name slots))
+        (parent (nfl-class-parent supers)))
+    `(block
+       (type ,name (ref (object (of ,parent) ,@fields)))
+       ,@accessors)))
+
+(defmacro make-instance (className &rest inits)
+  `(new ,className ,@inits))

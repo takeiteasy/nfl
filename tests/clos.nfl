@@ -1,0 +1,16 @@
+(defclass Animal ()
+  ((name string :accessor animalName)))
+
+(defclass Dog (Animal)
+  ((breed string :reader dogBreed)))
+
+(method speak {.base.} ((a Animal)) (: string) "...")
+(method speak ((d Dog)) (: string) "woof")
+
+(var rex (make-instance Dog (name "Rex") (breed "corgi")))
+(var genericAnimal (make-instance Animal (name "Generic")))
+
+(var rexName (animalName rex))
+(var rexBreed (dogBreed rex))
+(var rexSpeaks (speak rex))
+(var genericSpeaks (speak genericAnimal))
