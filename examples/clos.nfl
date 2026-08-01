@@ -1,5 +1,5 @@
 (defclass Animal ()
-  ((name string :accessor animalName)))
+  ((name string :accessor animalName :initarg :nom)))
 
 (defclass Dog (Animal)
   ((breed string :reader dogBreed)))
@@ -21,3 +21,11 @@
 
 (var whiskers (make-instance Cat (name "Whiskers")))
 (echo (animalName whiskers) " says " (catSound whiskers))
+
+; :initarg — a distinct external initializer name for a slot. It's an alias,
+; not a rename: the slot's own field name still works too, and — since
+; make-instance resolves initargs against the whole inheritance chain — an
+; inherited slot's initarg (Animal's :nom) still resolves from Dog, even
+; though defclass Dog never sees Animal's slots at its own expansion time.
+(var fido (make-instance Dog (nom "Fido") (breed "corgi")))
+(echo (animalName fido) " says " (speak fido))

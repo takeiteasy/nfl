@@ -685,8 +685,9 @@ clause and field accessors for you.
 ```
 
 `new` is for object types (`(object …)`, `(ref (object …))`) — see `tuple-new`
-below for named tuples. [`make-instance`](#clos-lite-classes-preamble) is
-sugar over `new` for a `defclass`-declared type.
+below for named tuples. [`make-instance`](#clos-lite-classes-preamble) builds
+the same construction for a `defclass`-declared type, but — unlike `new` —
+as a Nim macro that also resolves each slot's `:initarg`, inherited or not.
 
 ### `tuple-new` — named tuple construction
 
@@ -1168,10 +1169,14 @@ match CL's own names) just take a mechanical `def` prefix.
 A CL-flavoured `defclass`/`make-instance` layer over the [`type`/`ref`/
 `object`](#types), [`new`](#new--object-construction), and
 [`method`](#method--method-definition) forms above, for readers who'd
-rather see CLOS-style class syntax. These are plain macros — `defclass`
+rather see CLOS-style class syntax. `defclass` is a plain macro — it
 expands to a `type` declaration plus one or two accessor `proc`s per named
-slot option, and `make-instance` is sugar for `new` — not new machinery of
-their own:
+slot option. `make-instance` is a Nim macro (`nflMakeInstance`, in
+`runtime.nim`): unlike `defclass`, it runs at Nim semcheck time, when a
+class's whole `of` inheritance chain — and every ancestor's `:initarg`
+pragmas — is visible, which lets it resolve an initializer against an
+inherited slot that a macro-expand-time `defclass` invocation can't itself
+see:
 
 ```lisp
 (defclass Animal ()
@@ -1214,20 +1219,42 @@ same compile-time-evaluable restriction:
 A slot may combine `:initform` with `:accessor`/`:reader`; at most one
 `:initform` per slot.
 
+`:initarg` gives a slot a distinct external initializer name, for a
+`make-instance` call site that doesn't want to spell out the field itself:
+
+```lisp
+(defclass Animal ()
+  ((name string :accessor animalName :initarg :nom)))
+
+(defclass Dog (Animal)
+  ((breed string :reader dogBreed :initarg :kind)))
+
+(make-instance Dog (nom "Fido") (kind "corgi"))   ; via each slot's :initarg
+(make-instance Dog (name "Fido") (breed "corgi")) ; the field name still works
+```
+
+An `:initarg` is an alias, not a rename — a slot's own field name keeps
+working alongside it, initarg'd or not. It resolves across inheritance too:
+`Dog`'s `make-instance` call above reaches `name`'s `:nom` even though
+`defclass Dog` never sees `Animal`'s slots at its own expansion time,
+because `nflMakeInstance` reads the `:initarg` back off `Animal`'s Nim type
+definition, at Nim semcheck time, when `Dog`'s whole inheritance chain is
+resolved. Its value is conventionally keyword-shaped (`:nom`), matching
+`:accessor`/`:reader`/`:initform`'s own keys, but any symbol works — unlike
+`:accessor`/`:reader`, it never becomes a proc name, so it carries none of
+their plain-Nim-identifier restriction. A slot may combine `:initarg` with
+`:accessor`/`:reader`/`:initform`; at most one `:initarg` per slot.
+
 The superclass list is `()` (→ inherits `RootObj`, so the class is
 dispatchable from the start) or a single `(Parent)` — `defclass` supports
 single inheritance only; multiple superclasses are a `macro-error`. Classes
 are always `ref object`, since that's what `method` dispatch and `RootObj`
 inheritance both require.
 
-Deliberately out of scope for now (tracked separately): `:initarg` (a
-distinct external initializer name for a slot) — `defclass` has no
-visibility into an inherited superclass's slots at macro-expand time, so a
-class-specific initializer mapping isn't possible without a Nim-level
-constructor macro; and a `defmethod` distinct from the plain [`method`
-alias](#cl-style-declaration-spellings-preamble) above — CLOS-lite adds no
-dispatch mechanism of its own. See `examples/clos.nfl` for a runnable
-demonstration.
+Deliberately out of scope for now (tracked separately): a `defmethod`
+distinct from the plain [`method` alias](#cl-style-declaration-spellings-preamble)
+above — CLOS-lite adds no dispatch mechanism of its own. See
+`examples/clos.nfl` for a runnable demonstration.
 
 ## Quoting
 

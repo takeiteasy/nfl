@@ -1,6 +1,6 @@
-(block (type Animal (ref (object (of RootObj) (name string)))) (proc animalName ((self Animal)) (: string) (. self name)) (proc animalName= ((self Animal) (v string)) (set! (. self name) v)))
+(block (type Animal (ref (object (of RootObj) (name (pragma (: nflInitarg ":nom")) string)))) (proc animalName ((self Animal)) (: string) (. self name)) (proc animalName= ((self Animal) (v string)) (set! (. self name) v)))
 (block (type Dog (ref (object (of Animal) (breed string "mutt") (age int)))) (proc dogBreed ((self Dog)) (: string) (. self breed)))
 (method speak (pragma base) ((a Animal)) (: string) "...")
 (method speak ((d Dog)) (: string) "woof")
-(var rex (new Dog (name "Rex") (breed "corgi") (age 3)))
+(var rex (nflMakeInstance Dog (nom "Rex") (breed "corgi") (age 3)))
 (echo (animalName rex) " says " (speak rex))

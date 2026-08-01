@@ -442,7 +442,7 @@ suite "macro expansion":
     expectCoreExpandError("(defclass Bad () ((name string :accessor)))", "defclass slot option missing its value")
 
   test "rejects a non-symbol defclass accessor name":
-    expectCoreExpandError("(defclass Bad () ((name string :accessor 1)))", "defclass slot accessor/reader name must be a symbol")
+    expectCoreExpandError("(defclass Bad () ((name string :accessor 1)))", "defclass slot accessor/reader/initarg value must be a symbol")
 
   test "rejects more than one defclass superclass":
     expectCoreExpandError("(defclass Bad (A B) ((name string)))", "defclass supports a single superclass")
@@ -475,6 +475,35 @@ suite "macro expansion":
 
   test "an unknown defclass slot option is still rejected alongside :initform (#78)":
     expectCoreExpandError("(defclass Bad () ((name string :foo bar :initform \"a\")))", "defclass: unknown slot option :foo")
+
+  test ":initarg lowers into a pragma'd field carrying the keyword's text (#85)":
+    let forms = expandSource("""(defclass C () ((n string :initarg :nom) (m int)))""", "expand-test.nfl")
+    let rendered = renderForms(forms)
+    check rendered.contains("""(n (pragma (: nflInitarg ":nom")) string)""")
+    check rendered.contains("(m int)")
+
+  test ":initarg composes with :accessor and :initform (#85)":
+    let forms = expandSource(
+      """(defclass C () ((n string :accessor cN :initarg :nom :initform "anon")))""", "expand-test.nfl")
+    let rendered = renderForms(forms)
+    check rendered.contains("""(n (pragma (: nflInitarg ":nom")) string "anon")""")
+    check rendered.contains("proc cN ")
+    check rendered.contains("proc cN= ")
+
+  test "make-instance expands to the nflMakeInstance Nim macro (#85)":
+    let forms = expandSource("""(make-instance C (n "x"))""", "expand-test.nfl")
+    check renderForms(forms) == """(nflMakeInstance C (n "x"))"""
+
+  test "rejects a duplicate :initarg on one defclass slot (#85)":
+    expectCoreExpandError(
+      "(defclass Bad () ((name string :initarg :a :initarg :b)))",
+      "defclass slot has more than one :initarg")
+
+  test "an unknown defclass slot option is still rejected alongside :initarg (#85)":
+    expectCoreExpandError("(defclass Bad () ((name string :foo bar :initarg :nom)))", "defclass: unknown slot option :foo")
+
+  test "rejects a non-symbol defclass :initarg value (#85)":
+    expectCoreExpandError("(defclass Bad () ((name string :initarg 1)))", "defclass slot accessor/reader/initarg value must be a symbol")
 
   # ---------------------------------------------------------------------------
   # automatic template hygiene (#11)

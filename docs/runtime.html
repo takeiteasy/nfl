@@ -202,10 +202,26 @@
 </li>
 <li>
   <details open>
+    <summary><a class="reference reference-toplevel" href="#17" id="67">Macros</a></summary>
+    <ul class="simple simple-toc-section">
+      <ul class="simple nested-toc-section">nflMakeInstance
+  <li><a class="reference" href="#nflMakeInstance.m%2Ctypedesc%2Cvarargs%5Buntyped%5D" title="nflMakeInstance(T: typedesc; args: varargs[untyped]): untyped">nflMakeInstance(T: typedesc; args: varargs[untyped]): untyped</a></li>
+
+</ul>
+
+    </ul>
+  </details>
+</li>
+<li>
+  <details open>
     <summary><a class="reference reference-toplevel" href="#18" id="68">Templates</a></summary>
     <ul class="simple simple-toc-section">
       <ul class="simple nested-toc-section">nflCatch
   <li><a class="reference" href="#nflCatch.t%2Cstaticstring%2Cuntyped" title="nflCatch(tagName: static string; body: untyped): untyped">nflCatch(tagName: static string; body: untyped): untyped</a></li>
+
+</ul>
+<ul class="simple nested-toc-section">nflInitarg
+  <li><a class="reference" href="#nflInitarg.t%2Cstring" title="nflInitarg(name: string)">nflInitarg(name: string)</a></li>
 
 </ul>
 <ul class="simple nested-toc-section">nflMatchArity
@@ -602,6 +618,25 @@
 
   </dl>
 </div>
+<div class="section" id="17">
+  <h1><a class="toc-backref" href="#17">Macros</a></h1>
+  <dl class="item">
+    <div id="nflMakeInstance-macros-all">
+  <div id="nflMakeInstance.m,typedesc,varargs[untyped]">
+  <dt><pre><span class="Keyword">macro</span> <a href="#nflMakeInstance.m%2Ctypedesc%2Cvarargs%5Buntyped%5D"><span class="Identifier">nflMakeInstance</span></a><span class="Other">(</span><span class="Identifier">T</span><span class="Other">:</span> <span class="Identifier">typedesc</span><span class="Other">;</span> <span class="Identifier">args</span><span class="Other">:</span> <span class="Identifier">varargs</span><span class="Other">[</span><span class="Identifier">untyped</span><span class="Other">]</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">untyped</span></pre></dt>
+  <dd>
+    
+    <p>Implements <tt class="docutils literal"><span class="pre"><span class="Identifier">make</span><span class="Operator">-</span><span class="Identifier">instance</span></span></tt> (#85): builds the same <tt class="docutils literal"><span class="pre"><span class="Identifier">nnkObjConstr</span></span></tt> as <tt class="docutils literal"><span class="pre"><span class="Identifier">new</span></span></tt> (backend.nim's <tt class="docutils literal"><span class="pre"><span class="Identifier">emitNew</span></span></tt>), after resolving each initializer's name against <tt class="docutils literal"><span class="pre"><span class="Identifier">T</span></span></tt>'s fields and <tt class="docutils literal"><span class="pre"><span class="Punctuation">:</span><span class="Identifier">initarg</span></span></tt>-tagged fields across its whole inheritance chain (<tt class="docutils literal"><span class="pre"><span class="Identifier">nflCollectClassShape</span></span></tt>) — visibility a macro-expand-time <tt class="docutils literal"><span class="pre"><span class="Identifier">defclass</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">make</span><span class="Operator">-</span><span class="Identifier">instance</span></span></tt> pair can't have on their own. A slot's own field name and its <tt class="docutils literal"><span class="pre"><span class="Punctuation">:</span><span class="Identifier">initarg</span></span></tt> are both accepted (aliases, not a rename): <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Identifier">name</span> <span class="Keyword">Type</span> <span class="Punctuation">:</span><span class="Identifier">initarg</span> <span class="Punctuation">:</span><span class="Identifier">nom</span><span class="Punctuation">)</span></span></tt> can be initialized as either <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Identifier">name</span> <span class="Operator">...</span><span class="Punctuation">)</span></span></tt> or <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Identifier">nom</span> <span class="Operator">...</span><span class="Punctuation">)</span></span></tt>.</p>
+<p>Each entry of <tt class="docutils literal"><span class="pre"><span class="Identifier">args</span></span></tt> arrives as <tt class="docutils literal"><span class="pre"><span class="Identifier">nnkCall</span><span class="Punctuation">(</span><span class="Identifier">ident</span><span class="Punctuation">,</span> <span class="Identifier">valueExpr</span><span class="Punctuation">)</span></span></tt> — exactly the shape <tt class="docutils literal"><span class="pre"><span class="Identifier">backend</span><span class="Operator">.</span><span class="Identifier">nim</span></span></tt>'s <tt class="docutils literal"><span class="pre"><span class="Identifier">emitCall</span></span></tt> builds for <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Identifier">name</span> <span class="Identifier">value</span><span class="Punctuation">)</span></span></tt> — since <tt class="docutils literal"><span class="pre"><span class="Identifier">varargs</span><span class="Punctuation">[</span><span class="Identifier">untyped</span><span class="Punctuation">]</span></span></tt> skips Nim's own symbol resolution, so an initializer name like <tt class="docutils literal"><span class="pre"><span class="Identifier">nom</span></span></tt> need not itself be a callable.</p>
+
+    
+  </dd>
+</div>
+
+</div>
+
+  </dl>
+</div>
 <div class="section" id="18">
   <h1><a class="toc-backref" href="#18">Templates</a></h1>
   <dl class="item">
@@ -613,6 +648,17 @@
     <p>Implements <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Identifier">catch</span> <span class="Punctuation">:</span><span class="Identifier">tag</span> <span class="Identifier">body…</span><span class="Punctuation">)</span></span></tt> (#55). <tt class="docutils literal"><span class="pre"><span class="Identifier">body</span></span></tt> is <tt class="docutils literal"><span class="pre"><span class="Identifier">typeof</span></span></tt>'d directly (no type slot in the surface syntax to draw the carried type from), unlike <tt class="docutils literal"><span class="pre"><span class="Identifier">emitLabelledBlock</span></span></tt>'s carrier for <tt class="docutils literal"><span class="pre"><span class="Keyword">break</span><span class="Operator">-</span><span class="Keyword">from</span></span></tt> — that copies the body with same-target <tt class="docutils literal"><span class="pre"><span class="Keyword">break</span><span class="Operator">-</span><span class="Keyword">from</span></span></tt>s erased before taking <tt class="docutils literal"><span class="pre"><span class="Identifier">typeof</span></span></tt>, since a lexical, in-place <tt class="docutils literal"><span class="pre"><span class="Keyword">break</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Keyword">return</span></span></tt> there would otherwise foul the type check. Here <tt class="docutils literal"><span class="pre"><span class="Identifier">typeof</span><span class="Punctuation">(</span><span class="Identifier">body</span><span class="Punctuation">)</span></span></tt> is expanded in place at the use site, so an ordinary <tt class="docutils literal"><span class="pre"><span class="Keyword">break</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Keyword">continue</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Keyword">return</span></span></tt> inside <tt class="docutils literal"><span class="pre"><span class="Identifier">body</span></span></tt> still semchecks fine.</p>
 <p>The <tt class="docutils literal"><span class="pre"><span class="Identifier">e</span> <span class="Keyword">of</span> <span class="Identifier">NflThrowVal</span><span class="Punctuation">[</span><span class="Identifier">typeof</span><span class="Punctuation">(</span><span class="Identifier">body</span><span class="Punctuation">)</span><span class="Punctuation">]</span></span></tt> guard matters: without it, a same-tag throw carrying a value of a different type is an <tt class="docutils literal"><span class="pre"><span class="Identifier">ObjectConversionDefect</span></span></tt> in debug builds and silently unchecked under <tt class="docutils literal"><span class="pre"><span class="Operator">-</span><span class="Identifier">d</span><span class="Punctuation">:</span><span class="Identifier">danger</span></span></tt>. With the guard, a tag match with a mismatched value type re-raises instead, so it propagates to (and can be handled by) an outer catch rather than corrupting the result.</p>
 
+    
+  </dd>
+</div>
+
+</div>
+<div id="nflInitarg-templates-all">
+  <div id="nflInitarg.t,string">
+  <dt><pre><span class="Keyword">template</span> <a href="#nflInitarg.t%2Cstring"><span class="Identifier">nflInitarg</span></a><span class="Other">(</span><span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span> {.<span class="Identifier">pragma</span>.}</pre></dt>
+  <dd>
+    
+    The field pragma <tt class="docutils literal"><span class="pre"><span class="Identifier">defclass</span></span></tt> attaches to a slot carrying an <tt class="docutils literal"><span class="pre"><span class="Punctuation">:</span><span class="Identifier">initarg</span></span></tt> (#85) — <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Identifier">name</span> <span class="Keyword">Type</span> <span class="Punctuation">:</span><span class="Identifier">initarg</span> <span class="Punctuation">:</span><span class="Identifier">nom</span><span class="Punctuation">)</span></span></tt> emits the object field as <tt class="docutils literal"><span class="pre"><span class="Identifier">name</span> <span class="Punctuation">{</span><span class="Operator">.</span><span class="Identifier">nflInitarg</span><span class="Punctuation">:</span> <span class="StringLit">&quot;nom&quot;</span><span class="Operator">.</span><span class="Punctuation">}</span><span class="Punctuation">:</span> <span class="Keyword">Type</span></span></tt>. <tt class="docutils literal"><span class="pre"><span class="Identifier">nflMakeInstance</span></span></tt> reads this pragma back off the field via <tt class="docutils literal"><span class="pre"><span class="Identifier">getImpl</span></span></tt> (not <tt class="docutils literal"><span class="pre"><span class="Identifier">getTypeImpl</span></span></tt>, which normalizes a type and has historically dropped field pragmas) to map an external initarg name onto its field, including across an inherited slot — the visibility a macro-expand-time <tt class="docutils literal"><span class="pre"><span class="Identifier">defclass</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">make</span><span class="Operator">-</span><span class="Identifier">instance</span></span></tt> pair can't have, since they're separate macro invocations over separate classes.
     
   </dd>
 </div>
@@ -650,7 +696,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-01 19:31:15 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-01 21:21:14 UTC</small>
       </div>
     </div>
   </div>

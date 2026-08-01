@@ -1,8 +1,8 @@
 (defclass Animal ()
-  ((name string :accessor animalName)))
+  ((name string :accessor animalName :initarg :nom)))
 
 (defclass Dog (Animal)
-  ((breed string :reader dogBreed)))
+  ((breed string :reader dogBreed :initarg :kind)))
 
 (method speak {.base.} ((a Animal)) (: string) "...")
 (method speak ((d Dog)) (: string) "woof")
@@ -35,3 +35,26 @@
 (var tom (make-instance Cat (name "Tom") (sound "hiss") (lives 1)))
 (var tomSound (catSound tom))
 (var tomLives (catLives tom))
+
+; :initarg (#85) — an external initializer name for a slot, alias not
+; rename: an inherited slot's initarg (Animal's :nom, on Dog) still resolves
+; even though defclass Dog never sees Animal's slots at macro-expand time;
+; the field's own name (name/breed) still works too.
+(var fido (make-instance Dog (nom "Fido") (kind "corgi")))
+(var fidoName (animalName fido))
+(var fidoBreed (dogBreed fido))
+
+(var buddy (make-instance Dog (name "Buddy") (breed "lab")))
+(var buddyName (animalName buddy))
+(var buddyBreed (dogBreed buddy))
+
+; :initarg composes with :initform — the initarg is just another spelling
+; for the slot, so omitting it still falls back to the slot's :initform.
+(defclass Bird (Animal)
+  ((song string :reader birdSong :initarg :tune :initform "tweet")))
+
+(var tweety (make-instance Bird (nom "Tweety")))
+(var tweetySong (birdSong tweety))
+
+(var robin (make-instance Bird (nom "Robin") (tune "chirp")))
+(var robinSong (birdSong robin))

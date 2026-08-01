@@ -1,4 +1,6 @@
 import std/algorithm
+import std/macros
+import std/strutils
 
 type
   NflDatumKind* = enum
@@ -224,3 +226,117 @@ template nflCatch*(tagName: static string; body: untyped): untyped =
       if e.tag != tagName or not (e of NflThrowVal[typeof(body)]):
         raise
       NflThrowVal[typeof(body)](e).value
+
+template nflInitarg*(name: string) {.pragma.}
+  ## The field pragma `defclass` attaches to a slot carrying an `:initarg`
+  ## (#85) — `(name Type :initarg :nom)` emits the object field as
+  ## `name {.nflInitarg: "nom".}: Type`. `nflMakeInstance` reads this pragma
+  ## back off the field via `getImpl` (not `getTypeImpl`, which normalizes
+  ## a type and has historically dropped field pragmas) to map an external
+  ## initarg name onto its field, including across an inherited slot — the
+  ## visibility a macro-expand-time `defclass`/`make-instance` pair can't
+  ## have, since they're separate macro invocations over separate classes.
+
+proc nflInitargPragmaValue(entry: NimNode): tuple[ok: bool, name: string] =
+  ## Matches one entry of a field's pragma list against `nflInitarg: "x"`.
+  ## A single-argument custom pragma can be represented either as
+  ## `nnkExprColonExpr(nflInitarg, strLit)` or `nnkCall(nflInitarg, strLit)`,
+  ## and its head may be a resolved `nnkSym` rather than a bare `nnkIdent`
+  ## (the type came back through `getImpl`, already partially resolved) —
+  ## `eqIdent` compares by spelling regardless of which.
+  if entry.kind in {nnkExprColonExpr, nnkCall} and entry.len == 2 and
+      entry[0].eqIdent("nflInitarg") and entry[1].kind == nnkStrLit:
+    (true, entry[1].strVal)
+  else:
+    (false, "")
+
+proc nflWalkRecList(recList: NimNode; fields: var seq[string]; initargs: var seq[(string, string)]) =
+  ## Collects field names and `nflInitarg`-tagged initargs from one
+  ## `nnkRecList`, recursing into a `case` field's discriminator and every
+  ## branch's own field list.
+  for field in recList:
+    case field.kind
+    of nnkIdentDefs:
+      for i in 0 ..< field.len - 2:
+        let nameNode = field[i]
+        if nameNode.kind == nnkPragmaExpr:
+          fields.add nameNode[0].strVal
+          for entry in nameNode[1]:
+            let (ok, initarg) = nflInitargPragmaValue(entry)
+            if ok:
+              # The pragma carries the keyword's own text, colon included
+              # (defclass's nfl-slot-field has no substring primitive to
+              # strip it with) — stripped here instead, once, on the Nim
+              # side where slicing is trivial.
+              let stripped = if initarg.startsWith(":"): initarg[1 .. ^1] else: initarg
+              initargs.add (stripped, nameNode[0].strVal)
+        else:
+          fields.add nameNode.strVal
+    of nnkRecCase:
+      nflWalkRecList(newTree(nnkRecList, field[0]), fields, initargs)
+      for branch in field[1 .. ^1]:
+        nflWalkRecList(branch[^1], fields, initargs)
+    else:
+      discard
+
+proc nflCollectClassShape(typeSym: NimNode): tuple[fields: seq[string], initargs: seq[(string, string)]] =
+  ## Walks `typeSym`'s definition — through `ref`/`ptr` and `type X = Y`
+  ## aliasing, and up the `nnkOfInherit` chain to `RootObj`/`object` — and
+  ## collects every field name (`fields`) and every `(initarg, fieldName)`
+  ## pair recorded via `nflInitarg` (`initargs`), across the whole
+  ## inheritance chain. A `case` object's discriminator and per-branch
+  ## fields are walked too, so `nflMakeInstance` works the same as `new`
+  ## for a variant object, not just a plain one.
+  var cur = typeSym
+  while true:
+    var typeNode = cur.getImpl()[2]
+    while typeNode.kind in {nnkRefTy, nnkPtrTy} and typeNode.len == 1:
+      typeNode = typeNode[0]
+    while typeNode.kind == nnkSym:
+      typeNode = typeNode.getImpl()[2]
+    if typeNode.kind != nnkObjectTy:
+      break
+    var parentSym: NimNode = nil
+    if typeNode[1].kind == nnkOfInherit:
+      parentSym = typeNode[1][0]
+    nflWalkRecList(typeNode[2], result.fields, result.initargs)
+    if parentSym == nil or parentSym.eqIdent("RootObj"):
+      break
+    cur = parentSym
+
+macro nflMakeInstance*(T: typedesc; args: varargs[untyped]): untyped =
+  ## Implements `make-instance` (#85): builds the same `nnkObjConstr` as
+  ## `new` (backend.nim's `emitNew`), after resolving each initializer's
+  ## name against `T`'s fields and `:initarg`-tagged fields across its
+  ## whole inheritance chain (`nflCollectClassShape`) — visibility a
+  ## macro-expand-time `defclass`/`make-instance` pair can't have on their
+  ## own. A slot's own field name and its `:initarg` are both accepted
+  ## (aliases, not a rename): `(name Type :initarg :nom)` can be
+  ## initialized as either `(name ...)` or `(nom ...)`.
+  ##
+  ## Each entry of `args` arrives as `nnkCall(ident, valueExpr)` — exactly
+  ## the shape `backend.nim`'s `emitCall` builds for `(name value)` — since
+  ## `varargs[untyped]` skips Nim's own symbol resolution, so an
+  ## initializer name like `nom` need not itself be a callable.
+  let typeSym = T.getTypeInst()[1]
+  let shape = nflCollectClassShape(typeSym)
+  result = nnkObjConstr.newTree(typeSym)
+  var usedFields: seq[string]
+  for arg in args:
+    if arg.kind notin {nnkCall, nnkCommand} or arg.len != 2 or arg[0].kind != nnkIdent:
+      error("make-instance field initializer must be (name value)", arg)
+    let rawName = arg[0].strVal
+    var fieldName = ""
+    if rawName in shape.fields:
+      fieldName = rawName
+    else:
+      for (initarg, target) in shape.initargs:
+        if initarg == rawName:
+          fieldName = target
+          break
+    if fieldName.len == 0:
+      error("unknown make-instance field or initarg '" & rawName & "' for " & typeSym.repr, arg)
+    if fieldName in usedFields:
+      error("duplicate make-instance initializer for field '" & fieldName & "'", arg)
+    usedFields.add fieldName
+    result.add nnkExprColonExpr.newTree(ident(fieldName), arg[1])

@@ -186,10 +186,18 @@
 ; functions above. Deliberate departures from real CLOS, tightened by what
 ; NFL doesn't have yet (see the tracker for the follow-up tickets):
 ;   - :initform is supported (a slot default used when make-instance omits
-;     it); :initarg (a distinct external initializer name) is not — defclass
-;     has no visibility into an inherited superclass's slots at macro-expand
-;     time, so a class-specific initializer mapping isn't possible without a
-;     Nim-level constructor macro.
+;     it). :initarg (a distinct external initializer name for a slot,
+;     `(name Type :initarg :nom)`) is also supported, but not by a
+;     macro-expand-time class registry — defclass still has no visibility
+;     into an inherited superclass's slots at its own expansion time.
+;     Instead each :initarg is recorded as a Nim custom field pragma
+;     (`nflInitarg`, runtime.nim), and `make-instance` expands to the Nim
+;     macro `nflMakeInstance`, which walks the class's type definition —
+;     including its `of` inheritance chain — at Nim semcheck time, when
+;     every ancestor's fields and pragmas are visible. A slot's own field
+;     name and its :initarg are both accepted at the call site — an
+;     :initarg is an alias, not a rename: `(name Type :initarg :nom)` can
+;     be initialized as either `(name ...)` or `(nom ...)`.
 ;   - :accessor generates both a getter and a setter (`animalName` and
 ;     `animalName=`, callable as `(set! (animalName a) v)`); :reader
 ;     generates a getter only.
@@ -206,6 +214,10 @@
 ;   - an :initform expression must be a compile-time-evaluable Nim
 ;     expression — it lowers straight into a Nim object-field default (see
 ;     `man/language-reference.md`), which carries that same restriction.
+;   - an :initarg value is conventionally keyword-shaped (`:nom`), matching
+;     :accessor/:reader/:initform's own keys, but any symbol works — it
+;     never becomes a proc name, only a Nim pragma string, so it carries
+;     none of :accessor/:reader's plain-Nim-identifier restriction.
 
 (defmacro-proc nfl-class-parent (supers)
   (if (nil? supers)
@@ -215,7 +227,7 @@
           (macro-error "defclass supports a single superclass; see the multiple-dispatch ticket"))))
 
 (defmacro-proc nfl-slot-option-key-ok? (key)
-  (if (= key ':accessor) true (if (= key ':reader) true (= key ':initform))))
+  (if (= key ':accessor) true (if (= key ':reader) true (if (= key ':initform) true (= key ':initarg)))))
 
 (defmacro-proc nfl-validate-slot-options (opts)
   (if (nil? opts)
@@ -224,12 +236,14 @@
           (macro-error "defclass slot option missing its value")
           (if (nfl-slot-option-key-ok? (first opts))
               ; :initform's value is an arbitrary expression; :accessor/
-              ; :reader still require a plain symbol (it becomes a proc name).
+              ; :reader/:initarg still require a plain symbol (:accessor/
+              ; :reader turn it into a proc name; :initarg turns it into a
+              ; pragma string — see nfl-slot-initarg/nfl-slot-field).
               (if (= (first opts) ':initform)
                   (nfl-validate-slot-options (rest (rest opts)))
                   (if (symbol? (nth opts 1))
                       (nfl-validate-slot-options (rest (rest opts)))
-                      (macro-error "defclass slot accessor/reader name must be a symbol")))
+                      (macro-error "defclass slot accessor/reader/initarg value must be a symbol")))
               (macro-error (string-append "defclass: unknown slot option " (symbol->string (first opts))))))))
 
 (defmacro-proc nfl-slot-names-for-key (opts key)
@@ -255,15 +269,46 @@
             (first initforms)
             (macro-error "defclass slot has more than one :initform")))))
 
+(defmacro-proc nfl-slot-initarg (slot)
+  ; Extracts a slot's :initarg value, if any — the single value paired with
+  ; the :initarg key, or nil if the option is absent. More than one
+  ; :initarg on a slot is rejected here, mirroring nfl-slot-initform.
+  (let ((initargs (nfl-slot-names-for-key (rest (rest slot)) ':initarg)))
+    (if (nil? initargs)
+        nil
+        (if (nil? (rest initargs))
+            (first initargs)
+            (macro-error "defclass slot has more than one :initarg")))))
+
 (defmacro-proc nfl-slot-field (slot)
+  ; Validated here, not only in nfl-slot-accessors: defclass computes
+  ; `fields` before `accessors` (see below), and an :initarg's value gets
+  ; converted with symbol->string right below — which needs it to already
+  ; be a symbol, not just eventually rejected as a non-symbol once
+  ; nfl-slot-accessors gets around to validating it.
   (if (not (list? slot))
       (macro-error "defclass slot must be a list")
       (if (< (length slot) 2)
           (macro-error "defclass slot must be (name Type [options...])")
-          (let ((initform (nfl-slot-initform slot)))
-            (if (nil? initform)
-                (list (first slot) (nth slot 1))
-                (list (first slot) (nth slot 1) initform))))))
+          (let ((validated (nfl-validate-slot-options (rest (rest slot))))
+                (initform (nfl-slot-initform slot))
+                (initarg (nfl-slot-initarg slot)))
+            (if (nil? initarg)
+                (if (nil? initform)
+                    (list (first slot) (nth slot 1))
+                    (list (first slot) (nth slot 1) initform))
+                ; An :initarg becomes a field pragma (`nflInitarg`,
+                ; runtime.nim) that `nflMakeInstance` reads back off the
+                ; class's Nim type definition at semcheck time — the
+                ; visibility a macro-expand-time defclass/make-instance
+                ; pair can't have across an inherited slot. The pragma's
+                ; string carries the keyword's own text (colon included);
+                ; nflMakeInstance strips it there, not here, since NFL's
+                ; macro-time builtins have no substring primitive.
+                (let ((pragmaClause `(pragma (: nflInitarg ,(symbol->string initarg)))))
+                  (if (nil? initform)
+                      (list (first slot) pragmaClause (nth slot 1))
+                      (list (first slot) pragmaClause (nth slot 1) initform))))))))
 
 (defmacro-proc nfl-slot-fields (slots)
   (if (nil? slots)
@@ -323,4 +368,9 @@
        ,@accessors)))
 
 (defmacro make-instance (className &rest inits)
-  `(new ,className ,@inits))
+  ; nflMakeInstance (runtime.nim) is a Nim macro, not plain sugar over `new`:
+  ; unlike this preamble macro, it runs at Nim semcheck time, when the
+  ; class's whole `of` inheritance chain — and every ancestor's :initarg
+  ; pragmas — is visible, so an initializer can name either a slot's own
+  ; field or its :initarg, inherited or not.
+  `(nflMakeInstance ,className ,@inits))

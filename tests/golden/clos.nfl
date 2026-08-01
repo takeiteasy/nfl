@@ -1,5 +1,5 @@
 (defclass Animal ()
-  ((name string :accessor animalName)))
+  ((name string :accessor animalName :initarg :nom)))
 
 (defclass Dog (Animal)
   ((breed string :reader dogBreed :initform "mutt")
@@ -8,5 +8,5 @@
 (method speak {.base.} ((a Animal)) (: string) "...")
 (method speak ((d Dog)) (: string) "woof")
 
-(var rex (make-instance Dog (name "Rex") (breed "corgi") (age 3)))
+(var rex (make-instance Dog (nom "Rex") (breed "corgi") (age 3)))
 (echo (animalName rex) " says " (speak rex))

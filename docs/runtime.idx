@@ -1,53 +1,55 @@
 nimTitle	runtime	runtime.html	module nfl/runtime		0
-nim	ndNil	runtime.html#ndNil	NflDatumKind.ndNil		4
-nim	ndBool	runtime.html#ndBool	NflDatumKind.ndBool		4
-nim	ndInt	runtime.html#ndInt	NflDatumKind.ndInt		4
-nim	ndFloat	runtime.html#ndFloat	NflDatumKind.ndFloat		4
-nim	ndString	runtime.html#ndString	NflDatumKind.ndString		4
-nim	ndSymbol	runtime.html#ndSymbol	NflDatumKind.ndSymbol		4
-nim	ndList	runtime.html#ndList	NflDatumKind.ndList		4
-nim	ndVector	runtime.html#ndVector	NflDatumKind.ndVector		4
-nim	NflDatumKind	runtime.html#NflDatumKind	enum NflDatumKind		4
-nim	NflDatum	runtime.html#NflDatum	type NflDatum		7
-nim	nflNilDatum	runtime.html#nflNilDatum	proc nflNilDatum(): NflDatum		24
-nim	nflBoolDatum	runtime.html#nflBoolDatum,bool	proc nflBoolDatum(value: bool): NflDatum		27
-nim	nflIntDatum	runtime.html#nflIntDatum,BiggestInt	proc nflIntDatum(value: BiggestInt): NflDatum		30
-nim	nflFloatDatum	runtime.html#nflFloatDatum,BiggestFloat	proc nflFloatDatum(value: BiggestFloat): NflDatum		33
-nim	nflStringDatum	runtime.html#nflStringDatum,string	proc nflStringDatum(value: string): NflDatum		36
-nim	nflSymbolDatum	runtime.html#nflSymbolDatum,string	proc nflSymbolDatum(value: string): NflDatum		39
-nim	nflListDatum	runtime.html#nflListDatum,varargs[NflDatum]	proc nflListDatum(items: varargs[NflDatum]): NflDatum		42
-nim	nflVectorDatum	runtime.html#nflVectorDatum,varargs[NflDatum]	proc nflVectorDatum(items: varargs[NflDatum]): NflDatum		45
-nim	nflStmt	runtime.html#nflStmt.t,untyped	template nflStmt(body: untyped)		48
-nim	nflMatchArity	runtime.html#nflMatchArity.t,untyped,static[int],static[bool]	template nflMatchArity(x: untyped; n: static[int]; exact: static[bool]): bool		55
-nim	nflSeqMap	runtime.html#nflSeqMap,openArray[T],proc(T)	proc nflSeqMap[T, U](items: openArray[T]; op: proc (item: T): U {.nimcall.}): seq[U]		68
-nim	nflSeqMap	runtime.html#nflSeqMap,openArray[T],proc(T)_2	proc nflSeqMap[T, U](items: openArray[T]; op: proc (item: T): U {.closure.}): seq[U]		72
-nim	nflSeqFilter	runtime.html#nflSeqFilter,openArray[T],proc(T)	proc nflSeqFilter[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): seq[\n    T]		76
-nim	nflSeqFilter	runtime.html#nflSeqFilter,openArray[T],proc(T)_2	proc nflSeqFilter[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): seq[\n    T]		81
-nim	nflSeqFoldl	runtime.html#nflSeqFoldl,openArray[T],U,proc(U,T)	proc nflSeqFoldl[T, U](items: openArray[T]; initial: U;\n                  op: proc (acc: U; item: T): U {.nimcall.}): U		86
-nim	nflSeqFoldl	runtime.html#nflSeqFoldl,openArray[T],U,proc(U,T)_2	proc nflSeqFoldl[T, U](items: openArray[T]; initial: U;\n                  op: proc (acc: U; item: T): U {.closure.}): U		91
-nim	nflSeqFoldr	runtime.html#nflSeqFoldr,openArray[T],U,proc(T,U)	proc nflSeqFoldr[T, U](items: openArray[T]; initial: U;\n                  op: proc (item: T; acc: U): U {.nimcall.}): U		96
-nim	nflSeqFoldr	runtime.html#nflSeqFoldr,openArray[T],U,proc(T,U)_2	proc nflSeqFoldr[T, U](items: openArray[T]; initial: U;\n                  op: proc (item: T; acc: U): U {.closure.}): U		101
-nim	nflSeqRemoveIf	runtime.html#nflSeqRemoveIf,openArray[T],proc(T)	proc nflSeqRemoveIf[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): seq[\n    T]		106
-nim	nflSeqRemoveIf	runtime.html#nflSeqRemoveIf,openArray[T],proc(T)_2	proc nflSeqRemoveIf[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): seq[\n    T]		111
-nim	nflSeqCount	runtime.html#nflSeqCount,openArray[T],proc(T)	proc nflSeqCount[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): int		116
-nim	nflSeqCount	runtime.html#nflSeqCount,openArray[T],proc(T)_2	proc nflSeqCount[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): int		121
-nim	nflSeqAny	runtime.html#nflSeqAny,openArray[T],proc(T)	proc nflSeqAny[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): bool		126
-nim	nflSeqAny	runtime.html#nflSeqAny,openArray[T],proc(T)_2	proc nflSeqAny[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): bool		132
-nim	nflSeqEvery	runtime.html#nflSeqEvery,openArray[T],proc(T)	proc nflSeqEvery[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): bool		138
-nim	nflSeqEvery	runtime.html#nflSeqEvery,openArray[T],proc(T)_2	proc nflSeqEvery[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): bool		144
-nim	nflSeqPosition	runtime.html#nflSeqPosition,openArray[T],T	proc nflSeqPosition[T](items: openArray[T]; value: T): int		150
-nim	nflReversed	runtime.html#nflReversed,openArray[T]	proc nflReversed[T](items: openArray[T]): seq[T]		158
-nim	nflSorted	runtime.html#nflSorted,openArray[T]	proc nflSorted[T](items: openArray[T]): seq[T]		161
-nim	nflMakeArray	runtime.html#nflMakeArray,int,T	proc nflMakeArray[T](n: int; fill: T): seq[T]		164
-nim	NflThrow	runtime.html#NflThrow	type NflThrow		170
-nim	NflThrowVal	runtime.html#NflThrowVal	type NflThrowVal		179
-nim	newNflThrow	runtime.html#newNflThrow,string,T	proc newNflThrow[T](tag: string; value: T): NflThrowVal[T]		187
-nim	nflCatch	runtime.html#nflCatch.t,staticstring,untyped	template nflCatch(tagName: static string; body: untyped): untyped		199
-nimgrp	nflseqany	runtime.html#nflSeqAny-procs-all	proc		126
-nimgrp	nflseqfilter	runtime.html#nflSeqFilter-procs-all	proc		76
-nimgrp	nflseqfoldl	runtime.html#nflSeqFoldl-procs-all	proc		86
-nimgrp	nflseqevery	runtime.html#nflSeqEvery-procs-all	proc		138
-nimgrp	nflseqmap	runtime.html#nflSeqMap-procs-all	proc		68
-nimgrp	nflseqfoldr	runtime.html#nflSeqFoldr-procs-all	proc		96
-nimgrp	nflseqcount	runtime.html#nflSeqCount-procs-all	proc		116
-nimgrp	nflseqremoveif	runtime.html#nflSeqRemoveIf-procs-all	proc		106
+nim	ndNil	runtime.html#ndNil	NflDatumKind.ndNil		6
+nim	ndBool	runtime.html#ndBool	NflDatumKind.ndBool		6
+nim	ndInt	runtime.html#ndInt	NflDatumKind.ndInt		6
+nim	ndFloat	runtime.html#ndFloat	NflDatumKind.ndFloat		6
+nim	ndString	runtime.html#ndString	NflDatumKind.ndString		6
+nim	ndSymbol	runtime.html#ndSymbol	NflDatumKind.ndSymbol		6
+nim	ndList	runtime.html#ndList	NflDatumKind.ndList		6
+nim	ndVector	runtime.html#ndVector	NflDatumKind.ndVector		6
+nim	NflDatumKind	runtime.html#NflDatumKind	enum NflDatumKind		6
+nim	NflDatum	runtime.html#NflDatum	type NflDatum		9
+nim	nflNilDatum	runtime.html#nflNilDatum	proc nflNilDatum(): NflDatum		26
+nim	nflBoolDatum	runtime.html#nflBoolDatum,bool	proc nflBoolDatum(value: bool): NflDatum		29
+nim	nflIntDatum	runtime.html#nflIntDatum,BiggestInt	proc nflIntDatum(value: BiggestInt): NflDatum		32
+nim	nflFloatDatum	runtime.html#nflFloatDatum,BiggestFloat	proc nflFloatDatum(value: BiggestFloat): NflDatum		35
+nim	nflStringDatum	runtime.html#nflStringDatum,string	proc nflStringDatum(value: string): NflDatum		38
+nim	nflSymbolDatum	runtime.html#nflSymbolDatum,string	proc nflSymbolDatum(value: string): NflDatum		41
+nim	nflListDatum	runtime.html#nflListDatum,varargs[NflDatum]	proc nflListDatum(items: varargs[NflDatum]): NflDatum		44
+nim	nflVectorDatum	runtime.html#nflVectorDatum,varargs[NflDatum]	proc nflVectorDatum(items: varargs[NflDatum]): NflDatum		47
+nim	nflStmt	runtime.html#nflStmt.t,untyped	template nflStmt(body: untyped)		50
+nim	nflMatchArity	runtime.html#nflMatchArity.t,untyped,static[int],static[bool]	template nflMatchArity(x: untyped; n: static[int]; exact: static[bool]): bool		57
+nim	nflSeqMap	runtime.html#nflSeqMap,openArray[T],proc(T)	proc nflSeqMap[T, U](items: openArray[T]; op: proc (item: T): U {.nimcall.}): seq[U]		70
+nim	nflSeqMap	runtime.html#nflSeqMap,openArray[T],proc(T)_2	proc nflSeqMap[T, U](items: openArray[T]; op: proc (item: T): U {.closure.}): seq[U]		74
+nim	nflSeqFilter	runtime.html#nflSeqFilter,openArray[T],proc(T)	proc nflSeqFilter[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): seq[\n    T]		78
+nim	nflSeqFilter	runtime.html#nflSeqFilter,openArray[T],proc(T)_2	proc nflSeqFilter[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): seq[\n    T]		83
+nim	nflSeqFoldl	runtime.html#nflSeqFoldl,openArray[T],U,proc(U,T)	proc nflSeqFoldl[T, U](items: openArray[T]; initial: U;\n                  op: proc (acc: U; item: T): U {.nimcall.}): U		88
+nim	nflSeqFoldl	runtime.html#nflSeqFoldl,openArray[T],U,proc(U,T)_2	proc nflSeqFoldl[T, U](items: openArray[T]; initial: U;\n                  op: proc (acc: U; item: T): U {.closure.}): U		93
+nim	nflSeqFoldr	runtime.html#nflSeqFoldr,openArray[T],U,proc(T,U)	proc nflSeqFoldr[T, U](items: openArray[T]; initial: U;\n                  op: proc (item: T; acc: U): U {.nimcall.}): U		98
+nim	nflSeqFoldr	runtime.html#nflSeqFoldr,openArray[T],U,proc(T,U)_2	proc nflSeqFoldr[T, U](items: openArray[T]; initial: U;\n                  op: proc (item: T; acc: U): U {.closure.}): U		103
+nim	nflSeqRemoveIf	runtime.html#nflSeqRemoveIf,openArray[T],proc(T)	proc nflSeqRemoveIf[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): seq[\n    T]		108
+nim	nflSeqRemoveIf	runtime.html#nflSeqRemoveIf,openArray[T],proc(T)_2	proc nflSeqRemoveIf[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): seq[\n    T]		113
+nim	nflSeqCount	runtime.html#nflSeqCount,openArray[T],proc(T)	proc nflSeqCount[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): int		118
+nim	nflSeqCount	runtime.html#nflSeqCount,openArray[T],proc(T)_2	proc nflSeqCount[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): int		123
+nim	nflSeqAny	runtime.html#nflSeqAny,openArray[T],proc(T)	proc nflSeqAny[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): bool		128
+nim	nflSeqAny	runtime.html#nflSeqAny,openArray[T],proc(T)_2	proc nflSeqAny[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): bool		134
+nim	nflSeqEvery	runtime.html#nflSeqEvery,openArray[T],proc(T)	proc nflSeqEvery[T](items: openArray[T]; pred: proc (item: T): bool {.nimcall.}): bool		140
+nim	nflSeqEvery	runtime.html#nflSeqEvery,openArray[T],proc(T)_2	proc nflSeqEvery[T](items: openArray[T]; pred: proc (item: T): bool {.closure.}): bool		146
+nim	nflSeqPosition	runtime.html#nflSeqPosition,openArray[T],T	proc nflSeqPosition[T](items: openArray[T]; value: T): int		152
+nim	nflReversed	runtime.html#nflReversed,openArray[T]	proc nflReversed[T](items: openArray[T]): seq[T]		160
+nim	nflSorted	runtime.html#nflSorted,openArray[T]	proc nflSorted[T](items: openArray[T]): seq[T]		163
+nim	nflMakeArray	runtime.html#nflMakeArray,int,T	proc nflMakeArray[T](n: int; fill: T): seq[T]		166
+nim	NflThrow	runtime.html#NflThrow	type NflThrow		172
+nim	NflThrowVal	runtime.html#NflThrowVal	type NflThrowVal		181
+nim	newNflThrow	runtime.html#newNflThrow,string,T	proc newNflThrow[T](tag: string; value: T): NflThrowVal[T]		189
+nim	nflCatch	runtime.html#nflCatch.t,staticstring,untyped	template nflCatch(tagName: static string; body: untyped): untyped		201
+nim	nflInitarg	runtime.html#nflInitarg.t,string	template nflInitarg(name: string)		230
+nim	nflMakeInstance	runtime.html#nflMakeInstance.m,typedesc,varargs[untyped]	macro nflMakeInstance(T: typedesc; args: varargs[untyped]): untyped		307
+nimgrp	nflseqany	runtime.html#nflSeqAny-procs-all	proc		128
+nimgrp	nflseqfilter	runtime.html#nflSeqFilter-procs-all	proc		78
+nimgrp	nflseqfoldl	runtime.html#nflSeqFoldl-procs-all	proc		88
+nimgrp	nflseqevery	runtime.html#nflSeqEvery-procs-all	proc		140
+nimgrp	nflseqmap	runtime.html#nflSeqMap-procs-all	proc		70
+nimgrp	nflseqfoldr	runtime.html#nflSeqFoldr-procs-all	proc		98
+nimgrp	nflseqcount	runtime.html#nflSeqCount-procs-all	proc		118
+nimgrp	nflseqremoveif	runtime.html#nflSeqRemoveIf-procs-all	proc		108

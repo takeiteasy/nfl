@@ -301,10 +301,11 @@ argument, so the fill value is what tells Nim the array's element type.
 
 ### CLOS-lite
 
-`(defclass name (superclass?) ((slot-name Type slot-options...)...))` and
-`(make-instance ClassName (slot value)...)` — see [CLOS-lite
-classes](language-reference.md#clos-lite-classes-preamble) for the full
-picture, including what's deliberately left out.
+`(defclass name (superclass?) ((slot-name Type slot-options...)...))`, where
+`slot-options` is any mix of `:accessor`, `:reader`, `:initform`, and
+`:initarg`, and `(make-instance ClassName (slot-or-initarg value)...)` — see
+[CLOS-lite classes](language-reference.md#clos-lite-classes-preamble) for
+the full picture, including what's deliberately left out.
 
 ## Example: user-defined macro
 

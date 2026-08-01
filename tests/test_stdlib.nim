@@ -55,3 +55,13 @@ suite "nfl stdlib":
   test "an explicit make-instance argument still overrides its :initform (#78)":
     check tomSound == "hiss"
     check tomLives == 1
+
+  test ":initarg resolves an inherited slot, alongside the raw field name (#85)":
+    check fidoName == "Fido"
+    check fidoBreed == "corgi"
+    check buddyName == "Buddy"
+    check buddyBreed == "lab"
+
+  test ":initarg composes with :initform (#85)":
+    check tweetySong == "tweet"
+    check robinSong == "chirp"
