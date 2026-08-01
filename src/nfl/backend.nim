@@ -238,20 +238,29 @@ proc identForSymbol(ctx: var EmitContext; sx: Syntax; symKind = nskLet): NimNode
   ## `symKind` is only consulted the first time a given `hygieneId` is seen
   ## (i.e. at its declaration site) — it picks the Nim symbol kind the
   ## `genSym` is created with, so a hygienic/gensym'd symbol declared as a
-  ## `proc`/`do` parameter emits `nskParam` instead of the default `nskLet`
-  ## (see #81; a `let`-kind symbol in `nnkFormalParams` position is a hard
-  ## Nim error, "cannot use symbol of kind 'let' as a 'param'").
+  ## `proc`/`do` parameter emits `nskParam` (see #81; a `let`-kind symbol in
+  ## `nnkFormalParams` position is a hard Nim error, "cannot use symbol of
+  ## kind 'let' as a 'param'") and one declared as a `for` binding emits
+  ## `nskForVar` (see #82; likewise a hard error, "cannot use symbol of kind
+  ## 'let' as a 'forVar'") instead of the default `nskLet`.
+  ## `except Type as e` bindings deliberately keep the `nskLet` default —
+  ## audited under #82: Nim has no dedicated except-binding symbol kind, and
+  ## `nskLet` is what it accepts there, so `emitExceptBranch` passes no
+  ## `symKind` and needs no change.
   ## Reference sites pass no `symKind` and must resolve to the exact same
   ## Nim symbol as the declaration, so the cache is keyed on `hygieneId`
   ## alone and defaults `symKind` to `nskLet`. That default means a
   ## reference-site call is indistinguishable from a *declaration* that
-  ## legitimately wants `nskLet` (a `let`/`var`/`for` binding) — only a
-  ## non-`nskLet` declaration (currently just `nskParam`) reaching an id
-  ## already cached under a different kind is caught below and raises;
+  ## legitimately wants `nskLet` (a `let`/`var`/`except` binding) — only a
+  ## non-`nskLet` declaration (currently `nskParam`/`nskForVar`) reaching an
+  ## id already cached under a different kind is caught below and raises;
   ## the `nskLet` direction passes through silently. This asymmetric guard
   ## is not currently known to be reachable either way: every `hygieneId`
   ## is unique per hygiene-rename or `gensym` call, so two declaration
-  ## sites sharing one id should never occur.
+  ## sites sharing one id should never occur. For `for` bindings specifically,
+  ## `emitForCore` always adds the binding to the `nnkForStmt` before emitting
+  ## the iterable or body, so no reference site can seed the cache with
+  ## `nskLet` ahead of the `nskForVar` declaration.
   if sx.kind != sxSymbol:
     raiseCompilerError(sx.span, "expected symbol")
   if sx.hygieneId != 0:
@@ -1378,10 +1387,10 @@ proc emitForCore(ctx: var EmitContext; sx: Syntax): NimNode =
   let iterable = clause.items[1]
   var forStmt = nnkForStmt.newTree()
   if binding.kind == sxSymbol:
-    forStmt.add ctx.identForSymbol(binding)
+    forStmt.add ctx.identForSymbol(binding, nskForVar)
   else:
     for v in binding.items:
-      forStmt.add ctx.identForSymbol(v)
+      forStmt.add ctx.identForSymbol(v, nskForVar)
   forStmt.add ctx.emitExpr(iterable)
   let (wrapperLabel, body) = ctx.emitLoopBody(sx, labelSx,
     sx.items.toOpenArray(clauseIdx + 1, sx.items.high))

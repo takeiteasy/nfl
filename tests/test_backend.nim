@@ -763,6 +763,36 @@ nflModule """
          (f (do ((self int)) (: int) (+ self 1))))
      (f ,bodyExpr)))
 (var collisionHygieneResult (with-self-collision 41))
+; --- hygienic symbol in for-loop and except-binding position (#82) ---
+; A macro-generated single-var `for` binding used to crash the backend (a
+; hygienic symbol was always emitted as a Nim `nskLet`, illegal in `forVar`
+; position — same bug class as #81's param case).
+(defmacro sum-it (xs)
+  `(block
+     (var ((total 0)))
+     (for (i ,xs)
+       (set! total (+ total i)))
+     total))
+(var forSingleHygieneResult (sum-it [1 2 3]))
+; A macro-generated multi-var `for` binding exercises the same fix's other
+; call site.
+(defmacro sum-pairs (t)
+  `(block
+     (var ((total 0)))
+     (for ((i x) (. ,t pairs))
+       (set! total (+ total (+ i x))))
+     total))
+(var forMultiHygieneResult (sum-pairs [10 20 30]))
+; A macro using an explicit `(gensym ...)` as an `except ... as` binding
+; already works today under `nskLet` (Nim has no dedicated except-binding
+; kind) — regression test pinning that as correct, per the #82 audit.
+(defmacro guard-it (bodyExpr)
+  (let ((e (gensym "e")))
+    `(try
+       ,bodyExpr
+       (except (,e ValueError) (. ,e msg)))))
+(var exceptGensymHygieneResult
+  (guard-it (raise (newException ValueError "boom"))))
 """, "module-test.nfl"
 
 suite "nfl module backend":
@@ -842,6 +872,15 @@ suite "nfl module backend":
 
   test "a proc's own param name doesn't capture a caller symbol substituted into its body (#84)":
     check collisionHygieneResult == 42
+
+  test "a hygienically-renamed single-var for binding no longer crashes the backend (#82)":
+    check forSingleHygieneResult == 6
+
+  test "a hygienically-renamed multi-var for binding no longer crashes the backend (#82)":
+    check forMultiHygieneResult == 63
+
+  test "an explicit gensym used as an except...as binding already works under nskLet (#82)":
+    check exceptGensymHygieneResult == "boom"
 
   test "type alias definition":
     check counted == 3
