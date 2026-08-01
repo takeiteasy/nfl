@@ -4,6 +4,7 @@ import std/unittest
 import nfl/diagnostics
 import nfl/lower
 import nfl/reader
+import nfl/syntax
 
 proc expectLowerError(source, messagePart: string) =
   try:
@@ -121,8 +122,39 @@ suite "lowering validation":
     discard lowerExpr(readOne("(do ((x int 5)) x)", "lower-test.nfl"))
     discard lowerExpr(readOne("(do ((x [seq int] (list 1 2))) x)", "lower-test.nfl"))
 
-  test "allows an earlier parameter in a later parameter's default (#77)":
-    discard lowerExpr(readOne("(do ((a int) (b int a)) b)", "lower-test.nfl"))
+  test "rejects a do parameter default referencing an earlier parameter (#86)":
+    # Allowed for `proc` (#77, see test_lower's proc-family suite / #84
+    # backend fixtures), but miscompiles for `do` — Nim resolves a
+    # proc-*value*'s formal-param defaults incorrectly against an earlier
+    # param, and a `do` is always called through such a value. No codegen
+    # fix exists, so this is rejected at lowering time; see man/macros.md
+    # and man/language-reference.md.
+    expectLowerError("(do ((a int) (b int a)) b)",
+      "a `do` parameter default cannot reference an earlier parameter")
+
+  test "rejects a do parameter default referencing an earlier hygienic/gensym'd parameter (#86)":
+    # Built directly (not via the reader) so both `a` occurrences share a
+    # `hygieneId`, as a hygiene-renamed or `gensym`'d name would — matching
+    # the ticket's report that #86 also reproduces with such names.
+    let span = Span(file: "lower-test.nfl", line: 1, col: 1, endLine: 1, endCol: 1)
+    let aDecl = newSymbol("a", span, hygieneId = 7)
+    let aRef = newSymbol("a", span, hygieneId = 7)
+    let doSx = newList(@[
+      newSymbol("do", span),
+      newList(@[
+        newList(@[aDecl, newSymbol("int", span)], span),
+        newList(@[newSymbol("b", span), newSymbol("int", span), aRef], span)
+      ], span),
+      newSymbol("b", span)
+    ], span)
+    try:
+      discard lowerExpr(doSx)
+      fail()
+    except CompilerError as err:
+      check err.diagnostic.message.contains("a `do` parameter default cannot reference an earlier parameter")
+
+  test "allows a do parameter default referencing an unrelated earlier-declared name (#77)":
+    discard lowerExpr(readOne("(do ((a int) (b int 5)) (+ a b))", "lower-test.nfl"))
 
   test "rejects a default value on a destructured parameter (#77)":
     expectLowerError("(do (([a b] Pair (make-pair))) a)", "a destructured parameter cannot have a default value")

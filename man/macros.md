@@ -226,6 +226,13 @@ binding target that is itself unquoted (`,name`) — a name the macro
 computes at expansion time is the macro author's own symbol and is left
 as-is (this is how the preamble's `let*` and `as->` work).
 
+For a `do` parameter specifically, the same restriction on
+[a self-referential default](language-reference.md#do--anonymous-procedure)
+applies whether the parameter names are plain or hygienically renamed —
+`(do ((,p int) (b int ,p)) …)` is rejected the same as the unhygienic form,
+since renaming only changes the identifier, not the underlying Nim
+limitation.
+
 ### `(unhygienic sym)` — intentional capture
 
 Wrapping a binding target in `unhygienic` opts it out of renaming — the

@@ -256,7 +256,10 @@ parameter before a non-defaulted one (call it with a named argument). A
 destructured parameter (`([a b] Point)`) may not carry a default.
 
 This applies to `proc`, `func`, `method`, and `converter` parameters, and to
-`do` (anonymous procedure) parameters.
+`do` (anonymous procedure) parameters — **except** that a `do` parameter's
+default may not reference an earlier parameter; see [`do` —
+anonymous procedure](#do--anonymous-procedure) for why, and use `proc`
+instead if a call site needs that.
 
 ### Operator proc names
 
@@ -422,6 +425,16 @@ any other Nim `auto`-typed anonymous proc:
 
 Unlike `proc`, `do` takes no pragma clause and no `[T ...]` generic-params
 vector.
+
+A parameter default may not reference an earlier parameter in the same
+list — `(do ((a int) (b int a)) …)` is a compile-time error. This is
+different from `proc`, where it's allowed (see [Procedures](#procedures)):
+a `do` is essentially always called through a proc-typed value (it has no
+name to call directly), and Nim's compiler resolves such a default
+incorrectly once the call goes through a proc value rather than a named
+`proc` symbol, producing a broken C-level reference at the call site. There
+is no NFL-level workaround; use `proc` (and call it by name) if the default
+needs to reference an earlier parameter.
 
 ### `template` — Nim template definition
 

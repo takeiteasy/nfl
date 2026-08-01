@@ -379,6 +379,12 @@ nflModule """
 (proc addWithDefault ((a int) (b int a)) (: int)
   (+ a b))
 (var addWithDefaultResult (addWithDefault 5))
+; A `do` parameter default not referencing an earlier parameter (#86 only
+; rejects the self-referential case; ordinary defaults still work, and this
+; closes the previously-untested case of calling a `do` with such an
+; argument omitted).
+(var doDefaultFn (do ((a int) (b int 5)) (: int) (+ a b)))
+(var doDefaultResult (doDefaultFn 10))
 ; Pragma on var declaration.
 (var pragmaVar {.used.} 77)
 ; Pragma on const.
@@ -971,6 +977,9 @@ suite "nfl module backend":
 
   test "an earlier parameter is visible in a later parameter's default (#77)":
     check addWithDefaultResult == 10
+
+  test "a do parameter default not referencing an earlier parameter applies when omitted (#86)":
+    check doDefaultResult == 15
 
   test "pragma on var declaration compiles":
     check pragmaVar == 77

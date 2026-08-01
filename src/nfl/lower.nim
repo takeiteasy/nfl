@@ -402,6 +402,45 @@ proc lowerParam(ctx: var LowerContext; param: Syntax) =
   else:
     raiseCompilerError(param.span, "parameter must be a symbol, (name type) or (name type default)")
 
+proc findSymbolRef(sx: Syntax; keys: seq[string]): Syntax =
+  ## Returns the first symbol node under `sx` whose `symbolKey` is in `keys`,
+  ## or `nil` if none is found. Used by `lowerLambda` to detect a `do`
+  ## parameter default referencing an earlier parameter (#86) — a plain,
+  ## unscoped name walk. A default containing a nested binding form that
+  ## shadows one of `keys` (e.g. a `let` re-binding the same name) would
+  ## still be conservatively flagged; full scope-tracking inside a default
+  ## expression isn't warranted for this shape.
+  case sx.kind
+  of sxSymbol:
+    if symbolKey(sx) in keys: result = sx
+  of sxList, sxVector:
+    for item in sx.items:
+      result = findSymbolRef(item, keys)
+      if result != nil: return result
+    result = nil
+  else:
+    result = nil
+
+proc checkLambdaParamDefault(param: Syntax; earlierParamKeys: seq[string]) =
+  ## A `do` parameter default that references an earlier parameter in the
+  ## same list is accepted by `lowerParam`/`emitParam` (and works for a
+  ## `proc`, #77) but miscompiles for `do`: Nim carries the default in the
+  ## anonymous proc's *type*, and any call made through that proc value —
+  ## which a `do` almost always is, being bound to a variable — fails at the
+  ## C stage with an undeclared-identifier error. This reproduces even with
+  ## a gensym'd/hygienically-renamed parameter name, and even a named `proc`
+  ## hits it once a *reference* to it is called through a proc-typed value
+  ## rather than called directly by name — confirmed against Nim 2.2.10.
+  ## There is no codegen fix, so this is rejected at lowering time for `do`
+  ## specifically; `proc`/`method`/`func`/`converter` keep the #77 feature.
+  if param.kind == sxList and param.items.len == 3 and param.items[0].kind == sxSymbol and
+      (param.items[1].kind == sxSymbol or param.items[1].kind == sxVector):
+    let hit = findSymbolRef(param.items[2], earlierParamKeys)
+    if hit != nil:
+      raiseCompilerError(hit.span,
+        "a `do` parameter default cannot reference an earlier parameter " &
+        "(Nim resolves proc-type defaults against an earlier parameter incorrectly); use `proc` instead")
+
 proc lowerLambda(ctx: var LowerContext; sx: Syntax) =
   if sx.items.len < 3:
     raiseCompilerError(sx.span, "do expects parameters and body")
@@ -420,8 +459,14 @@ proc lowerLambda(ctx: var LowerContext; sx: Syntax) =
   # error rather than silently shadowing it.
   if bodyStart == 3:
     declare(ctx, newSymbol("result", sx.items[2].span), bkMutable)
+  var earlierParamKeys: seq[string] = @[]
   for param in params.items:
+    checkLambdaParamDefault(param, earlierParamKeys)
     lowerParam(ctx, param)
+    if param.kind == sxSymbol:
+      earlierParamKeys.add symbolKey(param)
+    elif param.kind == sxList and param.items[0].kind == sxSymbol:
+      earlierParamKeys.add symbolKey(param.items[0])
   lowerBody(ctx, sx.items.toOpenArray(bodyStart, sx.items.high), sx)
   ctx.namedBlocks = savedNamedBlocks
   ctx.popScope()
