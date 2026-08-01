@@ -285,3 +285,67 @@ doAssert publicHappy != publicSad
     let (output, exitCode) = runCommand(cliExe, @["check", main])
     check exitCode != 0
     check output.contains("nfl file imports are only allowed at the top level of a module")
+
+  test "defmacro-proc helpers imported alongside a macro remain callable (#89)":
+    discard writeTempNfl("nfl cli macro-proc import", "helpers.nfl", """
+(defmacro-proc dbl (n) (* 2 n))
+(defmacro quad (x) `(* ,(dbl 2) ,x))
+""")
+    let main = writeTempNfl("nfl cli macro-proc import", "main.nfl", """
+(import ./helpers.nfl)
+(echo (quad 10))
+""")
+
+    let (output, exitCode) = runCommand(cliExe, @["run", main])
+    check exitCode == 0
+    check output.contains("40")
+
+  test "a macro imported transitively still expands correctly (#89)":
+    discard writeTempNfl("nfl cli transitive macro import", "b.nfl", """
+(defmacro inner (x) `(+ ,x 1))
+""")
+    discard writeTempNfl("nfl cli transitive macro import", "a.nfl", """
+(import ./b.nfl)
+(defmacro outer (x) `(* 10 (inner ,x)))
+""")
+    let main = writeTempNfl("nfl cli transitive macro import", "main.nfl", """
+(import ./a.nfl)
+(echo (outer 4))
+""")
+
+    let (output, exitCode) = runCommand(cliExe, @["run", main])
+    check exitCode == 0
+    check output.contains("50")
+
+  test "an imported macro's introduced bindings stay hygienic at the call site (#89)":
+    discard writeTempNfl("nfl cli imported macro hygiene", "helpers.nfl", """
+(defmacro swap-ish (a) `(let ((tmp ,a)) (+ tmp 1)))
+""")
+    let main = writeTempNfl("nfl cli imported macro hygiene", "main.nfl", """
+(import ./helpers.nfl)
+(let ((tmp 100)) (echo (swap-ish tmp)))
+""")
+
+    let (output, exitCode) = runCommand(cliExe, @["run", main])
+    check exitCode == 0
+    check output.contains("101")
+
+  test "a macro name colliding across files is a compile error, either import order (#89)":
+    discard writeTempNfl("nfl cli macro name collision", "helpers.nfl", """
+(defmacro twice (x) `(* 2 ,x))
+""")
+    let importFirst = writeTempNfl("nfl cli macro name collision", "import-first.nfl", """
+(import ./helpers.nfl)
+(defmacro twice (x) `(+ ,x ,x))
+""")
+    let (importFirstOutput, importFirstExitCode) = runCommand(cliExe, @["check", importFirst])
+    check importFirstExitCode != 0
+    check importFirstOutput.contains("duplicate macro definition: twice")
+
+    let defineFirst = writeTempNfl("nfl cli macro name collision", "define-first.nfl", """
+(defmacro twice (x) `(+ ,x ,x))
+(import ./helpers.nfl)
+""")
+    let (defineFirstOutput, defineFirstExitCode) = runCommand(cliExe, @["check", defineFirst])
+    check defineFirstExitCode != 0
+    check defineFirstOutput.contains("duplicate macro definition: twice")

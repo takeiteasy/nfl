@@ -275,6 +275,41 @@ needed for a computed (unquoted) name, e.g.
 `` `(proc ,name ((,(gensym "self") ,className)) ...) `` where the param
 name itself varies per expansion.
 
+## Sharing macros across files
+
+`(import ./helpers.nfl)` makes that file's `defmacro` and `defmacro-proc`
+definitions visible from the import point on, exactly as if they'd been
+defined locally:
+
+```lisp
+; helpers.nfl
+(defmacro double (x) `(* 2 ,x))
+```
+
+```lisp
+; main.nfl
+(import ./helpers.nfl)
+(echo (double 21))   ; 42
+```
+
+Helpers come along automatically — a macro that calls a `defmacro-proc` from
+the same file works unchanged from an importer, and a macro imported
+transitively (via a file that itself imports another) still expands
+correctly.
+
+Hygiene is anchored per expansion, not per file: an imported macro's
+introduced bindings can't capture identifiers at the importing call site,
+the same as a locally-defined macro.
+
+A macro name defined in two files that end up in the same compile unit is a
+`duplicate macro definition` error — there is no shadowing, aliasing, or
+namespacing between files.
+
+See [`nim-interop.md`'s "Splitting a project across multiple .nfl
+files"](nim-interop.md#splitting-a-project-across-multiple-nfl-files) for the
+underlying inline-include model, diamond-import dedup, and circular-import
+diagnostics.
+
 ## Preamble macros
 
 The NFL preamble (`src/nfl/preamble.nfl`) is loaded before every file and provides:
