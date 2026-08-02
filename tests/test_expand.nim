@@ -758,7 +758,8 @@ suite "golden macro expansion":
                        "tests/golden/hygiene.nfl",
                        "tests/golden/destructuring.nfl",
                        "tests/golden/macro_procs.nfl",
-                       "tests/golden/clos.nfl"]:
+                       "tests/golden/clos.nfl",
+                       "tests/golden/static_when.nfl"]:
       let expectedPath = sourcePath.changeFileExt("out")
       let actual = expandSource(readFile(sourcePath), sourcePath).renderForms()
       check actual.strip() == readFile(expectedPath).strip()

@@ -743,6 +743,39 @@ proc emitIfStmt(ctx: var EmitContext; sx: Syntax): NimNode =
     nnkElse.newTree(ctx.emitStmt(sx.items[3]))
   ).attachLineInfo(sx)
 
+proc emitStaticWhen(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## `(static-when (test body…)… [(else body…)])` (#32), expression
+  ## position — requires an `else` clause (enforced by
+  ## `parseStaticWhenClauses`, shared with `lower.nim`); a `when` with no
+  ## matching branch has no value. Each branch wraps its body the same way
+  ## `emitBegin`/`emitLabelledBlock` do: an `nnkBlockStmt` around
+  ## `emitBodyExpr`, so the branch's value is its last form.
+  let clauses = parseStaticWhenClauses(sx, requireElse = true)
+  result = nnkWhenStmt.newTree()
+  for clause in clauses:
+    let branchValue = emitBlockExpr(@[], ctx.emitBodyExpr(clause.body, sx))
+    if clause.isElse:
+      result.add nnkElse.newTree(branchValue)
+    else:
+      result.add nnkElifBranch.newTree(ctx.emitExpr(clause.test), branchValue)
+  result = result.attachLineInfo(sx)
+
+proc emitStaticWhenStmt(ctx: var EmitContext; sx: Syntax): NimNode =
+  ## Statement/module position of `static-when` (#32) — `else` is optional;
+  ## an all-false `when` with no `else` simply contributes nothing, exactly
+  ## like Nim's own `when` at statement scope.
+  let clauses = parseStaticWhenClauses(sx, requireElse = false)
+  result = nnkWhenStmt.newTree()
+  for clause in clauses:
+    var branchStmts = newStmtList()
+    for form in clause.body:
+      branchStmts.add ctx.emitStmt(form)
+    if clause.isElse:
+      result.add nnkElse.newTree(branchStmts)
+    else:
+      result.add nnkElifBranch.newTree(ctx.emitExpr(clause.test), branchStmts)
+  result = result.attachLineInfo(sx)
+
 proc emitBegin(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.items.len == 1:
     raiseCompilerError(sx.span, "block expects at least one expression")
@@ -1821,6 +1854,8 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       raiseCompilerError(sx.span, "empty list is not an expression")
     if sx.items[0].isSymbol("if"):
       ctx.emitIf(sx)
+    elif sx.items[0].isSymbol("static-when"):
+      ctx.emitStaticWhen(sx)
     elif sx.items[0].isSymbol("block"):
       ctx.emitBegin(sx)
     elif sx.items[0].isSymbol("prog1"):
@@ -1931,6 +1966,8 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
   if sx.kind == sxList and sx.items.len > 0:
     if sx.items[0].isSymbol("if"):
       return ctx.emitIfStmt(sx)
+    if sx.items[0].isSymbol("static-when"):
+      return ctx.emitStaticWhenStmt(sx)
     if sx.items[0].isSymbol("for"):
       return ctx.emitForCore(sx)
     if sx.items[0].isSymbol("while"):

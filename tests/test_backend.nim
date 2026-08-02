@@ -1,3 +1,5 @@
+import std/os
+import std/strutils
 import std/unittest
 
 import nfl/compiler
@@ -1914,3 +1916,63 @@ suite "nfl backend — labelled break / continue (#54)":
 
   test "an inner loop reusing the outer label shadows it at the Nim codegen level":
     check shadowedLabelBreak() == 1
+
+# ---------------------------------------------------------------------------
+# static-when — compile-time feature detection (#32)
+# ---------------------------------------------------------------------------
+
+nflModule """
+; OS detection (#32): exactly one clause is selected at compile time, so
+; this reduces to a plain string literal in the emitted Nim, portable to
+; whatever platform actually runs the test suite.
+(const staticWhenPlatform
+  (static-when
+    ((defined windows) "windows")
+    ((defined macosx) "macosx")
+    ((defined linux) "linux")
+    (else "other")))
+
+; A name declared by every branch (#32's headline feature-detection use
+; case) is visible at module scope regardless of which branch is selected —
+; unlike NFL's runtime `when` (a plain `if`), this branch's body reaches
+; top level with no enclosing Nim scope.
+(static-when
+  ((defined windows)
+    (proc staticWhenGreeting () (: string) "hello from windows"))
+  ((defined macosx)
+    (proc staticWhenGreeting () (: string) "hello from macosx"))
+  (else
+    (proc staticWhenGreeting () (: string) "hello from elsewhere")))
+
+; No else clause at statement position: an unmatched static-when
+; contributes nothing, same as Nim's own `when`.
+(var staticWhenSideEffect 0)
+(static-when
+  ((defined this_symbol_is_never_defined_32)
+    (set! staticWhenSideEffect 999)))
+""", "static-when-test.nfl"
+
+suite "nfl module backend — static-when (#32)":
+  test "selects the branch matching the compiling platform's OS":
+    check staticWhenPlatform.toLowerAscii == hostOS.toLowerAscii
+
+  test "a proc declared in every branch reaches module scope":
+    let expected =
+      case hostOS.toLowerAscii
+      of "windows": "hello from windows"
+      of "macosx": "hello from macosx"
+      else: "hello from elsewhere"
+    check staticWhenGreeting() == expected
+
+  test "an unmatched clause with no else contributes nothing":
+    check staticWhenSideEffect == 0
+
+suite "nfl backend — static-when (#32)":
+  test "expression position selects a branch's value":
+    check nflExpr"""(static-when
+      ((defined this_symbol_is_never_defined_32) 1)
+      (else 2))""" == 2
+
+  # "requires an else clause in expression position" is a compile-time
+  # rejection (raised while lowering, before any Nim code exists to run),
+  # so it is covered in tests/test_lower.nim rather than here.

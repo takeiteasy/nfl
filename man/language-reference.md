@@ -739,6 +739,60 @@ expected, so an object type still goes through `new`.
   ...)
 ```
 
+### `static-when` — compile-time feature detection
+
+`when` (above) and `cond` both compile to a runtime `if` — every branch is
+compiled and one is chosen while the program runs. `static-when` is
+different: it lowers to Nim's `when`, so exactly one clause is selected
+*while the program is being compiled*, and every other clause's body is
+never even type-checked. Use it to gate code on things only known at
+compile time — `defined`, `sizeof`, `compiles`, and similar (see
+[nim-interop.md](nim-interop.md) for calling these from NFL).
+
+```lisp
+(static-when
+  (test1 body1...)
+  (test2 body2...)
+  ...
+  (else bodyN...))
+```
+
+Each clause is `(test body...)`; a trailing `(else body...)` is optional at
+statement/module scope, but **required in expression position** — an
+all-false `static-when` used as a value would otherwise have no value to
+produce, so NFL rejects that case at compile time rather than letting Nim
+fail obscurely.
+
+Because a `when` branch does not open a new Nim scope, a declaration inside
+a selected clause — `proc`, `var`, `const`, `type`, plain Nim `import` —
+reaches module scope, not just the branch. This is what makes real
+feature-detection code work:
+
+```lisp
+(static-when
+  ((defined windows)
+    (proc platformName () (: string) "windows"))
+  ((defined macosx)
+    (proc platformName () (: string) "macosx"))
+  (else
+    (proc platformName () (: string) "other")))
+
+(echo (platformName))
+```
+
+The same name may be declared in more than one clause (as `platformName` is
+above) — NFL treats this as the ordinary cross-platform pattern, not a
+duplicate-declaration error, and the declaration from whichever clause is
+actually selected is the one that exists once compiled.
+
+Two forms are *not* usable inside a `static-when` clause: `defmacro` and an
+NFL-module `import` (`(import foo.nfl)`) are both top-level-only in the
+expander. Plain Nim `import` (`(import strutils)`) works fine.
+
+`static-when` is unrelated to the preamble `when`/`unless` macros just
+above — they stay ordinary runtime conditionals; nothing about `when`'s
+meaning changes.
+
 ### `case`
 
 ```lisp

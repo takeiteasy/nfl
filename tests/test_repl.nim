@@ -134,6 +134,23 @@ suite "nfl repl":
     check exitCode == 0
     check output.strip().splitLines()[^1] == "105"
 
+  test "a static-when carrying a proc (#32) is a declaration and redefines cleanly":
+    # Matches the "a proc redefinition replaces the earlier one" test above:
+    # checks only the first and last printed values, not exact line-for-line
+    # equality — a redefinition can cause an earlier entry's now-changed
+    # output to reprint too (known limitation #93), independent of #32.
+    let (output, exitCode) = runRepl(@[
+      "(static-when ((defined this_symbol_is_never_defined_32) " &
+        "(proc f () (: int) 1)) (else (proc f () (: int) 2)))",
+      "(f)",
+      "(static-when ((defined this_symbol_is_never_defined_32) " &
+        "(proc f () (: int) 10)) (else (proc f () (: int) 20)))",
+      "(f)"])
+    check exitCode == 0
+    let lines = output.strip().splitLines()
+    check lines[0] == "2"
+    check lines[^1] == "20"
+
   test "a relative import resolves against the launch directory, not the temp session dir":
     # `nfl repl` itself must keep running with its cwd at the repo root (not
     # some other `workingDir`) so `nim`'s own `--path:src` resolution

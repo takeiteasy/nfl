@@ -1,0 +1,19 @@
+; Compile-time feature detection with `static-when` (#32).
+;
+; Unlike the preamble `when` macro (a runtime `if`), `static-when` maps to
+; Nim's `when`: exactly one clause is selected at *compile* time, the other
+; branches are never compiled, and — because a `when` branch does not open
+; a new Nim scope — a declaration inside a selected branch (here, a `proc`)
+; reaches module scope, not just the branch itself.
+
+(static-when
+  ((defined windows)
+    (proc platformName () (: string) "windows"))
+  ((defined macosx)
+    (proc platformName () (: string) "macosx"))
+  ((defined linux)
+    (proc platformName () (: string) "linux"))
+  (else
+    (proc platformName () (: string) "other")))
+
+(echo (& "running on: " (platformName)))

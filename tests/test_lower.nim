@@ -1412,3 +1412,64 @@ suite "isDeclForm / declaredNames":
 
   test "declaredNames is empty for a non-decl form":
     check declaredNames(readOne("(+ 1 2)", "t.nfl")).len == 0
+
+  test "static-when is a decl form only when a clause body is":
+    check isDeclForm(readOne(
+      "(static-when ((defined windows) (proc f () (: int) 1)))", "t.nfl"))
+    check not isDeclForm(readOne(
+      "(static-when ((defined windows) (+ 1 2)) (else (+ 3 4)))", "t.nfl"))
+
+  test "declaredNames recurses into static-when clauses":
+    check declaredNames(readOne(
+      "(static-when ((defined windows) (proc plat () (: int) 1)) " &
+      "(else (proc plat () (: int) 2)))", "t.nfl")) == @["plat", "plat"]
+
+suite "static-when (#32)":
+  test "accepts a well-formed static-when with else, in expression position":
+    discard lowerExpr(readOne(
+      "(static-when ((defined windows) 1) (else 2))", "lower-test.nfl"))
+
+  test "accepts a well-formed static-when without else, at statement position":
+    discard lowerModule(readAll(
+      "(static-when ((defined windows) (discard 1)))", "lower-test.nfl"))
+
+  test "rejects static-when with no clauses":
+    expectLowerError("(static-when)", "at least one clause")
+    expectLowerModuleError("(static-when)", "at least one clause")
+
+  test "rejects an empty clause":
+    expectLowerModuleError("(static-when (()))", "test body")
+
+  test "rejects a clause with a test but no body":
+    expectLowerModuleError("(static-when ((defined windows)))", "test body")
+
+  test "rejects a non-list clause":
+    expectLowerModuleError("(static-when windows)", "test body")
+
+  test "rejects an else clause that is not last":
+    expectLowerModuleError(
+      "(static-when (else (discard 1)) ((defined windows) (discard 2)))",
+      "else clause must be last")
+
+  test "rejects a duplicate else clause":
+    expectLowerModuleError(
+      "(static-when ((defined windows) (discard 1)) (else (discard 2)) (else (discard 3)))",
+      "else clause must be last")
+
+  test "requires an else clause in expression position":
+    expectLowerError(
+      "(static-when ((defined windows) 1))", "requires an else clause")
+
+  test "does not require an else clause at statement position":
+    discard lowerModule(readAll(
+      "(static-when ((defined windows) (discard 1)))", "lower-test.nfl"))
+
+  test "the same name declared in two branches lowers cleanly (same kind)":
+    discard lowerModule(readAll(
+      "(static-when ((defined windows) (var y 1)) (else (var y 2))) (set! y 5)",
+      "lower-test.nfl"))
+
+  test "the same name declared in two branches lowers cleanly (mixed kind, mutable wins)":
+    discard lowerModule(readAll(
+      "(static-when ((defined windows) (var y 1)) (else (const y 2))) (set! y 5)",
+      "lower-test.nfl"))

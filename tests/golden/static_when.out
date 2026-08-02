@@ -1,0 +1,1 @@
+(static-when ((defined windows) (var plat "windows") (if true (block (echo "win branch")) nil)) ((defined macosx) (var plat "macosx")) (else (var plat "other")))

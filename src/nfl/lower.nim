@@ -242,6 +242,40 @@ proc lowerIf(ctx: var LowerContext; sx: Syntax) =
   lowerExpr(ctx, sx.items[2])
   lowerExpr(ctx, sx.items[3])
 
+proc lowerStaticWhen(ctx: var LowerContext; sx: Syntax; requireElse: bool) =
+  ## `(static-when (test body…)… [(else body…)])` (#32) — Nim's compile-time
+  ## `when`. Each clause is lowered in its own child scope (rather than
+  ## straight into the enclosing one) because the canonical feature-detection
+  ## pattern declares the *same* name in several branches — e.g. a per-
+  ## platform `(proc plat …)` — and `declare` below raises on a duplicate
+  ## binding within one scope. The union of names each branch declares is
+  ## then registered once into the enclosing scope, matching Nim: every
+  ## branch's declarations are visible to the rest of the module by name,
+  ## regardless of which branch is actually selected. When branches disagree
+  ## on a name's kind (one declares it `var`, another `const`), the merged
+  ## binding is registered mutable — permissive here; Nim still rejects a
+  ## genuinely bad `set!` on whichever platform selects that branch.
+  let clauses = parseStaticWhenClauses(sx, requireElse)
+  var merged = initTable[string, BindingKind]()
+  for clause in clauses:
+    if not clause.isElse:
+      lowerExpr(ctx, clause.test)
+    ctx.pushScope()
+    for form in clause.body:
+      lowerStmt(ctx, form)
+    let childScope = ctx.scopes[^1]
+    ctx.popScope()
+    for key, kind in childScope:
+      if merged.hasKey(key) and (merged[key] == bkMutable or kind == bkMutable):
+        merged[key] = bkMutable
+      else:
+        merged[key] = kind
+  if ctx.scopes.len == 0:
+    ctx.pushScope()
+  var scope = addr ctx.scopes[^1]
+  for key, kind in merged:
+    scope[][key] = kind
+
 proc findLabelFrame(ctx: LowerContext; key: string): int =
   ## Innermost-first lookup (shadowing: an inner loop/block reusing an outer
   ## label name binds first). -1 when no enclosing frame carries `key`.
@@ -1442,6 +1476,8 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
       raiseCompilerError(sx.span, "empty list is not an expression")
     if sx.items[0].isSymbol("if"):
       lowerIf(ctx, sx)
+    elif sx.items[0].isSymbol("static-when"):
+      lowerStaticWhen(ctx, sx, requireElse = true)
     elif sx.items[0].isSymbol("block"):
       lowerBegin(ctx, sx)
     elif sx.items[0].isSymbol("prog1"):
@@ -1528,6 +1564,9 @@ proc lowerExpr(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
   if sx.kind == sxList and sx.items.len > 0:
+    if sx.items[0].isSymbol("static-when"):
+      lowerStaticWhen(ctx, sx, requireElse = false)
+      return
     if sx.items[0].isSymbol("var"):
       if isDefvarForm(sx):
         lowerVarDecl(ctx, sx)

@@ -48,6 +48,21 @@ Nim procedures are called with the same `(name args...)` syntax as NFL procedure
 (echo (pow 2.0 10.0))
 ```
 
+## Compile-time feature detection
+
+Nim's built-in compile-time predicates — `defined`, `sizeof`, `compiles`,
+and the like — are ordinary Nim procedures, callable from NFL exactly like
+`sqrt` or `pow` above. They're most useful as the test in a `static-when`
+clause (see [language-reference.md](language-reference.md#static-when--compile-time-feature-detection)),
+NFL's lowering of Nim's `when`:
+
+```lisp
+(static-when
+  ((defined windows) (echo "windows"))
+  ((defined macosx) (echo "macosx"))
+  (else (echo "other")))
+```
+
 ## Dot notation — field access and method calls
 
 `(. object field)` accesses a field or calls a UFCS method:

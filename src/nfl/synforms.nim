@@ -35,6 +35,37 @@ proc objectFieldParts*(field: Syntax): tuple[ok: bool, pragma: Syntax, typeIdx, 
   else:
     (false, nil, 0, -1)
 
+type StaticWhenClause* = object
+  isElse*: bool
+    ## True for the trailing `(else body…)` clause; `test` is unused then.
+  test*: Syntax
+  body*: seq[Syntax]
+
+proc parseStaticWhenClauses*(sx: Syntax; requireElse: bool): seq[StaticWhenClause] =
+  ## Parses `(static-when (test body…)… [(else body…)])` into its clauses,
+  ## shared by `lower.nim` and `backend.nim` so the two passes can't
+  ## disagree on shape (#32). `requireElse` is true in expression position —
+  ## a `static-when` whose tests are all false has no value there, so an
+  ## expression-position use without `else` is rejected here rather than
+  ## letting Nim fail obscurely on the resulting `when` with no matching
+  ## branch.
+  if sx.items.len < 2:
+    raiseCompilerError(sx.span, "static-when expects at least one clause")
+  var sawElse = false
+  for i in 1 ..< sx.items.len:
+    let clause = sx.items[i]
+    if clause.kind != sxList or clause.items.len < 2:
+      raiseCompilerError(clause.span, "static-when clause must be (test body…) or (else body…)")
+    if sawElse:
+      raiseCompilerError(clause.span, "static-when else clause must be last")
+    if clause.items[0].isSymbol("else"):
+      sawElse = true
+      result.add StaticWhenClause(isElse: true, body: clause.items[1 .. ^1])
+    else:
+      result.add StaticWhenClause(isElse: false, test: clause.items[0], body: clause.items[1 .. ^1])
+  if requireElse and not sawElse:
+    raiseCompilerError(sx.span, "static-when in expression position requires an else clause")
+
 proc isDefvarForm*(sx: Syntax): bool =
   ## `var` is overloaded: `(var name value)` / `(var (name type) value)` is a
   ## module/statement-level declaration, while `(var ((name value) …) body…)`
@@ -233,6 +264,17 @@ proc isDeclForm*(sx: Syntax): bool =
     for i in 1 ..< sx.items.len:
       if isDeclForm(sx.items[i]):
         return true
+  if head == "static-when":
+    # Same rule as `block`: a static-when carrying a declaration (e.g. a
+    # per-platform `proc`) in any clause must stay a declaration for the
+    # REPL (#14), even though other clauses' bodies may be plain expressions.
+    for i in 1 ..< sx.items.len:
+      let clause = sx.items[i]
+      if clause.kind != sxList:
+        continue
+      for j in 1 ..< clause.items.len:
+        if isDeclForm(clause.items[j]):
+          return true
   false
 
 proc sectionTargetNames(target: Syntax; names: var seq[string]) =
@@ -297,5 +339,12 @@ proc declaredNames*(sx: Syntax): seq[string] =
   of "block":
     for i in 1 ..< sx.items.len:
       result.add declaredNames(sx.items[i])
+  of "static-when":
+    for i in 1 ..< sx.items.len:
+      let clause = sx.items[i]
+      if clause.kind != sxList:
+        continue
+      for j in 1 ..< clause.items.len:
+        result.add declaredNames(clause.items[j])
   else:
     discard
