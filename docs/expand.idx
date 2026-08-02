@@ -1,3 +1,0 @@
-nimTitle	expand	expand.html	module nfl/expand		0
-nim	expandExpr	expand.html#expandExpr,MacroEnv,Syntax,int	proc expandExpr(env: MacroEnv; sx: Syntax; depth = 0): Syntax		24
-nim	expandModule	expand.html#expandModule,seq[Syntax],MacroEnv,string,string	proc expandModule(forms: seq[Syntax]; env: MacroEnv = newMacroEnv(); currentDir = "";\n             selfPath = ""): seq[Syntax]		25

@@ -21,6 +21,10 @@ nimble.paths
 nimbledeps
 /build_std
 
+# Generated API docs (nimble docs) — published via GitHub Actions/Pages on
+# tagged releases, not committed. See man/api.md.
+/docs/
+
 # Golden test fixtures — a global `*.out` ignore rule (common for build
 # output) would otherwise swallow these legitimate expected-output files.
 !/tests/golden/*.out

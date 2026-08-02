@@ -8,7 +8,7 @@ NFL's API reference is generated from source with [Nim's docgen](https://nim-lan
 nimble docs
 ```
 
-This runs `nim doc --project --index:on` over `src/nfl/cli.nim` (which imports every other module, directly or transitively) and writes one HTML page per module directly into `docs/`, plus docgen's search index (`theindex.html`, per-module `*.idx` files and `dochack.js`) and a thin `docs/index.html` landing page linking to the module pages. Every module page therefore has a full-text search box. Output lands in `docs/` (not `docs/api/`) because GitHub Pages serves a repo's `/docs` directory as-is; the prose guides live in `/man` at the repo root instead so they don't collide with generated output.
+This runs `nim doc --project --index:on` over `src/nfl/cli.nim` (which imports every other module, directly or transitively) and writes one HTML page per module directly into `docs/`, plus docgen's search index (`theindex.html`, per-module `*.idx` files and `dochack.js`) and a thin `docs/index.html` landing page linking to the module pages. Every module page therefore has a full-text search box. Output lands in `docs/` (not `docs/api/`) for local preview convenience; the prose guides live in `/man` at the repo root instead so they don't collide with generated output. `docs/` itself is gitignored — the published copy comes from CI, not from a commit (see Publishing below).
 
 Regenerate after adding or editing doc comments (`##`) on exported symbols, or after adding a new module under `src/nfl/`.
 
@@ -22,4 +22,4 @@ Doc comments currently cover the modules that make up NFL's public API surface: 
 
 ## Publishing
 
-Generated docs are currently local-only (`docs/` is committed but not automatically rebuilt or deployed). CI-driven regeneration and publishing (e.g. GitHub Pages) is planned once v1 lands.
+The canonical source lives on sourcehut; a GitHub mirror is used only to publish releases. Pushing a `v*` tag to GitHub triggers a workflow (`.github/workflows/release.yml`) that runs `nimble docs` and publishes the result to GitHub Pages, and builds release binaries attached to the corresponding GitHub release. Docs therefore track the latest tagged release, not the sourcehut trunk.

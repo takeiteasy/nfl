@@ -1,4 +1,0 @@
-nimTitle	compiler	compiler.html	module nfl/compiler		0
-nim	expandSource	compiler.html#expandSource,string,string,string	proc expandSource(source, file: string; autoloadCore = true; importDir = ""): seq[\n    Syntax]		21
-nim	nflExpr	compiler.html#nflExpr.m,static[string],static[bool]	macro nflExpr(source: static[string]; autoloadCore: static[bool] = true): untyped		44
-nim	nflModule	compiler.html#nflModule.m,static[string],static[string],static[bool],static[bool],static[string]	macro nflModule(source: static[string]; file: static[string] = "<nflModule>";\n          autoloadCore: static[bool] = true; emitNim: static[bool] = false;\n          importDir: static[string] = ""): untyped		57

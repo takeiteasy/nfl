@@ -1,3 +1,0 @@
-nimTitle	lower	lower.html	module nfl/lower		0
-nim	lowerExpr	lower.html#lowerExpr,Syntax	proc lowerExpr(sx: Syntax): Syntax		1589
-nim	lowerModule	lower.html#lowerModule,seq[Syntax]	proc lowerModule(forms: seq[Syntax]): seq[Syntax]		1594

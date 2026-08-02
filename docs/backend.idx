@@ -1,4 +1,0 @@
-nimTitle	backend	backend.html	module nfl/backend		0
-nim	emitExpr	backend.html#emitExpr,Syntax	proc emitExpr(sx: Syntax): NimNode		2016
-nim	emitStmt	backend.html#emitStmt,Syntax	proc emitStmt(sx: Syntax): NimNode		2020
-nim	emitModule	backend.html#emitModule,seq[Syntax]	proc emitModule(forms: seq[Syntax]): NimNode		2024

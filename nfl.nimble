@@ -4,7 +4,7 @@ import std/os
 import std/tables
 import std/json
 
-version       = "0.2.0"
+version       = "1.0.0"
 author        = "George Watson"
 description   = "NFL: Nim Flavoured Lisp"
 license       = "GPL-3.0-or-later"

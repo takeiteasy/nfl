@@ -1,3 +1,0 @@
-nimTitle	reader	reader.html	module nfl/reader		0
-nim	readAll	reader.html#readAll,string,string	proc readAll(source: string; file = "<input>"): seq[Syntax]		263
-nim	readOne	reader.html#readOne,string,string	proc readOne(source: string; file = "<input>"): Syntax		272
