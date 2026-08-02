@@ -1,3 +1,9 @@
+## Macro expansion: walks reader output (`Syntax`) and repeatedly rewrites
+## macro calls (both `defmacro` template-style macros and `defmacro-proc`
+## procedural macros) until none remain, inlining `(import file.nfl)` forms
+## along the way. Runs before `lower.nim`, which turns the fully-expanded
+## forms into Nim AST.
+
 import std/options
 import std/os
 import std/sets
@@ -22,7 +28,16 @@ const maxMacroProcDepth = 200
 type EvalScope = Table[string, Syntax]
 
 proc expandExpr*(env: MacroEnv; sx: Syntax; depth = 0): Syntax
+  ## Fully expands a single `Syntax` node against `env`'s registered
+  ## macros, recursing into lists and vectors. `depth` guards against
+  ## runaway recursive expansion (`maxExpansionDepth`).
+
 proc expandModule*(forms: seq[Syntax]; env: MacroEnv = newMacroEnv(); currentDir = ""; selfPath = ""): seq[Syntax]
+  ## Expands a whole module's top-level forms, registering `defmacro`/
+  ## `defmacro-proc` definitions as they're encountered and inlining
+  ## `(import file.nfl)` forms in place (resolved relative to `currentDir`).
+  ## `selfPath`, when set, is pushed onto the include stack so importing
+  ## the entry file itself is caught as a circular import.
 
 proc expectArity(sx: Syntax; name: string; actual, expected: int) =
   if actual != expected:

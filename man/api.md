@@ -18,7 +18,7 @@ Regenerate after adding or editing doc comments (`##`) on exported symbols, or a
 
 ## Coverage
 
-Doc comments currently cover the modules that make up NFL's public API surface: `cli`, `compiler`, `syntax`, `reader`, and `macros`. Other modules (`expand`, `lower`, `backend`, `runtime`, `stdlib`, `diagnostics`, `synforms`) are internal implementation details and mostly undocumented — their generated pages show bare signatures only. Extending doc-comment coverage to those modules is tracked as a follow-up.
+Doc comments cover every module: the public API surface (`cli`, `compiler`, `syntax`, `reader`, `macros`) as well as the internal implementation modules (`expand`, `lower`, `backend`, `runtime`, `stdlib`, `diagnostics`, `synforms`) — each has a module-level summary and a `##` comment on every exported symbol.
 
 ## Publishing
 

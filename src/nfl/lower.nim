@@ -1,3 +1,9 @@
+## Lowering: rewrites already macro-expanded `Syntax` forms in place,
+## resolving NFL-specific surface syntax (`let`/`set!`, `loop`/`recur`,
+## `defclass`, object-variant `match` patterns, and similar) down to a
+## shape `backend.nim` can emit directly as Nim AST. Runs after
+## `expand.nim` and before `backend.nim`.
+
 import std/tables
 import std/strutils
 import std/options
@@ -1626,11 +1632,17 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
   lowerExpr(ctx, sx)
 
 proc lowerExpr*(sx: Syntax): Syntax =
+  ## Lowers a single expanded expression in a fresh, empty scope. Mutates
+  ## `sx` in place and returns it, for embedding a lone NFL expression
+  ## directly in Nim code (`nflExpr`).
   var ctx = LowerContext(scopes: @[initTable[string, BindingKind]()])
   lowerExpr(ctx, sx)
   sx
 
 proc lowerModule*(forms: seq[Syntax]): seq[Syntax] =
+  ## Lowers a whole module's expanded top-level forms in a shared scope,
+  ## so later forms see bindings introduced by earlier ones. Mutates
+  ## `forms` in place and returns it.
   var ctx = LowerContext(scopes: @[initTable[string, BindingKind]()])
   for form in forms:
     lowerStmt(ctx, form)

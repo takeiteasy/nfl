@@ -8,6 +8,7 @@ import ./diagnostics
 import ./syntax
 
 proc isPragmaClause*(sx: Syntax): bool =
+  ## True for a `{.pragma.}` clause form, i.e. `(pragma ...)`.
   sx.kind == sxList and sx.items.len > 0 and sx.items[0].isSymbol("pragma")
 
 proc objectFieldParts*(field: Syntax): tuple[ok: bool, pragma: Syntax, typeIdx, defaultIdx: int] =
@@ -36,6 +37,8 @@ proc objectFieldParts*(field: Syntax): tuple[ok: bool, pragma: Syntax, typeIdx, 
     (false, nil, 0, -1)
 
 type StaticWhenClause* = object
+  ## One clause of a `static-when` form, as parsed by
+  ## `parseStaticWhenClauses`.
   isElse*: bool
     ## True for the trailing `(else body…)` clause; `test` is unused then.
   test*: Syntax
@@ -126,6 +129,8 @@ proc bodyStartAfterParams*(sx: Syntax; paramsIdx: int; formName = "proc"): int =
     result = paramsIdx + 2
 
 proc procBodyStart*(sx: Syntax): int =
+  ## Returns the index of the first body item in a name-bearing form
+  ## (`proc`, `template`, `iterator`, `method`, `func`, `converter`).
   bodyStartAfterParams(sx, procParamsIdx(sx))
 
 proc lambdaBodyStart*(sx: Syntax): int =
@@ -134,6 +139,8 @@ proc lambdaBodyStart*(sx: Syntax): int =
   bodyStartAfterParams(sx, 1, "do")
 
 proc formName*(sx: Syntax): string =
+  ## The symbol name of a form's head, for use in diagnostics; falls
+  ## back to the generic `"form"` when `sx` is not itself a symbol.
   if sx.kind == sxSymbol: sx.sym else: "form"
 
 proc isKeywordSym*(sx: Syntax): bool =

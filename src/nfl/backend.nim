@@ -1,3 +1,8 @@
+## Code generation: turns fully expanded and lowered `Syntax` forms into
+## Nim `NimNode` AST via `std/macros`, the final step before the compiler
+## macros in `compiler.nim` splice the result into the caller's module.
+## Runs after `lower.nim`.
+
 import std/macros
 import std/os
 import std/strutils
@@ -2051,14 +2056,20 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
   newCall(bindSym"nflStmt", ctx.emitExpr(sx)).attachLineInfo(sx)
 
 proc emitExpr*(sx: Syntax): NimNode =
+  ## Emits a single lowered expression as a Nim expression `NimNode`, in
+  ## a fresh emit context (its own hygienic-symbol table).
   var ctx = EmitContext(hygienicSymbols: initTable[int, tuple[node: NimNode, kind: NimSymKind]]())
   ctx.emitExpr(sx)
 
 proc emitStmt*(sx: Syntax): NimNode =
+  ## Emits a single lowered form as a Nim statement `NimNode`.
   var ctx = EmitContext(hygienicSymbols: initTable[int, tuple[node: NimNode, kind: NimSymKind]]())
   ctx.emitStmt(sx)
 
 proc emitModule*(forms: seq[Syntax]): NimNode =
+  ## Emits a whole module's lowered top-level forms as a single Nim
+  ## `NimNode` statement list, sharing one emit context (and therefore one
+  ## hygienic-symbol table) across all of them.
   var ctx = EmitContext(hygienicSymbols: initTable[int, tuple[node: NimNode, kind: NimSymKind]]())
   result = newStmtList()
   for form in forms:

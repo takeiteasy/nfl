@@ -1,12 +1,22 @@
+## Runtime support linked into every compiled NFL program: the `NflDatum`
+## quoted-data representation, seq helpers backing NFL's functional
+## builtins (`map`, `filter`, `fold`, ...), and the `throw`/`catch` and
+## `defclass`/`:initarg` machinery. Exported (`export runtime` in
+## `compiler.nim`) so generated code can call these directly.
+
 import std/algorithm
 import std/macros
 import std/strutils
 
 type
   NflDatumKind* = enum
+    ## Discriminates `NflDatum`'s variants — the reader's own `Syntax` kinds,
+    ## reduced to what a running program needs to represent quoted data.
     ndNil, ndBool, ndInt, ndFloat, ndString, ndSymbol, ndList, ndVector
 
   NflDatum* = ref object
+    ## Runtime representation of quoted/quasiquoted data (`'expr`), as
+    ## opposed to `Syntax` which only exists at macro-expansion time.
     case kind*: NflDatumKind
     of ndNil:
       discard
@@ -24,30 +34,42 @@ type
       items*: seq[NflDatum]
 
 proc nflNilDatum*(): NflDatum =
+  ## Builds an `ndNil` `NflDatum`.
   NflDatum(kind: ndNil)
 
 proc nflBoolDatum*(value: bool): NflDatum =
+  ## Builds an `ndBool` `NflDatum`.
   NflDatum(kind: ndBool, boolVal: value)
 
 proc nflIntDatum*(value: BiggestInt): NflDatum =
+  ## Builds an `ndInt` `NflDatum`.
   NflDatum(kind: ndInt, intVal: value)
 
 proc nflFloatDatum*(value: BiggestFloat): NflDatum =
+  ## Builds an `ndFloat` `NflDatum`.
   NflDatum(kind: ndFloat, floatVal: value)
 
 proc nflStringDatum*(value: string): NflDatum =
+  ## Builds an `ndString` `NflDatum`.
   NflDatum(kind: ndString, strVal: value)
 
 proc nflSymbolDatum*(value: string): NflDatum =
+  ## Builds an `ndSymbol` `NflDatum`.
   NflDatum(kind: ndSymbol, sym: value)
 
 proc nflListDatum*(items: varargs[NflDatum]): NflDatum =
+  ## Builds an `ndList` `NflDatum` from its elements.
   NflDatum(kind: ndList, items: @items)
 
 proc nflVectorDatum*(items: varargs[NflDatum]): NflDatum =
+  ## Builds an `ndVector` `NflDatum` from its elements.
   NflDatum(kind: ndVector, items: @items)
 
 template nflStmt*(body: untyped) =
+  ## Wraps a top-level expression form in statement (void) position:
+  ## discards `body`'s value if it has one, otherwise just runs it.
+  ## `emitStmt`'s fallback for a form that isn't one of the recognized
+  ## statement heads (`synforms.declFormHeads`).
   when compiles(block:
     discard body):
     discard body
@@ -92,102 +114,128 @@ template nflMatchArity*(x: untyped; n: static[int]; exact: static[bool]): bool =
     true
 
 proc nflSeqMap*[T, U](items: openArray[T]; op: proc(item: T): U {.nimcall.}): seq[U] =
+  ## Backs NFL's `map` builtin. Overloaded on `{.nimcall.}`/`{.closure.}`
+  ## so both a plain proc and a closure (e.g. a lambda capturing locals)
+  ## can be passed as `op` without an explicit cast at the call site.
   for item in items:
     result.add op(item)
 
 proc nflSeqMap*[T, U](items: openArray[T]; op: proc(item: T): U {.closure.}): seq[U] =
+  ## Closure-`op` overload of `nflSeqMap`.
   for item in items:
     result.add op(item)
 
 proc nflSeqFilter*[T](items: openArray[T]; pred: proc(item: T): bool {.nimcall.}): seq[T] =
+  ## Backs NFL's `filter` builtin — keeps elements where `pred` is true.
   for item in items:
     if pred(item):
       result.add item
 
 proc nflSeqFilter*[T](items: openArray[T]; pred: proc(item: T): bool {.closure.}): seq[T] =
+  ## Closure-`pred` overload of `nflSeqFilter`.
   for item in items:
     if pred(item):
       result.add item
 
 proc nflSeqFoldl*[T, U](items: openArray[T]; initial: U; op: proc(acc: U; item: T): U {.nimcall.}): U =
+  ## Backs NFL's `foldl` builtin — left fold, `initial` as the seed
+  ## accumulator.
   result = initial
   for item in items:
     result = op(result, item)
 
 proc nflSeqFoldl*[T, U](items: openArray[T]; initial: U; op: proc(acc: U; item: T): U {.closure.}): U =
+  ## Closure-`op` overload of `nflSeqFoldl`.
   result = initial
   for item in items:
     result = op(result, item)
 
 proc nflSeqFoldr*[T, U](items: openArray[T]; initial: U; op: proc(item: T; acc: U): U {.nimcall.}): U =
+  ## Backs NFL's `foldr` builtin — right fold, `initial` as the seed
+  ## accumulator.
   result = initial
   for i in countdown(items.high, 0):
     result = op(items[i], result)
 
 proc nflSeqFoldr*[T, U](items: openArray[T]; initial: U; op: proc(item: T; acc: U): U {.closure.}): U =
+  ## Closure-`op` overload of `nflSeqFoldr`.
   result = initial
   for i in countdown(items.high, 0):
     result = op(items[i], result)
 
 proc nflSeqRemoveIf*[T](items: openArray[T]; pred: proc(item: T): bool {.nimcall.}): seq[T] =
+  ## Backs NFL's `remove-if` builtin — the inverse of `nflSeqFilter`.
   for item in items:
     if not pred(item):
       result.add item
 
 proc nflSeqRemoveIf*[T](items: openArray[T]; pred: proc(item: T): bool {.closure.}): seq[T] =
+  ## Closure-`pred` overload of `nflSeqRemoveIf`.
   for item in items:
     if not pred(item):
       result.add item
 
 proc nflSeqCount*[T](items: openArray[T]; pred: proc(item: T): bool {.nimcall.}): int =
+  ## Backs NFL's `count` builtin — the number of elements matching `pred`.
   for item in items:
     if pred(item):
       inc result
 
 proc nflSeqCount*[T](items: openArray[T]; pred: proc(item: T): bool {.closure.}): int =
+  ## Closure-`pred` overload of `nflSeqCount`.
   for item in items:
     if pred(item):
       inc result
 
 proc nflSeqAny*[T](items: openArray[T]; pred: proc(item: T): bool {.nimcall.}): bool =
+  ## Backs NFL's `any?` builtin — true if `pred` matches at least one
+  ## element.
   for item in items:
     if pred(item):
       return true
   false
 
 proc nflSeqAny*[T](items: openArray[T]; pred: proc(item: T): bool {.closure.}): bool =
+  ## Closure-`pred` overload of `nflSeqAny`.
   for item in items:
     if pred(item):
       return true
   false
 
 proc nflSeqEvery*[T](items: openArray[T]; pred: proc(item: T): bool {.nimcall.}): bool =
+  ## Backs NFL's `every?` builtin — true if `pred` matches every element.
   for item in items:
     if not pred(item):
       return false
   true
 
 proc nflSeqEvery*[T](items: openArray[T]; pred: proc(item: T): bool {.closure.}): bool =
+  ## Closure-`pred` overload of `nflSeqEvery`.
   for item in items:
     if not pred(item):
       return false
   true
 
 proc nflSeqPosition*[T](items: openArray[T]; value: T): int =
-  ## -1 when `value` isn't present — Nim's own `find`-style sentinel,
-  ## rather than CL's nil, since a generic `T` has no nil-like value.
+  ## Backs NFL's `position` builtin. -1 when `value` isn't present —
+  ## Nim's own `find`-style sentinel, rather than CL's nil, since a
+  ## generic `T` has no nil-like value.
   for i, item in items:
     if item == value:
       return i
   -1
 
 proc nflReversed*[T](items: openArray[T]): seq[T] =
+  ## Backs NFL's `reverse` builtin.
   reversed(items)
 
 proc nflSorted*[T](items: openArray[T]): seq[T] =
+  ## Backs NFL's `sort` builtin (non-mutating, returns a new seq).
   sorted(items)
 
 proc nflMakeArray*[T](n: int; fill: T): seq[T] =
+  ## Backs NFL's `make-array` builtin — an `n`-element seq with every
+  ## slot set to `fill`.
   result = newSeq[T](n)
   for i in 0 ..< n:
     result[i] = fill
