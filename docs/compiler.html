@@ -78,9 +78,9 @@
 
 </ul>
 <ul class="simple nested-toc-section">nflModule
-  <li><a class="reference" href="#nflModule.m%2Cstatic%5Bstring%5D%2Cstatic%5Bstring%5D%2Cstatic%5Bbool%5D" title="nflModule(source: static[string]; file: static[string] = &quot;&lt;nflModule&gt;&quot;;
-          autoloadCore: static[bool] = true): untyped">nflModule(source: static[string]; file: static[string] = &quot;&lt;nflModule&gt;&quot;;
-          autoloadCore: static[bool] = true): untyped</a></li>
+  <li><a class="reference" href="#nflModule.m%2Cstatic%5Bstring%5D%2Cstatic%5Bstring%5D%2Cstatic%5Bbool%5D%2Cstatic%5Bbool%5D" title="nflModule(source: static[string]; file: static[string] = &quot;&lt;nflModule&gt;&quot;;
+          autoloadCore: static[bool] = true; emitNim: static[bool] = false): untyped">nflModule(source: static[string]; file: static[string] = &quot;&lt;nflModule&gt;&quot;;
+          autoloadCore: static[bool] = true; emitNim: static[bool] = false): untyped</a></li>
 
 </ul>
 
@@ -139,12 +139,12 @@
 
 </div>
 <div id="nflModule-macros-all">
-  <div id="nflModule.m,static[string],static[string],static[bool]">
-  <dt><pre><span class="Keyword">macro</span> <a href="#nflModule.m%2Cstatic%5Bstring%5D%2Cstatic%5Bstring%5D%2Cstatic%5Bbool%5D"><span class="Identifier">nflModule</span></a><span class="Other">(</span><span class="Identifier">source</span><span class="Other">:</span> <span class="Identifier">static</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span><span class="Other">;</span> <span class="Identifier">file</span><span class="Other">:</span> <span class="Identifier">static</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span> <span class="Other">=</span> <span class="StringLit">&quot;&lt;nflModule&gt;&quot;</span><span class="Other">;</span>
-                <span class="Identifier">autoloadCore</span><span class="Other">:</span> <span class="Identifier">static</span><span class="Other">[</span><span class="Identifier">bool</span><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">true</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">untyped</span></pre></dt>
+  <div id="nflModule.m,static[string],static[string],static[bool],static[bool]">
+  <dt><pre><span class="Keyword">macro</span> <a href="#nflModule.m%2Cstatic%5Bstring%5D%2Cstatic%5Bstring%5D%2Cstatic%5Bbool%5D%2Cstatic%5Bbool%5D"><span class="Identifier">nflModule</span></a><span class="Other">(</span><span class="Identifier">source</span><span class="Other">:</span> <span class="Identifier">static</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span><span class="Other">;</span> <span class="Identifier">file</span><span class="Other">:</span> <span class="Identifier">static</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span> <span class="Other">=</span> <span class="StringLit">&quot;&lt;nflModule&gt;&quot;</span><span class="Other">;</span>
+                <span class="Identifier">autoloadCore</span><span class="Other">:</span> <span class="Identifier">static</span><span class="Other">[</span><span class="Identifier">bool</span><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">true</span><span class="Other">;</span> <span class="Identifier">emitNim</span><span class="Other">:</span> <span class="Identifier">static</span><span class="Other">[</span><span class="Identifier">bool</span><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">untyped</span></pre></dt>
   <dd>
     
-    Expands, lowers, and emits an entire NFL source file as top-level Nim declarations. This is what the <tt class="docutils literal"><span class="pre"><span class="Identifier">nfl</span></span></tt> CLI's generated wrapper calls to compile a <tt class="docutils literal"><span class="pre"><span class="Operator">.</span><span class="Identifier">nfl</span></span></tt> file via <tt class="docutils literal"><span class="pre"><span class="Identifier">nim</span> <span class="Identifier">c</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">check</span></span></tt>.
+    Expands, lowers, and emits an entire NFL source file as top-level Nim declarations. This is what the <tt class="docutils literal"><span class="pre"><span class="Identifier">nfl</span></span></tt> CLI's generated wrapper calls to compile a <tt class="docutils literal"><span class="pre"><span class="Operator">.</span><span class="Identifier">nfl</span></span></tt> file via <tt class="docutils literal"><span class="pre"><span class="Identifier">nim</span> <span class="Identifier">c</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">check</span></span></tt>. When <tt class="docutils literal"><span class="pre"><span class="Identifier">emitNim</span></span></tt> is set, the resulting <tt class="docutils literal"><span class="pre"><span class="Identifier">NimNode</span></span></tt>'s <tt class="docutils literal"><span class="pre"><span class="Operator">.</span><span class="Identifier">repr</span></span></tt> is echoed (between marker lines) once emission succeeds -- this is what <tt class="docutils literal"><span class="pre"><span class="Identifier">nfl</span></span></tt>'s <tt class="docutils literal"><span class="pre"><span class="Operator">--</span><span class="Identifier">emit</span> <span class="Identifier">nim</span></span></tt> flag turns on; it is a best-effort debug dump, not guaranteed to be re-compilable Nim.
     
   </dd>
 </div>
@@ -166,7 +166,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-01 22:09:26 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 06:59:38 UTC</small>
       </div>
     </div>
   </div>

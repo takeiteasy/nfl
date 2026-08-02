@@ -285,7 +285,11 @@ A few consequences follow from that model:
   a.nfl` rather than looping forever.
 - Since imports are inlined, plain Nim code cannot `import` a `.nfl` file
   directly (it isn't compiled to a standalone Nim module) — only another
-  `.nfl` file can pull it in via `(import ...)`.
+  `.nfl` file can pull it in via `(import ...)`. `nfl shim` generates a thin
+  Nim module that delegates to a given `.nfl` file, which plain Nim code can
+  `import` instead — see [package-layout.md](package-layout.md) for the
+  package shape this fits into and its limitations (in particular, macros
+  still don't cross the Nim import boundary).
 
 ## Full interop example
 

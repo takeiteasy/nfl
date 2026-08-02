@@ -189,4 +189,6 @@ Use Nim's standard library directly:
 - [Language Reference](language-reference.md) — complete coverage of all forms
 - [Macro System](macros.md) — `defmacro`, quasiquote, and the built-in preamble macros
 - [Nim Interop](nim-interop.md) — dot notation, type annotations, exports, pragmas
+- [CLI Reference](cli.md) — every `nfl` subcommand and flag
+- [Package Layout](package-layout.md) — organizing a real application or library project
 - Browse the `examples/` directory for runnable programs

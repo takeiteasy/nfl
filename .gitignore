@@ -15,6 +15,8 @@ nimble.paths
 !/examples/*.nim
 !/examples/*.nfl
 !/examples/*.nfl
+!/examples/package/
+/examples/package/tests/consume
 nimbledeps
 /build_std
 

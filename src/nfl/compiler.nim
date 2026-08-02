@@ -47,12 +47,19 @@ macro nflExpr*(source: static[string]; autoloadCore: static[bool] = true): untyp
   except CompilerError as err:
     error($err.diagnostic)
 
-macro nflModule*(source: static[string]; file: static[string] = "<nflModule>"; autoloadCore: static[bool] = true): untyped =
+macro nflModule*(source: static[string]; file: static[string] = "<nflModule>"; autoloadCore: static[bool] = true; emitNim: static[bool] = false): untyped =
   ## Expands, lowers, and emits an entire NFL source file as top-level Nim
   ## declarations. This is what the `nfl` CLI's generated wrapper calls to
-  ## compile a `.nfl` file via `nim c`/`check`.
+  ## compile a `.nfl` file via `nim c`/`check`. When `emitNim` is set, the
+  ## resulting `NimNode`'s `.repr` is echoed (between marker lines) once
+  ## emission succeeds -- this is what `nfl`'s `--emit nim` flag turns on;
+  ## it is a best-effort debug dump, not guaranteed to be re-compilable Nim.
   try:
     result = emitModule(lowerModule(expandSource(source, file, autoloadCore)))
+    if emitNim:
+      echo "# --- nfl: begin emitted nim (" & file & ") ---"
+      echo result.repr
+      echo "# --- nfl: end emitted nim ---"
   except ReaderError as err:
     error($err.diagnostic)
   except CompilerError as err:
