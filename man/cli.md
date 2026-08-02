@@ -69,21 +69,37 @@ By default the output path is the input with its extension changed to
 by a header comment on the first line), to avoid clobbering hand-written
 Nim.
 
+### `repl`
+
+Starts an interactive read/expand/compile/run loop, backed by an actual
+`nim c` per accepted input (there is no interpreter). See
+[repl.md](repl.md) for the full session model — full-transcript replay,
+name-keyed redefinition, `defvar`/`defparameter` semantics, and REPL
+commands (`:help`, `:quit`, `:transcript`, `:reset`).
+
+```sh
+nfl repl                  # start an empty session
+nfl repl mylib.nfl        # preload mylib.nfl as the first transcript entry
+```
+
+Unlike every other command, `repl`'s file argument is optional.
+
 ## Flags
 
 | Flag | Commands | Effect |
 |---|---|---|
 | `--no-core` | all | Skip auto-loading the preamble (`std/core.nfl`'s macros — `when`, `unless`, `cond`, threading macros, etc). |
-| `--emit nim` | `run`, `compile`, `check` | Echoes the emitted `NimNode`'s `.repr` to stdout, between `# --- nfl: begin/end emitted nim ---` marker lines, once expansion/lowering/emission succeed. **Best-effort debug output** — it is not guaranteed to be valid, re-compilable Nim (see the note in [package-layout.md](package-layout.md#nfl-shim-vs---emit-nim)); use it to see what NFL produced when a `nim` compiler error on generated code is otherwise hard to diagnose. Prints nothing if an NFL-level error is raised first — the error is reported the normal way instead. |
+| `--emit nim` | `run`, `compile`, `check` | Echoes the emitted `NimNode`'s `.repr` to stdout, between `# --- nfl: begin/end emitted nim ---` marker lines, once expansion/lowering/emission succeed. **Best-effort debug output** — it is not guaranteed to be valid, re-compilable Nim (see the note in [package-layout.md](package-layout.md#nfl-shim-vs---emit-nim)); use it to see what NFL produced when a `nim` compiler error on generated code is otherwise hard to diagnose. Prints nothing if an NFL-level error is raised first — the error is reported the normal way instead. Not valid with `macroexpand` or `repl`. |
 | `--out <path>` | `shim` | Write the generated module to `<path>` instead of the default `<input>.nim`. |
 | `--force` | `shim` | Overwrite the output path even if it's not a file `nfl shim` generated. |
 | `-h`, `--help` | (as first arg) | Print usage and exit 0. |
 
 ## Notes
 
-- The input file path is always required and must be the only positional
-  argument; an unrecognized `--`-prefixed flag is an error (exit 2), not
-  silently treated as the input path.
+- The input file path is always required (except for `repl`, where it's an
+  optional preload) and must be the only positional argument; an
+  unrecognized `--`-prefixed flag is an error (exit 2), not silently
+  treated as the input path.
 - `run`/`compile`/`check` shell out to `nim` on your `PATH`; if it isn't
   found, `nfl` reports that and exits 1 rather than failing inside a
   half-built temp directory.

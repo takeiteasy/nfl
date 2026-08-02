@@ -19,6 +19,17 @@
 (defmacro defvar (name &rest args)
   `(var ,name ,@args))
 
+; `defvar`/`defparameter` are the same plain `var` alias at expansion time —
+; both compile down to nothing but `(var name args...)`. Their distinct CL
+; semantics (defvar sets only if unbound; defparameter always resets) are
+; not a macro-expansion-time property; they only become observable when the
+; same name is re-entered, which only happens in `nfl repl` (#14), so the
+; REPL — not this macro — is what tells the two apart, by checking a
+; re-entered name's *raw* head symbol before deciding whether to keep the
+; old value or replace it.
+(defmacro defparameter (name &rest args)
+  `(var ,name ,@args))
+
 (defmacro defconst (name &rest args)
   `(const ,name ,@args))
 

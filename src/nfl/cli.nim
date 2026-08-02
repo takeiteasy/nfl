@@ -1,17 +1,21 @@
 ## The `nfl` command-line entry point: parses `run`/`compile`/`check`/
-## `macroexpand`/`shim` invocations, drives the Nim compiler over a generated
-## wrapper for `run`/`compile`/`check`, drives the macro expander directly
-## for `macroexpand`, and writes a Nim-importable delegation module for
-## `shim`. See `man/cli.md` for the full command/flag reference.
+## `macroexpand`/`shim`/`repl` invocations, drives the Nim compiler over a
+## generated wrapper for `run`/`compile`/`check`, drives the macro expander
+## directly for `macroexpand`, writes a Nim-importable delegation module for
+## `shim`, and hands off to `repl.nim` for `repl`. See `man/cli.md` for the
+## full command/flag reference.
 
 import std/cmdline
 import std/os
 import std/osproc
+import std/rdstdin
 import std/strutils
 import std/times
 
 import ./compiler
 import ./diagnostics
+import ./reader
+import ./repl
 import ./syntax
 
 type
@@ -21,6 +25,7 @@ type
     cmdCheck = "check"
     cmdMacroexpand = "macroexpand"
     cmdShim = "shim"
+    cmdRepl = "repl"
 
   CliOptions = object
     command: Command
@@ -54,6 +59,7 @@ proc nimStringLit(s: string): string =
 
 proc usage() =
   stderr.writeLine "usage: nfl <run|compile|check|macroexpand|shim> [--no-core] [--emit nim] [--out path] [--force] file.nfl"
+  stderr.writeLine "       nfl repl [--no-core] [file.nfl]"
 
 proc parseCommand(value: string): Command =
   case value
@@ -62,6 +68,7 @@ proc parseCommand(value: string): Command =
   of "check": cmdCheck
   of "macroexpand": cmdMacroexpand
   of "shim": cmdShim
+  of "repl": cmdRepl
   else:
     raise newException(ValueError, "unknown command: " & value)
 
@@ -93,6 +100,8 @@ proc parseOptions(args: seq[string]): ParseResult =
     elif arg == "--emit" or arg.startsWith("--emit="):
       if result.options.command == cmdMacroexpand:
         return fail("nfl: --emit is not valid with macroexpand")
+      if result.options.command == cmdRepl:
+        return fail("nfl: --emit is not valid with repl")
       var value: string
       if arg.startsWith("--emit="):
         value = arg["--emit=".len .. ^1]
@@ -128,6 +137,15 @@ proc parseOptions(args: seq[string]): ParseResult =
 
   if result.options.force and result.options.command != cmdShim:
     return fail("nfl: --force is only valid with shim")
+
+  if result.options.command == cmdRepl:
+    # `repl` takes an optional positional (a file to preload into the
+    # session) rather than a required one.
+    result.ok = true
+    if inputArg.len > 0:
+      result.options.inputDisplay = inputArg
+      result.options.input = absolutePath(inputArg)
+    return result
 
   if inputArg.len == 0:
     return ParseResult(ok: false, exitCode: 2, showUsage: true)
@@ -173,7 +191,7 @@ proc nimArgsFor(options: CliOptions; wrapper: string): seq[string] =
     result.add "--out:" & defaultOutputPath(options.input)
   of cmdCheck:
     result.add "check"
-  of cmdMacroexpand, cmdShim:
+  of cmdMacroexpand, cmdShim, cmdRepl:
     discard
 
   let srcPath = repoSrcPath()
@@ -232,6 +250,91 @@ proc writeShim(options: CliOptions): int =
   writeFile(outPath, shimSource(options.input))
   0
 
+proc replReadLine(prompt: string; line: var string): bool =
+  readLineFromStdin(prompt, line)
+
+proc printReplHelp() =
+  stdout.writeLine "REPL commands:"
+  stdout.writeLine "  :help        show this help"
+  stdout.writeLine "  :quit, :exit quit the REPL"
+  stdout.writeLine "  :transcript  print the accumulated session source"
+  stdout.writeLine "  :reset       clear the session"
+
+proc loadReplFile(session: var ReplSession; options: CliOptions): int =
+  ## Preloads `options.input` (the `repl` command's optional positional) as
+  ## a single transcript entry before the interactive loop starts. See
+  ## `man/repl.md` for why a whole file is one entry rather than one per
+  ## top-level form.
+  if not fileExists(options.input):
+    stderr.writeLine "nfl: file not found: " & options.inputDisplay
+    return 1
+  var source = readFile(options.input)
+  while source.len > 0 and source[^1] in {'\n', '\r'}:
+    source.setLen(source.len - 1)
+  var forms: seq[Syntax]
+  try:
+    forms = readAll(source, options.input)
+  except ReaderError as err:
+    stderr.writeLine $err.diagnostic
+    return 1
+  if forms.len == 0:
+    return 0
+  let outcome = session.tryAddInput(source, forms)
+  case outcome.outcome
+  of aoAdded:
+    stdout.write outcome.message
+    0
+  of aoError:
+    stderr.writeLine outcome.message
+    1
+  of aoSkippedDefvar, aoBlank:
+    0
+
+proc runRepl(options: CliOptions): int =
+  var session = initSession(options.autoloadCore)
+  defer: closeSession(session)
+
+  if options.input.len > 0:
+    let loadResult = loadReplFile(session, options)
+    if loadResult != 0:
+      return loadResult
+
+  while true:
+    let read = readEntry(replReadLine, "nfl> ", "  ... ")
+    case read.outcome
+    of roEof:
+      break
+    of roBlank:
+      continue
+    of roError:
+      stderr.writeLine read.message
+      continue
+    of roForm:
+      if read.forms.len == 0:
+        # The first line started with `:` — a REPL command, not NFL source.
+        case read.source
+        of ":help":
+          printReplHelp()
+        of ":quit", ":exit":
+          break
+        of ":transcript":
+          stdout.write session.transcriptText()
+        of ":reset":
+          closeSession(session)
+          session = initSession(options.autoloadCore)
+        else:
+          stderr.writeLine "nfl repl: unknown command: " & read.source
+      else:
+        let outcome = session.tryAddInput(read.source, read.forms)
+        case outcome.outcome
+        of aoAdded:
+          stdout.write outcome.message
+        of aoSkippedDefvar, aoBlank:
+          discard
+        of aoError:
+          stderr.writeLine outcome.message
+  0
+
 proc main(): int =
   let parsed = parseOptions(commandLineParams())
   if not parsed.ok:
@@ -242,6 +345,9 @@ proc main(): int =
     return parsed.exitCode
 
   let options = parsed.options
+
+  if options.command == cmdRepl:
+    return runRepl(options)
 
   if not fileExists(options.input):
     stderr.writeLine "nfl: file not found: " & options.inputDisplay
@@ -254,6 +360,8 @@ proc main(): int =
     writeShim(options)
   of cmdRun, cmdCompile, cmdCheck:
     compileViaNim(options)
+  of cmdRepl:
+    0  # unreachable — handled above
 
 when isMainModule:
   quit main()

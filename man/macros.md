@@ -343,7 +343,7 @@ who'd rather see a `def...` prefix:
 | Macro | Expands to |
 |-------|-----------|
 | `(defproc name args...)`, `(defun name args...)` | `(proc name args...)` |
-| `(defvar name args...)` | `(var name args...)` |
+| `(defvar name args...)`, `(defparameter name args...)` | `(var name args...)` |
 | `(defconst name args...)`, `(defconstant name args...)` | `(const name args...)` |
 | `(deftype name args...)` | `(type name args...)` |
 | `(deftemplate name args...)` | `(template name args...)` |
@@ -351,6 +351,13 @@ who'd rather see a `def...` prefix:
 | `(defmethod name args...)` | `(method name args...)` |
 | `(deffunc name args...)` | `(func name args...)` |
 | `(defconverter name args...)` | `(converter name args...)` |
+
+`defvar` and `defparameter` expand identically — both are plain `var`
+aliases. Their CL-style distinction (`defvar` sets a name only if it's
+unbound; `defparameter` always resets it) is not a property of macro
+expansion; it's only observable when the same name is entered a second
+time, which happens in [`nfl repl`](repl.md#defvar-vs-defparameter), not in
+an ordinary compiled file.
 
 ### CL-style sequence functions
 

@@ -228,6 +228,10 @@
   <li><a class="reference" href="#nflMatchArity.t%2Cuntyped%2Cstatic%5Bint%5D%2Cstatic%5Bbool%5D" title="nflMatchArity(x: untyped; n: static[int]; exact: static[bool]): bool">nflMatchArity(x: untyped; n: static[int]; exact: static[bool]): bool</a></li>
 
 </ul>
+<ul class="simple nested-toc-section">nflReplShow
+  <li><a class="reference" href="#nflReplShow.t%2Cuntyped" title="nflReplShow(body: untyped)">nflReplShow(body: untyped)</a></li>
+
+</ul>
 <ul class="simple nested-toc-section">nflStmt
   <li><a class="reference" href="#nflStmt.t%2Cuntyped" title="nflStmt(body: untyped)">nflStmt(body: untyped)</a></li>
 
@@ -675,6 +679,17 @@
 </div>
 
 </div>
+<div id="nflReplShow-templates-all">
+  <div id="nflReplShow.t,untyped">
+  <dt><pre><span class="Keyword">template</span> <a href="#nflReplShow.t%2Cuntyped"><span class="Identifier">nflReplShow</span></a><span class="Other">(</span><span class="Identifier">body</span><span class="Other">:</span> <span class="Identifier">untyped</span><span class="Other">)</span></pre></dt>
+  <dd>
+    
+    Wraps a value expression the <tt class="docutils literal"><span class="pre"><span class="Identifier">nfl</span> <span class="Identifier">repl</span></span></tt> (#14) reads at top level so its result gets printed once, consistently. Same <tt class="docutils literal"><span class="pre"><span class="Identifier">compiles</span><span class="Punctuation">(</span><span class="Keyword">discard</span> <span class="Identifier">body</span><span class="Punctuation">)</span></span></tt> dispatch as <tt class="docutils literal"><span class="pre"><span class="Identifier">nflStmt</span></span></tt> above, so a void form (an assignment, a loop, <tt class="docutils literal"><span class="pre"><span class="Keyword">discard</span></span></tt>, …) simply runs for effect and prints nothing rather than failing to compile — the REPL wraps every non-declaration top-level form in this, not only ones already known to produce a value, and relies on that fallback. <tt class="docutils literal"><span class="pre"><span class="Identifier">body</span></span></tt> is only ever evaluated once at runtime: the <tt class="docutils literal"><span class="pre"><span class="Identifier">compiles</span></span></tt> check is purely a compile-time typecheck of a <em>second</em>, never-executed copy of <tt class="docutils literal"><span class="pre"><span class="Identifier">body</span></span></tt>, exactly as <tt class="docutils literal"><span class="pre"><span class="Identifier">nflStmt</span></span></tt> relies on already. <tt class="docutils literal"><span class="pre"><span class="Identifier">string</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">char</span></span></tt> are <tt class="docutils literal"><span class="pre"><span class="Identifier">repr</span></span></tt>'d (quoted) rather than <tt class="docutils literal"><span class="pre"><span class="Operator">$</span></span></tt>'d so a REPL user can tell the string &quot;1&quot; apart from the int 1 in the output; every other type prefers <tt class="docutils literal"><span class="pre"><span class="Operator">$</span></span></tt> where available, falling back to <tt class="docutils literal"><span class="pre"><span class="Identifier">repr</span></span></tt>.
+    
+  </dd>
+</div>
+
+</div>
 <div id="nflStmt-templates-all">
   <div id="nflStmt.t,untyped">
   <dt><pre><span class="Keyword">template</span> <a href="#nflStmt.t%2Cuntyped"><span class="Identifier">nflStmt</span></a><span class="Other">(</span><span class="Identifier">body</span><span class="Other">:</span> <span class="Identifier">untyped</span><span class="Other">)</span></pre></dt>
@@ -696,7 +711,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 06:59:37 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 08:24:16 UTC</small>
       </div>
     </div>
   </div>

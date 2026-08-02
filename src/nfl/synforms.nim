@@ -203,3 +203,99 @@ proc validatePattern*(pattern: Syntax; names: var seq[Syntax]; rejectObjectIn: s
     return
   for elem in pattern.items:
     validatePatternElem(elem, names, rejectObjectIn)
+
+const declFormHeads = [
+  "var", "const", "import", "from", "proc", "template", "iterator", "type",
+  "method", "func", "converter", "discard", "defer", "break", "continue",
+  "yield", "return", "raise",
+]
+  ## The statement heads `lower.nim`'s `lowerStmt` and `backend.nim`'s
+  ## `emitStmt` both switch on. Shared here (see the module comment) so
+  ## `repl.nim`'s decl/expression classification (#14) — "does this
+  ## top-level form declare something, or produce a printable value?" —
+  ## can't drift from what the lowering/emission passes actually treat as a
+  ## declaration or void statement.
+
+proc isDeclForm*(sx: Syntax): bool =
+  ## True for a top-level form the REPL (#14) should treat as a declaration
+  ## or void statement — never wrapped for value printing — rather than a
+  ## printable expression. Covers every head `lowerStmt`/`emitStmt` special-
+  ## case (`declFormHeads`), plus a `block` when any of its direct children
+  ## is itself a decl form: `defclass` (preamble.nfl) expands to `(block
+  ## (type …) (proc …) …)`, which must stay a declaration, while a `progn`-
+  ## style `(block expr)` wrapping a single printable value should not.
+  if sx.kind != sxList or sx.items.len == 0 or sx.items[0].kind != sxSymbol:
+    return false
+  let head = sx.items[0].sym
+  if head in declFormHeads:
+    return true
+  if head == "block":
+    for i in 1 ..< sx.items.len:
+      if isDeclForm(sx.items[i]):
+        return true
+  false
+
+proc sectionTargetNames(target: Syntax; names: var seq[string]) =
+  ## Collects the name(s) a single `var`/`const` section binding target
+  ## declares — mirrors the target shapes `lower.nim`'s
+  ## `sectionBindingParts` accepts: a plain symbol, a typed `(name Type)`
+  ## pair, or a destructuring vector pattern (every name it binds).
+  case target.kind
+  of sxSymbol:
+    names.add target.sym
+  of sxList:
+    if target.items.len == 2 and target.items[0].kind == sxSymbol:
+      names.add target.items[0].sym
+  of sxVector:
+    var patternNames: seq[Syntax] = @[]
+    try:
+      validatePattern(target, patternNames)
+    except CatchableError:
+      discard
+    for n in patternNames:
+      names.add n.sym
+  else:
+    discard
+
+proc declaredNames*(sx: Syntax): seq[string] =
+  ## The top-level name(s) a decl form (`isDeclForm`) binds — used by the
+  ## REPL (#14) to detect when a new transcript entry redefines an earlier
+  ## one. Every returned name has its export marker (trailing `*`) already
+  ## stripped, so `(proc f* …)` and a later `(proc f …)` are recognized as
+  ## the same binding. Best-effort: an unrecognized or malformed shape
+  ## (already destined to be rejected by `lower.nim` at compile time)
+  ## simply contributes no names rather than raising here.
+  if sx.kind != sxList or sx.items.len < 2 or sx.items[0].kind != sxSymbol:
+    return @[]
+  proc stripped(sym: string): string =
+    if sym.len > 0 and sym[^1] == '*': sym[0 ..< sym.high] else: sym
+  let head = sx.items[0].sym
+  case head
+  of "proc", "template", "iterator", "type", "method", "func", "converter":
+    let name = sx.items[1]
+    if name.kind == sxSymbol:
+      result.add stripped(name.sym)
+  of "var", "const":
+    if isVarSectionForm(sx):
+      # `(var ((n1 v1) (n2 v2) …))` / `(const (…))` — a list of bindings,
+      # each possibly binding multiple names via a destructuring pattern.
+      let bindings = sx.items[1]
+      if bindings.kind == sxList:
+        for binding in bindings.items:
+          if binding.kind == sxList and binding.items.len > 0:
+            var names: seq[string] = @[]
+            sectionTargetNames(binding.items[0], names)
+            for n in names: result.add stripped(n)
+    else:
+      # `(var name value)` / `(var (name Type) value)` declaration form.
+      let nameTarget = sx.items[1]
+      if nameTarget.kind == sxSymbol:
+        result.add stripped(nameTarget.sym)
+      elif nameTarget.kind == sxList and nameTarget.items.len == 2 and
+           nameTarget.items[0].kind == sxSymbol:
+        result.add stripped(nameTarget.items[0].sym)
+  of "block":
+    for i in 1 ..< sx.items.len:
+      result.add declaredNames(sx.items[i])
+  else:
+    discard

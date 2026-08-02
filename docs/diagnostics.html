@@ -70,7 +70,13 @@
 <li><a class="reference" href="#DiagnosticSeverity" title="DiagnosticSeverity = enum
   dsError">DiagnosticSeverity</a></li>
 <li><a class="reference" href="#ReaderError" title="ReaderError = object of CatchableError
-  diagnostic*: Diagnostic">ReaderError</a></li>
+  diagnostic*: Diagnostic
+  incomplete*: bool ## True when the error is purely &quot;ran out of input while inside an
+                    ## open form&quot; (unterminated list/vector/string/escaped symbol/block
+                    ## comment/pragma, or EOF while `readForm` still expects a form) —
+                    ## as opposed to a form that is syntactically finished but wrong. The
+                    ## REPL (`repl.nim`) uses this to distinguish &quot;keep reading more
+                    ## lines&quot; from &quot;this input is actually broken.&quot;">ReaderError</a></li>
 
     </ul>
   </details>
@@ -92,7 +98,7 @@
 
 </ul>
 <ul class="simple nested-toc-section">raiseReaderError
-  <li><a class="reference" href="#raiseReaderError%2CSpan%2Cstring" title="raiseReaderError(span: Span; message: string)">raiseReaderError(span: Span; message: string)</a></li>
+  <li><a class="reference" href="#raiseReaderError%2CSpan%2Cstring" title="raiseReaderError(span: Span; message: string; incomplete = false)">raiseReaderError(span: Span; message: string; incomplete = false)</a></li>
 
 </ul>
 
@@ -148,7 +154,13 @@
 </div>
 <div id="ReaderError">
   <dt><pre><a href="#ReaderError"><span class="Identifier">ReaderError</span></a> <span class="Other">=</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">CatchableError</span>
-  <span class="Identifier">diagnostic</span><span class="Operator">*</span><span class="Other">:</span> <a href="#Diagnostic"><span class="Identifier">Diagnostic</span></a></pre></dt>
+  <span class="Identifier">diagnostic</span><span class="Operator">*</span><span class="Other">:</span> <a href="#Diagnostic"><span class="Identifier">Diagnostic</span></a>
+  <span class="Identifier">incomplete</span><span class="Operator">*</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Comment">## True when the error is purely &quot;ran out of input while inside an</span>
+                    <span class="Comment">## open form&quot; (unterminated list/vector/string/escaped symbol/block</span>
+                    <span class="Comment">## comment/pragma, or EOF while `readForm` still expects a form) —</span>
+                    <span class="Comment">## as opposed to a form that is syntactically finished but wrong. The</span>
+                    <span class="Comment">## REPL (`repl.nim`) uses this to distinguish &quot;keep reading more</span>
+                    <span class="Comment">## lines&quot; from &quot;this input is actually broken.&quot;</span></pre></dt>
   <dd>
     
     
@@ -198,8 +210,8 @@
 </div>
 <div id="raiseReaderError-procs-all">
   <div id="raiseReaderError,Span,string">
-  <dt><pre><span class="Keyword">proc</span> <a href="#raiseReaderError%2CSpan%2Cstring"><span class="Identifier">raiseReaderError</span></a><span class="Other">(</span><span class="Identifier">span</span><span class="Other">:</span> <a href="syntax.html#Span"><span class="Identifier">Span</span></a><span class="Other">;</span> <span class="Identifier">message</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span> {.<span class="Identifier">noreturn</span><span class="Other">,</span>
-    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ReaderError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">forbids</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+  <dt><pre><span class="Keyword">proc</span> <a href="#raiseReaderError%2CSpan%2Cstring"><span class="Identifier">raiseReaderError</span></a><span class="Other">(</span><span class="Identifier">span</span><span class="Other">:</span> <a href="syntax.html#Span"><span class="Identifier">Span</span></a><span class="Other">;</span> <span class="Identifier">message</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">incomplete</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">)</span> {.
+    <span class="Identifier">noreturn</span><span class="Other">,</span> <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ReaderError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">forbids</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
   <dd>
     
     
@@ -218,7 +230,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 06:59:37 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 08:24:16 UTC</small>
       </div>
     </div>
   </div>

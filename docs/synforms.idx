@@ -12,3 +12,5 @@ nim	formName	synforms.html#formName,Syntax	proc formName(sx: Syntax): string		10
 nim	isKeywordSym	synforms.html#isKeywordSym,Syntax	proc isKeywordSym(sx: Syntax): bool		108
 nim	isObjectPattern	synforms.html#isObjectPattern,Syntax	proc isObjectPattern(pattern: Syntax): bool		114
 nim	validatePattern	synforms.html#validatePattern,Syntax,seq[Syntax],string	proc validatePattern(pattern: Syntax; names: var seq[Syntax];\n                rejectObjectIn: string = "")		121
+nim	isDeclForm	synforms.html#isDeclForm,Syntax	proc isDeclForm(sx: Syntax): bool		219
+nim	declaredNames	synforms.html#declaredNames,Syntax	proc declaredNames(sx: Syntax): seq[string]		260

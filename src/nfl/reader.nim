@@ -64,7 +64,7 @@ proc skipTrivia(r: var Reader) =
           break
         discard r.advance()
       if not closed:
-        raiseReaderError(start, "unterminated block comment")
+        raiseReaderError(start, "unterminated block comment", incomplete = true)
     else:
       break
 
@@ -81,7 +81,7 @@ proc readString(r: var Reader): Syntax =
       return newString(value, start.withEnd(r.line, r.col))
     of '\\':
       if r.atEnd:
-        raiseReaderError(start, "unterminated string literal")
+        raiseReaderError(start, "unterminated string literal", incomplete = true)
       let escaped = r.advance()
       case escaped
       of 'n': value.add '\n'
@@ -93,7 +93,7 @@ proc readString(r: var Reader): Syntax =
         raiseReaderError(r.currentSpan, "invalid string escape: \\" & $escaped)
     else:
       value.add c
-  raiseReaderError(start, "unterminated string literal")
+  raiseReaderError(start, "unterminated string literal", incomplete = true)
 
 proc readEscapedSymbol(r: var Reader): Syntax =
   let start = r.currentSpan
@@ -108,7 +108,7 @@ proc readEscapedSymbol(r: var Reader): Syntax =
       return newSymbol(value, start.withEnd(r.line, r.col), escaped = true)
     of '\\':
       if r.atEnd:
-        raiseReaderError(start, "unterminated escaped symbol")
+        raiseReaderError(start, "unterminated escaped symbol", incomplete = true)
       let escaped = r.advance()
       case escaped
       of '|': value.add '|'
@@ -117,7 +117,7 @@ proc readEscapedSymbol(r: var Reader): Syntax =
         raiseReaderError(r.currentSpan, "invalid escaped symbol escape: \\" & $escaped)
     else:
       value.add c
-  raiseReaderError(start, "unterminated escaped symbol")
+  raiseReaderError(start, "unterminated escaped symbol", incomplete = true)
 
 proc readDelimited(r: var Reader; closeChar: char; vector: bool; start: Span): Syntax =
   var items: seq[Syntax] = @[]
@@ -125,7 +125,7 @@ proc readDelimited(r: var Reader; closeChar: char; vector: bool; start: Span): S
     r.skipTrivia()
     if r.atEnd:
       let kind = if vector: "vector" else: "list"
-      raiseReaderError(start, "unterminated " & kind)
+      raiseReaderError(start, "unterminated " & kind, incomplete = true)
     if r.peek == closeChar:
       discard r.advance()
       let fullSpan = start.withEnd(r.line, r.col)
@@ -147,7 +147,7 @@ proc readPragma(r: var Reader; start: Span): Syntax =
   while true:
     r.skipTrivia()
     if r.atEnd:
-      raiseReaderError(start, "unterminated pragma")
+      raiseReaderError(start, "unterminated pragma", incomplete = true)
     if r.peek == '.' and r.peekNext == '}':
       discard r.advance()  # `.`
       discard r.advance()  # `}`
@@ -181,7 +181,7 @@ proc readPragma(r: var Reader; start: Span): Syntax =
 proc readQuote(r: var Reader; name: string; start: Span): Syntax =
   r.skipTrivia()
   if r.atEnd or r.peek in {')', ']'}:
-    raiseReaderError(start, "expected expression after " & name)
+    raiseReaderError(start, "expected expression after " & name, incomplete = r.atEnd)
   let expr = r.readForm()
   let fullSpan = start.withEnd(expr.span.endLine, expr.span.endCol)
   newList(@[newSymbol(name, start), expr], fullSpan)
@@ -223,7 +223,7 @@ proc readAtom(r: var Reader): Syntax =
 proc readForm(r: var Reader): Syntax =
   r.skipTrivia()
   if r.atEnd:
-    raiseReaderError(r.currentSpan, "expected expression")
+    raiseReaderError(r.currentSpan, "expected expression", incomplete = true)
 
   let start = r.currentSpan
   case r.peek

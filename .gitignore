@@ -7,6 +7,7 @@ nimble.paths
 /tests/test_backend
 /tests/test_lower
 /tests/test_cli
+/tests/test_repl
 /tests/test_stdlib
 /src/nfl/cli
 /src/nfl/nfl

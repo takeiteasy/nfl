@@ -22,6 +22,13 @@ proc expectReaderError(source, messagePart: string) =
     check err.diagnostic.span.file == "bad.nfl"
     check err.diagnostic.message.contains(messagePart)
 
+proc expectIncomplete(source: string; incomplete: bool) =
+  try:
+    discard readAll(source, "bad.nfl")
+    fail()
+  except ReaderError as err:
+    check err.incomplete == incomplete
+
 suite "reader valid syntax":
   test "reads scalar literals":
     let forms = readAll("nil true false 42 -7 3.5 \"hi\\nthere\" symbol-name", "scalars.nfl")
@@ -235,3 +242,24 @@ suite "reader malformed syntax":
   test "reports unterminated pragma":
     expectReaderError("{.inline", "unterminated pragma")
     expectReaderError("{.", "unterminated pragma")
+
+suite "reader incomplete-input detection (#14)":
+  # The REPL (repl.nim) uses `incomplete` to decide whether to keep reading
+  # more lines rather than reporting a broken input outright — it should be
+  # true exactly for "ran out of input while inside an open form", and false
+  # for a form that is syntactically finished but wrong.
+  test "unterminated forms are incomplete":
+    expectIncomplete("\"no end", true)
+    expectIncomplete("(var x 1", true)
+    expectIncomplete("[1 2", true)
+    expectIncomplete("#| missing end", true)
+    expectIncomplete("|", true)
+    expectIncomplete("{.inline", true)
+    expectIncomplete("{.", true)
+    expectIncomplete("'", true)
+
+  test "finished-but-wrong forms are not incomplete":
+    expectIncomplete(")", false)
+    expectIncomplete("' )", false)
+    expectIncomplete("||", false)
+    expectIncomplete("|bad\\n|", false)

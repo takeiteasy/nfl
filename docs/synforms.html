@@ -65,8 +65,16 @@
   <li><a class="reference" href="#bodyStartAfterParams%2CSyntax%2Cint%2Cstring" title="bodyStartAfterParams(sx: Syntax; paramsIdx: int; formName = &quot;proc&quot;): int">bodyStartAfterParams(sx: Syntax; paramsIdx: int; formName = &quot;proc&quot;): int</a></li>
 
 </ul>
+<ul class="simple nested-toc-section">declaredNames
+  <li><a class="reference" href="#declaredNames%2CSyntax" title="declaredNames(sx: Syntax): seq[string]">declaredNames(sx: Syntax): seq[string]</a></li>
+
+</ul>
 <ul class="simple nested-toc-section">formName
   <li><a class="reference" href="#formName%2CSyntax" title="formName(sx: Syntax): string">formName(sx: Syntax): string</a></li>
+
+</ul>
+<ul class="simple nested-toc-section">isDeclForm
+  <li><a class="reference" href="#isDeclForm%2CSyntax" title="isDeclForm(sx: Syntax): bool">isDeclForm(sx: Syntax): bool</a></li>
 
 </ul>
 <ul class="simple nested-toc-section">isDefvarForm
@@ -151,12 +159,35 @@
 </div>
 
 </div>
+<div id="declaredNames-procs-all">
+  <div id="declaredNames,Syntax">
+  <dt><pre><span class="Keyword">proc</span> <a href="#declaredNames%2CSyntax"><span class="Identifier">declaredNames</span></a><span class="Other">(</span><span class="Identifier">sx</span><span class="Other">:</span> <a href="syntax.html#Syntax"><span class="Identifier">Syntax</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span>
+    <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">RootEffect</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">forbids</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+  <dd>
+    
+    The top-level name(s) a decl form (<tt class="docutils literal"><span class="pre"><span class="Identifier">isDeclForm</span></span></tt>) binds — used by the REPL (#14) to detect when a new transcript entry redefines an earlier one. Every returned name has its export marker (trailing <tt class="docutils literal"><span class="pre"><span class="Operator">*</span></span></tt>) already stripped, so <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Keyword">proc</span> <span class="Identifier">f</span><span class="Operator">*</span> <span class="Identifier">…</span><span class="Punctuation">)</span></span></tt> and a later <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Keyword">proc</span> <span class="Identifier">f</span> <span class="Identifier">…</span><span class="Punctuation">)</span></span></tt> are recognized as the same binding. Best-effort: an unrecognized or malformed shape (already destined to be rejected by <tt class="docutils literal"><span class="pre"><span class="Identifier">lower</span><span class="Operator">.</span><span class="Identifier">nim</span></span></tt> at compile time) simply contributes no names rather than raising here.
+    
+  </dd>
+</div>
+
+</div>
 <div id="formName-procs-all">
   <div id="formName,Syntax">
   <dt><pre><span class="Keyword">proc</span> <a href="#formName%2CSyntax"><span class="Identifier">formName</span></a><span class="Other">(</span><span class="Identifier">sx</span><span class="Other">:</span> <a href="syntax.html#Syntax"><span class="Identifier">Syntax</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">forbids</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
   <dd>
     
     
+    
+  </dd>
+</div>
+
+</div>
+<div id="isDeclForm-procs-all">
+  <div id="isDeclForm,Syntax">
+  <dt><pre><span class="Keyword">proc</span> <a href="#isDeclForm%2CSyntax"><span class="Identifier">isDeclForm</span></a><span class="Other">(</span><span class="Identifier">sx</span><span class="Other">:</span> <a href="syntax.html#Syntax"><span class="Identifier">Syntax</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">forbids</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+  <dd>
+    
+    True for a top-level form the REPL (#14) should treat as a declaration or void statement — never wrapped for value printing — rather than a printable expression. Covers every head <tt class="docutils literal"><span class="pre"><span class="Identifier">lowerStmt</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">emitStmt</span></span></tt> special- case (<tt class="docutils literal"><span class="pre"><span class="Identifier">declFormHeads</span></span></tt>), plus a <tt class="docutils literal"><span class="pre"><span class="Keyword">block</span></span></tt> when any of its direct children is itself a decl form: <tt class="docutils literal"><span class="pre"><span class="Identifier">defclass</span></span></tt> (preamble.nfl) expands to <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Keyword">block</span> <span class="Punctuation">(</span><span class="Keyword">type</span> <span class="Identifier">…</span><span class="Punctuation">)</span> <span class="Punctuation">(</span><span class="Keyword">proc</span> <span class="Identifier">…</span><span class="Punctuation">)</span> <span class="Identifier">…</span><span class="Punctuation">)</span></span></tt>, which must stay a declaration, while a <tt class="docutils literal"><span class="pre"><span class="Identifier">progn</span></span></tt>- style <tt class="docutils literal"><span class="pre"><span class="Punctuation">(</span><span class="Keyword">block</span> <span class="Identifier">expr</span><span class="Punctuation">)</span></span></tt> wrapping a single printable value should not.
     
   </dd>
 </div>
@@ -298,7 +329,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 06:59:37 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 08:24:16 UTC</small>
       </div>
     </div>
   </div>

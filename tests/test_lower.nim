@@ -4,6 +4,7 @@ import std/unittest
 import nfl/diagnostics
 import nfl/lower
 import nfl/reader
+import nfl/synforms
 import nfl/syntax
 
 proc expectLowerError(source, messagePart: string) =
@@ -1366,3 +1367,48 @@ suite "lowering validation":
 
   test "rejects a do with a return type but no body":
     expectLowerError("(do () (: int))", "do expects parameters and body")
+
+# ---------------------------------------------------------------------------
+# isDeclForm / declaredNames (#14 — shared by the REPL's decl/expr split)
+# ---------------------------------------------------------------------------
+
+suite "isDeclForm / declaredNames":
+  test "decl forms are recognized":
+    for src in ["(var x 1)", "(const x 1)", "(import ./a.nfl)",
+                "(proc f () (: int) 1)", "(template f () 1)",
+                "(iterator f () (: int) (yield 1))", "(type T int)",
+                "(func f () (: int) 1)", "(converter f ((x int)) (: float) x)",
+                "(discard 1)", "(break)", "(continue)"]:
+      check isDeclForm(readOne(src, "t.nfl"))
+
+  test "ordinary expressions are not decl forms":
+    for src in ["(+ 1 2)", "x", "42", "(echo \"hi\")", "(if true 1 2)"]:
+      check not isDeclForm(readOne(src, "t.nfl"))
+
+  test "a block is a decl form only when a child is":
+    check isDeclForm(readOne("(block (type T int) (proc f () (: int) 1))", "t.nfl"))
+    check not isDeclForm(readOne("(block (+ 1 2) (+ 3 4))", "t.nfl"))
+
+  test "declaredNames extracts a plain var/const/proc/type name":
+    check declaredNames(readOne("(var x 1)", "t.nfl")) == @["x"]
+    check declaredNames(readOne("(const x 1)", "t.nfl")) == @["x"]
+    check declaredNames(readOne("(proc f () (: int) 1)", "t.nfl")) == @["f"]
+    check declaredNames(readOne("(type T int)", "t.nfl")) == @["T"]
+
+  test "declaredNames strips the export marker":
+    check declaredNames(readOne("(proc f* () (: int) 1)", "t.nfl")) == @["f"]
+    check declaredNames(readOne("(var x* 1)", "t.nfl")) == @["x"]
+
+  test "declaredNames handles a typed (name Type) target":
+    check declaredNames(readOne("(var (x int) 1)", "t.nfl")) == @["x"]
+
+  test "declaredNames handles a var/const section (multiple bindings)":
+    check declaredNames(readOne("(var ((x 1) (y 2)))", "t.nfl")) == @["x", "y"]
+
+  test "declaredNames recurses into a block":
+    check declaredNames(readOne(
+      "(block (type T (object (n int))) (proc f () (: int) 1))", "t.nfl")) ==
+      @["T", "f"]
+
+  test "declaredNames is empty for a non-decl form":
+    check declaredNames(readOne("(+ 1 2)", "t.nfl")).len == 0

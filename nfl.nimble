@@ -67,6 +67,7 @@ task test, "Run tests":
   exec "nim c --path:src -r tests/test_stdlib.nim"
   exec "nim c --path:src --out:src/nfl/nfl src/nfl/cli.nim"
   exec "nim c --path:src -r tests/test_cli.nim"
+  exec "nim c --path:src -r tests/test_repl.nim"
 
 task dochack, "Ensure a compiled dochack.js exists in the Nim compiler prefix (for `nim doc --index:on`)":
   ensureDochack()

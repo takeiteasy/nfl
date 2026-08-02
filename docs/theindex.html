@@ -28,10 +28,34 @@
     <label for="nav-toggle" id="nav-overlay"></label>
     <div class="container">
       <h1 class="title">Index</h1>
-      Modules: <a href="backend.html">backend</a>, <a href="cli.html">cli</a>, <a href="compiler.html">compiler</a>, <a href="diagnostics.html">diagnostics</a>, <a href="expand.html">expand</a>, <a href="lower.html">lower</a>, <a href="macros.html">macros</a>, <a href="reader.html">reader</a>, <a href="runtime.html">runtime</a>, <a href="stdlib.html">stdlib</a>, <a href="synforms.html">synforms</a>, <a href="syntax.html">syntax</a>.<br/><p /><h2>API symbols</h2>
+      Modules: <a href="backend.html">backend</a>, <a href="cli.html">cli</a>, <a href="compiler.html">compiler</a>, <a href="diagnostics.html">diagnostics</a>, <a href="expand.html">expand</a>, <a href="lower.html">lower</a>, <a href="macros.html">macros</a>, <a href="reader.html">reader</a>, <a href="repl.html">repl</a>, <a href="runtime.html">runtime</a>, <a href="stdlib.html">stdlib</a>, <a href="synforms.html">synforms</a>, <a href="syntax.html">syntax</a>.<br/><p /><h2>API symbols</h2>
 <dl><dt><a name="%60%24%60" href="#%60%24%60"><span>`$`:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="diagnostics: proc `$`(diagnostic: Diagnostic): string" href="diagnostics.html#%24%2CDiagnostic">diagnostics: proc `$`(diagnostic: Diagnostic): string</a></li>
+          </ul></dd>
+<dt><a name="AddOutcome" href="#AddOutcome"><span>AddOutcome:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: enum AddOutcome" href="repl.html#AddOutcome">repl: enum AddOutcome</a></li>
+          </ul></dd>
+<dt><a name="AddResult" href="#AddResult"><span>AddResult:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: object AddResult" href="repl.html#AddResult">repl: object AddResult</a></li>
+          </ul></dd>
+<dt><a name="aoAdded" href="#aoAdded"><span>aoAdded:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: AddOutcome.aoAdded" href="repl.html#aoAdded">repl: AddOutcome.aoAdded</a></li>
+          </ul></dd>
+<dt><a name="aoBlank" href="#aoBlank"><span>aoBlank:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: AddOutcome.aoBlank" href="repl.html#aoBlank">repl: AddOutcome.aoBlank</a></li>
+          </ul></dd>
+<dt><a name="aoError" href="#aoError"><span>aoError:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: AddOutcome.aoError" href="repl.html#aoError">repl: AddOutcome.aoError</a></li>
+          </ul></dd>
+<dt><a name="aoSkippedDefvar" href="#aoSkippedDefvar"><span>aoSkippedDefvar:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: AddOutcome.aoSkippedDefvar" href="repl.html#aoSkippedDefvar">repl: AddOutcome.aoSkippedDefvar</a></li>
           </ul></dd>
 <dt><a name="blockLabelName" href="#blockLabelName"><span>blockLabelName:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -40,6 +64,10 @@
 <dt><a name="bodyStartAfterParams" href="#bodyStartAfterParams"><span>bodyStartAfterParams:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="synforms: proc bodyStartAfterParams(sx: Syntax; paramsIdx: int; formName = &quot;proc&quot;): int" href="synforms.html#bodyStartAfterParams%2CSyntax%2Cint%2Cstring">synforms: proc bodyStartAfterParams(sx: Syntax; paramsIdx: int; formName = &quot;proc&quot;): int</a></li>
+          </ul></dd>
+<dt><a name="closeSession" href="#closeSession"><span>closeSession:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: proc closeSession(session: ReplSession)" href="repl.html#closeSession%2CReplSession">repl: proc closeSession(session: ReplSession)</a></li>
           </ul></dd>
 <dt><a name="CompilerError" href="#CompilerError"><span>CompilerError:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -52,6 +80,10 @@
 <dt><a name="coreSource" href="#coreSource"><span>coreSource:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="stdlib: const coreSource" href="stdlib.html#coreSource">stdlib: const coreSource</a></li>
+          </ul></dd>
+<dt><a name="declaredNames" href="#declaredNames"><span>declaredNames:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="synforms: proc declaredNames(sx: Syntax): seq[string]" href="synforms.html#declaredNames%2CSyntax">synforms: proc declaredNames(sx: Syntax): seq[string]</a></li>
           </ul></dd>
 <dt><a name="defineMacro" href="#defineMacro"><span>defineMacro:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -101,7 +133,9 @@
           </ul></dd>
 <dt><a name="expandSource" href="#expandSource"><span>expandSource:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
-          data-doc-search-tag="compiler: proc expandSource(source, file: string; autoloadCore = true): seq[Syntax]" href="compiler.html#expandSource%2Cstring%2Cstring">compiler: proc expandSource(source, file: string; autoloadCore = true): seq[Syntax]</a></li>
+          data-doc-search-tag="compiler: proc expandSource(source, file: string; autoloadCore = true; importDir = &quot;&quot;): seq[
+    Syntax]" href="compiler.html#expandSource%2Cstring%2Cstring%2Cstring">compiler: proc expandSource(source, file: string; autoloadCore = true; importDir = &quot;&quot;): seq[
+    Syntax]</a></li>
           </ul></dd>
 <dt><a name="formName" href="#formName"><span>formName:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -127,6 +161,10 @@
 <li><a class="reference external"
           data-doc-search-tag="macros: proc hasMacroProc(env: MacroEnv; name: string): bool" href="macros.html#hasMacroProc%2CMacroEnv%2Cstring">macros: proc hasMacroProc(env: MacroEnv; name: string): bool</a></li>
           </ul></dd>
+<dt><a name="initSession" href="#initSession"><span>initSession:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: proc initSession(autoloadCore = true): ReplSession" href="repl.html#initSession">repl: proc initSession(autoloadCore = true): ReplSession</a></li>
+          </ul></dd>
 <dt><a name="isBlockLabel" href="#isBlockLabel"><span>isBlockLabel:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="syntax: proc isBlockLabel(sx: Syntax): bool" href="syntax.html#isBlockLabel%2CSyntax">syntax: proc isBlockLabel(sx: Syntax): bool</a></li>
@@ -134,6 +172,10 @@
 <dt><a name="isCaseValueList" href="#isCaseValueList"><span>isCaseValueList:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="syntax: proc isCaseValueList(sx: Syntax): bool" href="syntax.html#isCaseValueList%2CSyntax">syntax: proc isCaseValueList(sx: Syntax): bool</a></li>
+          </ul></dd>
+<dt><a name="isDeclForm" href="#isDeclForm"><span>isDeclForm:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="synforms: proc isDeclForm(sx: Syntax): bool" href="synforms.html#isDeclForm%2CSyntax">synforms: proc isDeclForm(sx: Syntax): bool</a></li>
           </ul></dd>
 <dt><a name="isDefvarForm" href="#isDefvarForm"><span>isDefvarForm:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -342,12 +384,18 @@
 <dt><a name="nflModule" href="#nflModule"><span>nflModule:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="compiler: macro nflModule(source: static[string]; file: static[string] = &quot;&lt;nflModule&gt;&quot;;
-          autoloadCore: static[bool] = true; emitNim: static[bool] = false): untyped" href="compiler.html#nflModule.m%2Cstatic%5Bstring%5D%2Cstatic%5Bstring%5D%2Cstatic%5Bbool%5D%2Cstatic%5Bbool%5D">compiler: macro nflModule(source: static[string]; file: static[string] = &quot;&lt;nflModule&gt;&quot;;
-          autoloadCore: static[bool] = true; emitNim: static[bool] = false): untyped</a></li>
+          autoloadCore: static[bool] = true; emitNim: static[bool] = false;
+          importDir: static[string] = &quot;&quot;): untyped" href="compiler.html#nflModule.m%2Cstatic%5Bstring%5D%2Cstatic%5Bstring%5D%2Cstatic%5Bbool%5D%2Cstatic%5Bbool%5D%2Cstatic%5Bstring%5D">compiler: macro nflModule(source: static[string]; file: static[string] = &quot;&lt;nflModule&gt;&quot;;
+          autoloadCore: static[bool] = true; emitNim: static[bool] = false;
+          importDir: static[string] = &quot;&quot;): untyped</a></li>
           </ul></dd>
 <dt><a name="nflNilDatum" href="#nflNilDatum"><span>nflNilDatum:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="runtime: proc nflNilDatum(): NflDatum" href="runtime.html#nflNilDatum">runtime: proc nflNilDatum(): NflDatum</a></li>
+          </ul></dd>
+<dt><a name="nflReplShow" href="#nflReplShow"><span>nflReplShow:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="runtime: template nflReplShow(body: untyped)" href="runtime.html#nflReplShow.t%2Cuntyped">runtime: template nflReplShow(body: untyped)</a></li>
           </ul></dd>
 <dt><a name="nflReversed" href="#nflReversed"><span>nflReversed:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -473,11 +521,17 @@
           </ul></dd>
 <dt><a name="raiseReaderError" href="#raiseReaderError"><span>raiseReaderError:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
-          data-doc-search-tag="diagnostics: proc raiseReaderError(span: Span; message: string)" href="diagnostics.html#raiseReaderError%2CSpan%2Cstring">diagnostics: proc raiseReaderError(span: Span; message: string)</a></li>
+          data-doc-search-tag="diagnostics: proc raiseReaderError(span: Span; message: string; incomplete = false)" href="diagnostics.html#raiseReaderError%2CSpan%2Cstring">diagnostics: proc raiseReaderError(span: Span; message: string; incomplete = false)</a></li>
           </ul></dd>
 <dt><a name="readAll" href="#readAll"><span>readAll:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="reader: proc readAll(source: string; file = &quot;&lt;input&gt;&quot;): seq[Syntax]" href="reader.html#readAll%2Cstring%2Cstring">reader: proc readAll(source: string; file = &quot;&lt;input&gt;&quot;): seq[Syntax]</a></li>
+          </ul></dd>
+<dt><a name="readEntry" href="#readEntry"><span>readEntry:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: proc readEntry(readLine: proc (prompt: string; line: var string): bool {.closure.};
+          prompt, continuePrompt: string): ReadResult" href="repl.html#readEntry%2Cproc%28string%2Cstring%29%2Cstring%2Cstring">repl: proc readEntry(readLine: proc (prompt: string; line: var string): bool {.closure.};
+          prompt, continuePrompt: string): ReadResult</a></li>
           </ul></dd>
 <dt><a name="ReaderError" href="#ReaderError"><span>ReaderError:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -487,9 +541,37 @@
 <li><a class="reference external"
           data-doc-search-tag="reader: proc readOne(source: string; file = &quot;&lt;input&gt;&quot;): Syntax" href="reader.html#readOne%2Cstring%2Cstring">reader: proc readOne(source: string; file = &quot;&lt;input&gt;&quot;): Syntax</a></li>
           </ul></dd>
+<dt><a name="ReadOutcome" href="#ReadOutcome"><span>ReadOutcome:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: enum ReadOutcome" href="repl.html#ReadOutcome">repl: enum ReadOutcome</a></li>
+          </ul></dd>
+<dt><a name="ReadResult" href="#ReadResult"><span>ReadResult:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: object ReadResult" href="repl.html#ReadResult">repl: object ReadResult</a></li>
+          </ul></dd>
 <dt><a name="renderSyntax" href="#renderSyntax"><span>renderSyntax:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="syntax: proc renderSyntax(sx: Syntax): string" href="syntax.html#renderSyntax%2CSyntax">syntax: proc renderSyntax(sx: Syntax): string</a></li>
+          </ul></dd>
+<dt><a name="ReplSession" href="#ReplSession"><span>ReplSession:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: object ReplSession" href="repl.html#ReplSession">repl: object ReplSession</a></li>
+          </ul></dd>
+<dt><a name="roBlank" href="#roBlank"><span>roBlank:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: ReadOutcome.roBlank" href="repl.html#roBlank">repl: ReadOutcome.roBlank</a></li>
+          </ul></dd>
+<dt><a name="roEof" href="#roEof"><span>roEof:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: ReadOutcome.roEof" href="repl.html#roEof">repl: ReadOutcome.roEof</a></li>
+          </ul></dd>
+<dt><a name="roError" href="#roError"><span>roError:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: ReadOutcome.roError" href="repl.html#roError">repl: ReadOutcome.roError</a></li>
+          </ul></dd>
+<dt><a name="roForm" href="#roForm"><span>roForm:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: ReadOutcome.roForm" href="repl.html#roForm">repl: ReadOutcome.roForm</a></li>
           </ul></dd>
 <dt><a name="sameSyntax" href="#sameSyntax"><span>sameSyntax:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -549,6 +631,14 @@
 <li><a class="reference external"
           data-doc-search-tag="syntax: enum SyntaxKind" href="syntax.html#SyntaxKind">syntax: enum SyntaxKind</a></li>
           </ul></dd>
+<dt><a name="transcriptText" href="#transcriptText"><span>transcriptText:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: proc transcriptText(session: ReplSession): string" href="repl.html#transcriptText%2CReplSession">repl: proc transcriptText(session: ReplSession): string</a></li>
+          </ul></dd>
+<dt><a name="tryAddInput" href="#tryAddInput"><span>tryAddInput:</span></a></dt><dd><ul class="simple">
+<li><a class="reference external"
+          data-doc-search-tag="repl: proc tryAddInput(session: var ReplSession; source: string; forms: seq[Syntax]): AddResult" href="repl.html#tryAddInput%2CReplSession%2Cstring%2Cseq%5BSyntax%5D">repl: proc tryAddInput(session: var ReplSession; source: string; forms: seq[Syntax]): AddResult</a></li>
+          </ul></dd>
 <dt><a name="validatePattern" href="#validatePattern"><span>validatePattern:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="synforms: proc validatePattern(pattern: Syntax; names: var seq[Syntax];
@@ -567,7 +657,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 06:59:38 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 08:24:16 UTC</small>
       </div>
     </div>
   </div>

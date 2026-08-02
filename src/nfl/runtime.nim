@@ -54,6 +54,30 @@ template nflStmt*(body: untyped) =
   else:
     body
 
+template nflReplShow*(body: untyped) =
+  ## Wraps a value expression the `nfl repl` (#14) reads at top level so its
+  ## result gets printed once, consistently. Same `compiles(discard body)`
+  ## dispatch as `nflStmt` above, so a void form (an assignment, a loop,
+  ## `discard`, …) simply runs for effect and prints nothing rather than
+  ## failing to compile — the REPL wraps every non-declaration top-level
+  ## form in this, not only ones already known to produce a value, and
+  ## relies on that fallback. `body` is only ever evaluated once at runtime:
+  ## the `compiles` check is purely a compile-time typecheck of a *second*,
+  ## never-executed copy of `body`, exactly as `nflStmt` relies on already.
+  ## `string`/`char` are `repr`'d (quoted) rather than `$`'d so a REPL user
+  ## can tell the string "1" apart from the int 1 in the output; every other
+  ## type prefers `$` where available, falling back to `repr`.
+  when compiles(block: discard body):
+    let nflReplShowValue = body
+    when nflReplShowValue is string or nflReplShowValue is char:
+      echo repr(nflReplShowValue)
+    elif compiles($nflReplShowValue):
+      echo $nflReplShowValue
+    else:
+      echo repr(nflReplShowValue)
+  else:
+    body
+
 template nflMatchArity*(x: untyped; n: static[int]; exact: static[bool]): bool =
   ## Arity test for a `match` (#13) vector pattern against a tuple, array, or
   ## seq scrutinee. Tuples have no `.len`, so `compiles(len(x))` picks

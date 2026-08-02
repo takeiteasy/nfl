@@ -44,6 +44,7 @@ nfl compile file.nfl   # compile to binary
 - [Macro System](man/macros.md) — writing and using macros
 - [Nim Interop](man/nim-interop.md) — calling Nim stdlib, dot notation, exports, pragmas
 - [CLI Reference](man/cli.md) — every `nfl` subcommand and flag
+- [The REPL](man/repl.md) — `nfl repl`'s interactive session model
 - [Package Layout](man/package-layout.md) — organizing application and library projects
 - API documentation is generated from source via `nimble docs` (see [man/api.md](man/api.md)) into `docs/`, served via GitHub Pages
 

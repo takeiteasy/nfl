@@ -1175,7 +1175,7 @@ throughout.
 | Alias | Expands to |
 |-------|------------|
 | `(defproc name ...)` / `(defun name ...)` | `(proc name ...)` |
-| `(defvar name ...)` | `(var name ...)` |
+| `(defvar name ...)` / `(defparameter name ...)` | `(var name ...)` |
 | `(defconst name value)` / `(defconstant name value)` | `(const name value)` |
 | `(deftype name ...)` | `(type name ...)` |
 | `(deftemplate name ...)` | `(template name ...)` |
@@ -1188,7 +1188,12 @@ throughout.
 respectively, matching Common Lisp's own names for "define a function"
 and "define a constant"; the rest (`template`/`iterator`/`func`/
 `converter` have no CL equivalent, and `var`/`type`/`method` already
-match CL's own names) just take a mechanical `def` prefix.
+match CL's own names) just take a mechanical `def` prefix. `defvar` and
+`defparameter` expand identically, both to `var`; their CL-style
+distinction (`defvar` sets a name only if unbound, `defparameter` always
+resets it) has no meaning in an ordinary compiled file and is only
+observable in [`nfl repl`](cli.md#repl), which re-enters the same name
+more than once.
 
 ```lisp
 (defun square ((x int)) (: int) (* x x))

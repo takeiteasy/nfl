@@ -65,11 +65,11 @@
     
     <div id="tocRoot"></div>
     
-    <p class="module-desc">The <tt class="docutils literal"><span class="pre"><span class="Identifier">nfl</span></span></tt> command-line entry point: parses <tt class="docutils literal"><span class="pre"><span class="Identifier">run</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">compile</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">check</span></span></tt>/ <tt class="docutils literal"><span class="pre"><span class="Identifier">macroexpand</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">shim</span></span></tt> invocations, drives the Nim compiler over a generated wrapper for <tt class="docutils literal"><span class="pre"><span class="Identifier">run</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">compile</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">check</span></span></tt>, drives the macro expander directly for <tt class="docutils literal"><span class="pre"><span class="Identifier">macroexpand</span></span></tt>, and writes a Nim-importable delegation module for <tt class="docutils literal"><span class="pre"><span class="Identifier">shim</span></span></tt>. See <tt class="docutils literal"><span class="pre"><span class="Identifier">man</span><span class="Operator">/</span><span class="Identifier">cli</span><span class="Operator">.</span><span class="Identifier">md</span></span></tt> for the full command/flag reference.</p>
+    <p class="module-desc">The <tt class="docutils literal"><span class="pre"><span class="Identifier">nfl</span></span></tt> command-line entry point: parses <tt class="docutils literal"><span class="pre"><span class="Identifier">run</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">compile</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">check</span></span></tt>/ <tt class="docutils literal"><span class="pre"><span class="Identifier">macroexpand</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">shim</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">repl</span></span></tt> invocations, drives the Nim compiler over a generated wrapper for <tt class="docutils literal"><span class="pre"><span class="Identifier">run</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">compile</span></span></tt>/<tt class="docutils literal"><span class="pre"><span class="Identifier">check</span></span></tt>, drives the macro expander directly for <tt class="docutils literal"><span class="pre"><span class="Identifier">macroexpand</span></span></tt>, writes a Nim-importable delegation module for <tt class="docutils literal"><span class="pre"><span class="Identifier">shim</span></span></tt>, and hands off to <tt class="docutils literal"><span class="pre"><span class="Identifier">repl</span><span class="Operator">.</span><span class="Identifier">nim</span></span></tt> for <tt class="docutils literal"><span class="pre"><span class="Identifier">repl</span></span></tt>. See <tt class="docutils literal"><span class="pre"><span class="Identifier">man</span><span class="Operator">/</span><span class="Identifier">cli</span><span class="Operator">.</span><span class="Identifier">md</span></span></tt> for the full command/flag reference.</p>
     <div class="section" id="6">
   <h1><a class="toc-backref" href="#6">Imports</a></h1>
   <dl class="item">
-    <a class="reference external" href="compiler.html">compiler</a>, <a class="reference external" href="diagnostics.html">diagnostics</a>, <a class="reference external" href="syntax.html">syntax</a>
+    <a class="reference external" href="compiler.html">compiler</a>, <a class="reference external" href="diagnostics.html">diagnostics</a>, <a class="reference external" href="reader.html">reader</a>, <a class="reference external" href="repl.html">repl</a>, <a class="reference external" href="syntax.html">syntax</a>
   </dl>
 </div>
 
@@ -79,7 +79,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 06:59:38 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2026-08-02 08:24:16 UTC</small>
       </div>
     </div>
   </div>

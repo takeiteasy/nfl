@@ -184,11 +184,28 @@ Use Nim's standard library directly:
 (echo (toUpperAscii "hello"))
 ```
 
+### Trying things interactively
+
+`nfl repl` starts an interactive session — type an expression, see its value:
+
+```sh
+$ nfl repl
+nfl> (+ 1 2)
+3
+nfl> (var name "NFL")
+nfl> (& "Hello, " (& name "!"))
+"Hello, NFL!"
+```
+
+See [The REPL](repl.md) for the full session model (definitions and
+mutation persist across inputs; `:quit` or Ctrl-D to exit).
+
 ## Next steps
 
 - [Language Reference](language-reference.md) — complete coverage of all forms
 - [Macro System](macros.md) — `defmacro`, quasiquote, and the built-in preamble macros
 - [Nim Interop](nim-interop.md) — dot notation, type annotations, exports, pragmas
 - [CLI Reference](cli.md) — every `nfl` subcommand and flag
+- [The REPL](repl.md) — the interactive session model
 - [Package Layout](package-layout.md) — organizing a real application or library project
 - Browse the `examples/` directory for runnable programs
