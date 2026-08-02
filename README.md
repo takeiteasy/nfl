@@ -1,8 +1,6 @@
 # Nim Flavoured Lisp
 
-> **WARNING**: Work in progress
-
-**NFL** is a Lisp dialect that compiles to Nim. It processes s-expressions into Nim AST via macros, giving you Lisp syntax with full access to the Nim ecosystem and type system. Inspired by [Hylang](https://hylang.org/).
+**NFL** is a Lisp dialect that compiles to Nim. It processes s-expressions into Nim AST via macros, giving you Lisp syntax with full access to the Nim ecosystem and type system. Inspired by [Hylang](https://hylang.org/). Docs are hosted [here](https://takeiteasy.github.io/nfl/), and release builds are [here](https://github.com/takeiteasy/nfl/tags).
 
 ## Quick example
 
