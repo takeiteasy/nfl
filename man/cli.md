@@ -1,6 +1,6 @@
 # CLI Reference
 
-`nfl <command> [flags] file.nfl`
+`nfl <command> [flags] file.nfl [-- nim-args...]`
 
 ## Commands
 
@@ -32,6 +32,32 @@ a binary. Fastest way to validate a file.
 ```sh
 nfl check hello.nfl
 ```
+
+### Passing arguments straight to `nim`
+
+Anything after a bare `--` on `run`/`compile`/`check` is forwarded verbatim
+to the underlying `nim c`/`check` invocation, after `nfl`'s own flags — so
+you can reach for any `nim` flag (memory manager, optimization level, panic
+mode, etc.) without `nfl` needing to know about it specifically:
+
+```sh
+nfl compile hello.nfl -- --mm:orc -d:release
+nfl run hello.nfl -- --mm:none        # no GC — see the caveat below
+```
+
+`--mm:none` disables the memory manager entirely: allocations are never
+freed, not garbage-collected less eagerly. It's appropriate for short-lived
+scripts or freestanding/embedded targets where the process exits before
+memory pressure matters, not as a general "GC optional" mode for long-running
+programs — a loop appending a few thousand items to a sequence for a couple
+of seconds visibly balloons to hundreds of MB of RSS under `--mm:none`
+versus single-digit MB under `--mm:orc` for the same program. `--mm:arc`
+(deterministic reference counting, no cycle collector, still frees memory)
+is the middle ground if you want lower GC overhead without leaking.
+
+`--` is only valid with `run`/`compile`/`check` — `macroexpand`, `shim`, and
+`repl` don't shell out to `nim` per invocation the same way, so there's
+nothing to forward the arguments to.
 
 ### `macroexpand`
 
@@ -93,6 +119,7 @@ Unlike every other command, `repl`'s file argument is optional.
 | `--out <path>` | `shim` | Write the generated module to `<path>` instead of the default `<input>.nim`. |
 | `--force` | `shim` | Overwrite the output path even if it's not a file `nfl shim` generated. |
 | `-h`, `--help` | (as first arg) | Print usage and exit 0. |
+| `-- <nim-args...>` | `run`, `compile`, `check` | Forwards everything after `--` straight to the underlying `nim` invocation (e.g. `--mm:orc`, `-d:release`). See [Passing arguments straight to `nim`](#passing-arguments-straight-to-nim) above. |
 
 ## Notes
 

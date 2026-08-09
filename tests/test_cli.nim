@@ -421,6 +421,36 @@ doAssert publicHappy != publicSad
     check output.contains("unknown flag: --bogus-flag")
 
   # ---------------------------------------------------------------------------
+  # -- nim arg passthrough
+  # ---------------------------------------------------------------------------
+
+  test "run passes args after -- straight through to nim":
+    let file = writeTempNfl("nfl cli nim passthrough", "passthrough.nfl", "(echo \"passthrough ok\")\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["run", file, "--", "--mm:orc"])
+    check exitCode == 0
+    check output.contains("passthrough ok")
+    check output.contains("mm: orc")
+
+  test "compile passes args after -- straight through to nim":
+    let file = writeTempNfl("nfl cli nim passthrough compile", "passthrough compile.nfl", "(echo \"compiled passthrough ok\")\n")
+    let outputExe = changeFileExt(file, ExeExt)
+    if fileExists(outputExe):
+      removeFile(outputExe)
+
+    let (output, compileExit) = runCommand(cliExe, @["compile", file, "--", "--mm:orc"])
+    check compileExit == 0
+    check output.contains("mm: orc")
+    check fileExists(outputExe)
+
+  test "-- passthrough is rejected for macroexpand/shim/repl":
+    let file = writeTempNfl("nfl cli nim passthrough invalid", "passthrough invalid.nfl", "(echo \"hi\")\n")
+
+    let (output, exitCode) = runCommand(cliExe, @["macroexpand", file, "--", "--mm:orc"])
+    check exitCode == 2
+    check output.contains("-- (nim arg passthrough) is only valid with run/compile/check")
+
+  # ---------------------------------------------------------------------------
   # shim (#53 partial): nim-importable modules
   # ---------------------------------------------------------------------------
 

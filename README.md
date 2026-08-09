@@ -45,6 +45,7 @@ nfl compile file.nfl   # compile to binary
 - [The REPL](man/repl.md) — `nfl repl`'s interactive session model
 - [Package Layout](man/package-layout.md) — organizing application and library projects
 - API documentation is generated from source via `nimble docs` (see [man/api.md](man/api.md)) into `docs/`, served via GitHub Pages
+- [Changelog](CHANGELOG.md) — notable changes per release
 
 ## Examples
 

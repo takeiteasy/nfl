@@ -35,6 +35,7 @@ type
     input: string
     inputDisplay: string
     outPath: string
+    nimArgs: seq[string]
 
   ParseResult = object
     ok: bool
@@ -58,8 +59,11 @@ proc nimStringLit(s: string): string =
   result.add '"'
 
 proc usage() =
-  stderr.writeLine "usage: nfl <run|compile|check|macroexpand|shim> [--no-core] [--emit nim] [--out path] [--force] file.nfl"
+  stderr.writeLine "usage: nfl <run|compile|check> [--no-core] [--emit nim] file.nfl [-- nim-args...]"
+  stderr.writeLine "       nfl <macroexpand|shim> [--no-core] [--out path] [--force] file.nfl"
   stderr.writeLine "       nfl repl [--no-core] [file.nfl]"
+  stderr.writeLine "Args after -- are passed straight through to the underlying `nim` invocation" &
+    " (run/compile/check only), e.g. `nfl compile file.nfl -- --mm:orc -d:release`."
 
 proc parseCommand(value: string): Command =
   case value
@@ -91,7 +95,12 @@ proc parseOptions(args: seq[string]): ParseResult =
   var i = 1
   while i < args.len:
     let arg = args[i]
-    if arg == "--no-core":
+    if arg == "--":
+      if result.options.command notin {cmdRun, cmdCompile, cmdCheck}:
+        return fail("nfl: -- (nim arg passthrough) is only valid with run/compile/check")
+      result.options.nimArgs = args[i + 1 .. ^1]
+      i = args.len
+    elif arg == "--no-core":
       result.options.autoloadCore = false
       inc i
     elif arg == "--force":
@@ -197,6 +206,7 @@ proc nimArgsFor(options: CliOptions; wrapper: string): seq[string] =
   let srcPath = repoSrcPath()
   if srcPath.len > 0:
     result.add "--path:" & srcPath
+  result.add options.nimArgs
   result.add wrapper
 
 proc macroexpand(options: CliOptions): int =
