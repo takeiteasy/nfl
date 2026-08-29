@@ -259,7 +259,7 @@ proc isDeclForm*(sx: Syntax): bool =
   ## or void statement — never wrapped for value printing — rather than a
   ## printable expression. Covers every head `lowerStmt`/`emitStmt` special-
   ## case (`declFormHeads`), plus a `block` when any of its direct children
-  ## is itself a decl form: `defclass` (preamble.nfl) expands to `(block
+  ## is itself a decl form: `defclass` (preamble.lfn) expands to `(block
   ## (type …) (proc …) …)`, which must stay a declaration, while a `progn`-
   ## style `(block expr)` wrapping a single printable value should not.
   if sx.kind != sxList or sx.items.len == 0 or sx.items[0].kind != sxSymbol:

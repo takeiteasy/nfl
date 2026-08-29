@@ -4,14 +4,14 @@ import std/os
 import std/tables
 import std/json
 
-version       = "1.0.2"
+version       = "1.0.3"
 author        = "George Watson"
-description   = "NFL: Nim Flavoured Lisp"
+description   = "LFN: Lisp Flavoured Nim"
 license       = "GPL-3.0-or-later"
 srcDir        = "src"
 installExt    = @["nim"]
 binDir        = "bin"
-namedBin      = {"nfl/cli": "nfl"}.toTable
+namedBin      = {"lfn/cli": "lfn"}.toTable
 
 # Dependencies
 
@@ -27,7 +27,7 @@ requires "nim >= 2.2.4"
 
 proc compilerInfo(): tuple[nimr, version: string] =
   ## Resolve the Nim compiler prefix dir and version via `nim dump`.
-  let tmp = getTempDir() / "nfl-dochack"
+  let tmp = getTempDir() / "lfn-dochack"
   exec "mkdir -p " & quoteShell(tmp)
   let src = tmp / "nimdump.nim"
   let json = tmp / "nimdump.json"
@@ -44,7 +44,7 @@ proc ensureDochack(force = false) =
   if fileExists(js) and not force:
     echo "  dochack.js already present at " & js
     return
-  let tmp = getTempDir() / "nfl-dochack"
+  let tmp = getTempDir() / "lfn-dochack"
   exec "mkdir -p " & quoteShell(tmp)
   let base = "https://raw.githubusercontent.com/nim-lang/Nim/v" & version
   echo "  fetching dochack sources for Nim " & version
@@ -65,7 +65,7 @@ task test, "Run tests":
   exec "nim c --path:src -r tests/test_lower.nim"
   exec "nim c --path:src -r tests/test_backend.nim"
   exec "nim c --path:src -r tests/test_stdlib.nim"
-  exec "nim c --path:src --out:src/nfl/nfl src/nfl/cli.nim"
+  exec "nim c --path:src --out:src/lfn/lfn src/lfn/cli.nim"
   exec "nim c --path:src -r tests/test_cli.nim"
   exec "nim c --path:src -r tests/test_repl.nim"
 
@@ -80,9 +80,9 @@ task docs, "Generate HTML API documentation into docs/ (served via GitHub Pages)
   # Output goes straight to docs/ (not docs/api/) since GitHub Pages serves
   # a repo's /docs directory directly; prose guides live under /man instead.
   ensureDochack()
-  exec "nim doc --project --index:on --path:src --out:docs src/nfl/cli.nim"
+  exec "nim doc --project --index:on --path:src --out:docs src/lfn/cli.nim"
   var links = ""
-  for f in listFiles("src/nfl"):
+  for f in listFiles("src/lfn"):
     if f.splitFile.ext == ".nim":
       let name = f.splitFile.name
       links.add "    <li><a href=\"" & name & ".html\">" & name & "</a></li>\n"
@@ -91,11 +91,11 @@ task docs, "Generate HTML API documentation into docs/ (served via GitHub Pages)
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NFL API documentation</title>
+  <title>LFN API documentation</title>
   <link rel="stylesheet" href="nimdoc.out.css">
 </head>
 <body>
-  <h1>NFL API documentation</h1>
+  <h1>LFN API documentation</h1>
   <p>Each module page has a full-text search box; you can also browse the
     <a href="theindex.html">complete symbol index</a>.</p>
   <ul>

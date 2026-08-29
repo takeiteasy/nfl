@@ -2,16 +2,16 @@ import std/os
 import std/strutils
 import std/unittest
 
-import nfl/compiler
-import nfl/diagnostics
-import nfl/expand
-import nfl/macros
-import nfl/reader
-import nfl/syntax
+import lfn/compiler
+import lfn/diagnostics
+import lfn/expand
+import lfn/macros
+import lfn/reader
+import lfn/syntax
 
 proc expandOne(source: string): Syntax =
   let env = newMacroEnv()
-  let forms = expandModule(readAll(source, "expand-test.nfl"), env)
+  let forms = expandModule(readAll(source, "expand-test.lfn"), env)
   check forms.len == 1
   forms[0]
 
@@ -20,7 +20,7 @@ proc expectExpandError(source, messagePart: string) =
     discard expandOne(source)
     fail()
   except CompilerError as err:
-    check err.diagnostic.span.file == "expand-test.nfl"
+    check err.diagnostic.span.file == "expand-test.lfn"
     check err.diagnostic.message.contains(messagePart)
 
 proc expectCoreExpandError(source, messagePart: string) =
@@ -28,7 +28,7 @@ proc expectCoreExpandError(source, messagePart: string) =
   ## default) — needed for anything exercising a preamble macro, like
   ## `defclass`, that `expandOne`'s bare `newMacroEnv()` never registers.
   try:
-    discard expandSource(source, "expand-test.nfl")
+    discard expandSource(source, "expand-test.lfn")
     fail()
   except CompilerError as err:
     check err.diagnostic.message.contains(messagePart)
@@ -162,7 +162,7 @@ suite "macro expansion":
 """
       fail()
     except CompilerError as err:
-      check err.diagnostic.span.file == "expand-test.nfl"
+      check err.diagnostic.span.file == "expand-test.lfn"
       check err.diagnostic.message.contains("error expanding macro nope")
       check err.diagnostic.message.contains("bad macro")
 
@@ -394,9 +394,9 @@ suite "macro expansion":
     let defForms = expandModule(readAll("""
 (defmacro-proc loop (n) (if (= n 0) 0 (loop (- n 1))))
 (defmacro run (n) (loop n))
-""", "expand-test.nfl"), env)
+""", "expand-test.lfn"), env)
     check defForms.len == 0
-    let overflowCall = readAll("(run 1000)", "expand-test.nfl")[0]
+    let overflowCall = readAll("(run 1000)", "expand-test.lfn")[0]
     var raised = false
     try:
       discard expandExpr(env, overflowCall)
@@ -404,7 +404,7 @@ suite "macro expansion":
       raised = true
       check err.diagnostic.message.contains("macro-time procedure recursion depth exceeded")
     check raised
-    let legalCall = readAll("(run 150)", "expand-test.nfl")[0]
+    let legalCall = readAll("(run 150)", "expand-test.lfn")[0]
     check expandExpr(env, legalCall).renderSyntax() == "0"
 
   test "defmacro-proc is rejected in expression position":
@@ -448,7 +448,7 @@ suite "macro expansion":
     expectCoreExpandError("(defclass Bad (A B) ((name string)))", "defclass supports a single superclass")
 
   test ":accessor generates a getter and a setter; :reader generates a getter only (#75)":
-    let forms = expandSource("(defclass C () ((n string :accessor cN) (m string :reader cM)))", "expand-test.nfl")
+    let forms = expandSource("(defclass C () ((n string :accessor cN) (m string :reader cM)))", "expand-test.lfn")
     let rendered = renderForms(forms)
     check rendered.contains("proc cN ")
     check rendered.contains("proc cN= ")
@@ -456,13 +456,13 @@ suite "macro expansion":
     check not rendered.contains("cM=")
 
   test ":initform is accepted and lowers into the object field's default slot (#78)":
-    let forms = expandSource("""(defclass C () ((n string :initform "anon") (m int)))""", "expand-test.nfl")
+    let forms = expandSource("""(defclass C () ((n string :initform "anon") (m int)))""", "expand-test.lfn")
     let rendered = renderForms(forms)
     check rendered.contains("""(n string "anon")""")
     check rendered.contains("(m int)")
 
   test ":initform composes with :accessor (#78)":
-    let forms = expandSource("""(defclass C () ((n string :accessor cN :initform "anon")))""", "expand-test.nfl")
+    let forms = expandSource("""(defclass C () ((n string :accessor cN :initform "anon")))""", "expand-test.lfn")
     let rendered = renderForms(forms)
     check rendered.contains("""(n string "anon")""")
     check rendered.contains("proc cN ")
@@ -477,22 +477,22 @@ suite "macro expansion":
     expectCoreExpandError("(defclass Bad () ((name string :foo bar :initform \"a\")))", "defclass: unknown slot option :foo")
 
   test ":initarg lowers into a pragma'd field carrying the keyword's text (#85)":
-    let forms = expandSource("""(defclass C () ((n string :initarg :nom) (m int)))""", "expand-test.nfl")
+    let forms = expandSource("""(defclass C () ((n string :initarg :nom) (m int)))""", "expand-test.lfn")
     let rendered = renderForms(forms)
-    check rendered.contains("""(n (pragma (: nflInitarg ":nom")) string)""")
+    check rendered.contains("""(n (pragma (: lfnInitarg ":nom")) string)""")
     check rendered.contains("(m int)")
 
   test ":initarg composes with :accessor and :initform (#85)":
     let forms = expandSource(
-      """(defclass C () ((n string :accessor cN :initarg :nom :initform "anon")))""", "expand-test.nfl")
+      """(defclass C () ((n string :accessor cN :initarg :nom :initform "anon")))""", "expand-test.lfn")
     let rendered = renderForms(forms)
-    check rendered.contains("""(n (pragma (: nflInitarg ":nom")) string "anon")""")
+    check rendered.contains("""(n (pragma (: lfnInitarg ":nom")) string "anon")""")
     check rendered.contains("proc cN ")
     check rendered.contains("proc cN= ")
 
-  test "make-instance expands to the nflMakeInstance Nim macro (#85)":
-    let forms = expandSource("""(make-instance C (n "x"))""", "expand-test.nfl")
-    check renderForms(forms) == """(nflMakeInstance C (n "x"))"""
+  test "make-instance expands to the lfnMakeInstance Nim macro (#85)":
+    let forms = expandSource("""(make-instance C (n "x"))""", "expand-test.lfn")
+    check renderForms(forms) == """(lfnMakeInstance C (n "x"))"""
 
   test "rejects a duplicate :initarg on one defclass slot (#85)":
     expectCoreExpandError(
@@ -753,13 +753,13 @@ suite "macro expansion":
 
 suite "golden macro expansion":
   test "core macro fixtures":
-    for sourcePath in ["tests/golden/core_macros.nfl",
-                       "tests/golden/escaped_symbols.nfl",
-                       "tests/golden/hygiene.nfl",
-                       "tests/golden/destructuring.nfl",
-                       "tests/golden/macro_procs.nfl",
-                       "tests/golden/clos.nfl",
-                       "tests/golden/static_when.nfl"]:
+    for sourcePath in ["tests/golden/core_macros.lfn",
+                       "tests/golden/escaped_symbols.lfn",
+                       "tests/golden/hygiene.lfn",
+                       "tests/golden/destructuring.lfn",
+                       "tests/golden/macro_procs.lfn",
+                       "tests/golden/clos.lfn",
+                       "tests/golden/static_when.lfn"]:
       let expectedPath = sourcePath.changeFileExt("out")
       let actual = expandSource(readFile(sourcePath), sourcePath).renderForms()
       check actual.strip() == readFile(expectedPath).strip()

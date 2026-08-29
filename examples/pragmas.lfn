@@ -1,4 +1,4 @@
-; Demonstrate Nim pragma annotations in NFL.
+; Demonstrate Nim pragma annotations in LFN.
 ;
 ; Pragmas are written as `{.name.}` or `{.name1, name2.}` and placed
 ; immediately after the declaration name they annotate.

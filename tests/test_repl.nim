@@ -1,4 +1,4 @@
-## End-to-end tests for `nfl repl` (#14), driving the built `src/nfl/nfl`
+## End-to-end tests for `lfn repl` (#14), driving the built `src/lfn/lfn`
 ## binary with piped stdin — unlike `test_cli.nim`'s `runCommand`, these
 ## need to *write* to the child's stdin and close it, since the REPL reads
 ## interactively and only exits on EOF.
@@ -9,13 +9,13 @@ import std/streams
 import std/strutils
 import std/unittest
 
-let cliExe = getCurrentDir() / "src" / "nfl" / "nfl"
+let cliExe = getCurrentDir() / "src" / "lfn" / "lfn"
 
 proc runRepl(lines: seq[string]; extraArgs: seq[string] = @[]; workingDir = ""):
     tuple[output: string; exitCode: int] =
-  ## Runs `nfl repl <extraArgs>`, feeding `lines` to stdin (one per line,
+  ## Runs `lfn repl <extraArgs>`, feeding `lines` to stdin (one per line,
   ## newline-joined) and closing stdin — the REPL reads until EOF, which is
-  ## also what a real `nfl repl` session sees on Ctrl-D, so this doubles as
+  ## also what a real `lfn repl` session sees on Ctrl-D, so this doubles as
   ## the "exits 0 on EOF" check every test here implicitly exercises.
   var options = {poStdErrToStdOut}
   let process =
@@ -31,13 +31,13 @@ proc runRepl(lines: seq[string]; extraArgs: seq[string] = @[]; workingDir = ""):
   result.exitCode = process.waitForExit()
   process.close()
 
-proc writeTempNfl(dirName, fileName, source: string): string =
+proc writeTempLfn(dirName, fileName, source: string): string =
   let dir = getTempDir() / dirName
   createDir(dir)
   result = dir / fileName
   writeFile(result, source)
 
-suite "nfl repl":
+suite "lfn repl":
   test "exits 0 on EOF with no input":
     let (output, exitCode) = runRepl(@[])
     check exitCode == 0
@@ -152,19 +152,19 @@ suite "nfl repl":
     check lines[^1] == "20"
 
   test "a relative import resolves against the launch directory, not the temp session dir":
-    # `nfl repl` itself must keep running with its cwd at the repo root (not
+    # `lfn repl` itself must keep running with its cwd at the repo root (not
     # some other `workingDir`) so `nim`'s own `--path:src` resolution
-    # (`repoSrcPath`, cli.nim) still finds `nfl/compiler` — a pre-existing
-    # dev-checkout constraint shared by every other `nfl` subcommand, not
+    # (`repoSrcPath`, cli.nim) still finds `lfn/compiler` — a pre-existing
+    # dev-checkout constraint shared by every other `lfn` subcommand, not
     # something particular to `repl`. The fix under test (`importDir` on
-    # `nflModule`, compiler.nim) is exercised regardless: absent it, this
+    # `lfnModule`, compiler.nim) is exercised regardless: absent it, this
     # relative import would resolve against the session's temp dir instead
     # of the repo root and fail to find the file at all.
-    let helper = getCurrentDir() / "test_repl_relative_import_helper.nfl"
+    let helper = getCurrentDir() / "test_repl_relative_import_helper.lfn"
     writeFile(helper, "(proc bump* ((n int)) (: int) (+ n 1))\n")
     defer: removeFile(helper)
     let (output, exitCode) = runRepl(
-      @["(import ./test_repl_relative_import_helper.nfl)", "(bump 41)"])
+      @["(import ./test_repl_relative_import_helper.lfn)", "(bump 41)"])
     check exitCode == 0
     check output.strip() == "42"
 
@@ -174,10 +174,10 @@ suite "nfl repl":
     check output.contains("<repl:2>(1,")
     # The primary error location is rewritten away from the on-disk
     # session file entirely; a secondary Nim instantiation-trace line (from
-    # `wrapper.nim`, the tiny generated entry point, not `session.nfl`) may
+    # `wrapper.nim`, the tiny generated entry point, not `session.lfn`) may
     # still reference the temp dir directly — see `repl.nim`'s
     # `rewriteDiagnostics` doc comment.
-    check not output.contains("session.nfl")
+    check not output.contains("session.lfn")
 
   test ":quit stops the loop without waiting for EOF":
     let (output, exitCode) = runRepl(@["1", ":quit", "2"])
@@ -200,7 +200,7 @@ suite "nfl repl":
     check output.contains("undeclared")
 
   test "an optional preload file is loaded as the first transcript entry":
-    let file = writeTempNfl("nfl repl preload", "preload.nfl", "(var x 41)\n")
+    let file = writeTempLfn("lfn repl preload", "preload.lfn", "(var x 41)\n")
     let (output, exitCode) = runRepl(@["(+ x 1)"], extraArgs = @[file])
     check exitCode == 0
     check output.strip() == "42"

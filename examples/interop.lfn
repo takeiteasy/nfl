@@ -22,12 +22,12 @@
 
 ; Custom operator proc (#29) — `|op|` names a proc after the operator
 ; symbol; a trailing `*` exports it. `+*` here defines an exported `+`
-; overload for `Meters`, callable both from NFL (prefix, like any call) and
+; overload for `Meters`, callable both from LFN (prefix, like any call) and
 ; infix from plain Nim.
 (proc +* ((a Meters) (b Meters)) (: Meters)
   (Meters (+ (float a) (float b))))
 
-(var names (@ ["nfl" "macro" "nim"]))
+(var names (@ ["lfn" "macro" "nim"]))
 (var currentDir (getCurrentDir))
 (var baseName (lastPathPart currentDir))
 

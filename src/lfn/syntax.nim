@@ -297,7 +297,7 @@ proc renderSymbol(value: string; escaped = false): string =
   result.add "|"
 
 proc renderSyntax*(sx: Syntax): string =
-  ## Renders `sx` back to NFL source text, escaping symbols and strings as
+  ## Renders `sx` back to LFN source text, escaping symbols and strings as
   ## needed so the result reads back to an equivalent `Syntax` tree.
   case sx.kind
   of sxNil:

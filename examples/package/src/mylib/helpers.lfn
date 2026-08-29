@@ -1,0 +1,5 @@
+; Helper procs, imported by util.lfn below via (import ./helpers.lfn).
+; Not compiled to its own Nim module directly -- util.lfn's shim pulls it in
+; transitively through the inline-include mechanism (see man/nim-interop.md).
+(proc bump* ((n int)) (: int)
+  (+ n 1))

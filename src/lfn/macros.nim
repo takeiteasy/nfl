@@ -1,7 +1,7 @@
 ## Macro definitions and the environment (`MacroEnv`) they're registered in,
 ## shared by the macro expander (`expand.nim`) — parameter shapes for
 ## `&optional`/`&rest`/`&body`/`&key`, gensym/hygiene id allocation, and the
-## import-cycle tracking used while inlining `.nfl` files.
+## import-cycle tracking used while inlining `.lfn` files.
 
 import std/options
 import std/sets
@@ -41,7 +41,7 @@ type
                              ## against unbounded evaluator recursion, since
                              ## `maxExpansionDepth` only counts expansions
     gensymCounter*: int
-    includedFiles*: HashSet[string]  ## resolved paths of .nfl files already
+    includedFiles*: HashSet[string]  ## resolved paths of .lfn files already
                                       ## inlined (#10) — a second `(import
                                       ## ...)` of the same file is a no-op so
                                       ## diamond imports don't duplicate decls

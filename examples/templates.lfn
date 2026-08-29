@@ -1,4 +1,4 @@
-; Demonstrates Nim template definitions from NFL.
+; Demonstrates Nim template definitions from LFN.
 ; Templates are zero-cost compile-time abstractions that expand inline.
 
 ; A template with a typed parameter — wraps a value in a block with logging.

@@ -1,4 +1,4 @@
-; Demonstrates Nim `func` and `converter` definitions from NFL.
+; Demonstrates Nim `func` and `converter` definitions from LFN.
 ; `func` is shorthand for a side-effect-free `proc` (`{.noSideEffect.}`).
 ; `converter` defines a callable conversion from one type to another.
 ; Converters must declare exactly one parameter and an explicit return

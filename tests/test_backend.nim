@@ -2,7 +2,7 @@ import std/os
 import std/strutils
 import std/unittest
 
-import nfl/compiler
+import lfn/compiler
 
 type ImportedPerson = object
   name: string
@@ -38,82 +38,82 @@ proc importedPersonAge(p: ImportedPerson): int =
 proc describePerson(name: string; age: int): string =
   name & ":" & $age
 
-suite "nfl backend":
+suite "lfn backend":
   test "operator call":
-    check nflExpr"(+ 1 2)" == 3
+    check lfnExpr"(+ 1 2)" == 3
 
   test "if expression":
-    check nflExpr"(if true 1 2)" == 1
+    check lfnExpr"(if true 1 2)" == 1
 
   test "let expression":
-    check nflExpr"(let ((x 1)) (+ x 2))" == 3
+    check lfnExpr"(let ((x 1)) (+ x 2))" == 3
 
   test "typed let expression":
-    check nflExpr"(let (((x int) 1)) (+ x 2))" == 3
+    check lfnExpr"(let (((x int) 1)) (+ x 2))" == 3
 
   test "list/tuple destructuring binding (#12)":
-    check nflExpr"(let (([a b] (@ [1 2]))) (+ a b))" == 3
-    check nflExpr"(let (([a b] [1 2])) (+ a b))" == 3
+    check lfnExpr"(let (([a b] (@ [1 2]))) (+ a b))" == 3
+    check lfnExpr"(let (([a b] [1 2])) (+ a b))" == 3
 
   test "rest-capture destructuring":
-    check nflExpr"(let (([head & rest] (@ [1 2 3]))) head)" == 1
-    check nflExpr"(let (([head & rest] (@ [1 2 3]))) (. rest len))" == 2
+    check lfnExpr"(let (([head & rest] (@ [1 2 3]))) head)" == 1
+    check lfnExpr"(let (([head & rest] (@ [1 2 3]))) (. rest len))" == 2
 
   test "nested destructuring":
-    check nflExpr"(let (([[a b] [c d]] [[1 2] [3 4]])) (+ (+ a b) (+ c d)))" == 10
+    check lfnExpr"(let (([[a b] [c d]] [[1 2] [3 4]])) (+ (+ a b) (+ c d)))" == 10
 
   test "destructuring skips _ placeholders":
-    check nflExpr"(let (([_ b] [1 2])) b)" == 2
+    check lfnExpr"(let (([_ b] [1 2])) b)" == 2
 
   test "mutable destructuring binding":
-    check nflExpr"(var (([a b] [1 2])) (set! a (+ a 10)) (+ a b))" == 13
+    check lfnExpr"(var (([a b] [1 2])) (set! a (+ a 10)) (+ a b))" == 13
 
   test "object destructuring binding (#47)":
-    check nflExpr"""(let ((p (new ImportedPerson (name "Ada") (age 36))))
+    check lfnExpr"""(let ((p (new ImportedPerson (name "Ada") (age 36))))
       (let (([:name n :age a] p)) (& n ($ a))))""" == "Ada36"
 
   test "object destructuring shorthand (#47)":
-    check nflExpr"""(let ((p (new ImportedPerson (name "Ada") (age 36))))
+    check lfnExpr"""(let ((p (new ImportedPerson (name "Ada") (age 36))))
       (let (([:name :age] p)) (& name ($ age))))""" == "Ada36"
 
   test "nested object pattern inside a positional pattern (#47)":
-    check nflExpr"""(let ((p (new ImportedPerson (name "Ada") (age 36))))
+    check lfnExpr"""(let ((p (new ImportedPerson (name "Ada") (age 36))))
       (let (([[:age a]] [p])) a))""" == 36
 
   test "destructuring in a var section (#47)":
-    check nflExpr"""(block
+    check lfnExpr"""(block
       (var (([a b] [1 2])))
       (set! a (+ a 10))
       (+ a b))""" == 13
 
   test "destructuring in a const section (#47)":
-    check nflExpr"(block (const (([a b] [1 2]))) (+ a b))" == 3
+    check lfnExpr"(block (const (([a b] [1 2]))) (+ a b))" == 3
 
   test "typed destructuring proc parameter (#47)":
-    check nflExpr"""(block
+    check lfnExpr"""(block
       (type IntPair (tuple (x int) (y int)))
       (proc addPair (([x y] IntPair)) (: int) (+ x y))
       (addPair (tuple-new IntPair (x 5) (y 1))))""" == 6
 
   test "destructuring proc parameter with an object pattern (#47)":
-    check nflExpr"""(block
+    check lfnExpr"""(block
       (proc personAge (([:age a] ImportedPerson)) (: int) a)
       (personAge (new ImportedPerson (name "Ada") (age 36))))""" == 36
 
   test "typed destructuring do parameter (#47)":
-    check nflExpr"""(block
+    check lfnExpr"""(block
       (type IntPair (tuple (x int) (y int)))
       (var f (do (([a b] IntPair)) (: int) (+ a b)))
       (f (tuple-new IntPair (x 36) (y 4))))""" == 40
 
   test "typed destructuring template parameter (#47)":
-    check nflExpr"""(block
+    check lfnExpr"""(block
       (type IntPair (tuple (x int) (y int)))
       (template addPair (([x y] IntPair)) (: int) (+ x y))
       (addPair (tuple-new IntPair (x 5) (y 2))))""" == 7
 
   test "destructuring iterator parameter preserves break/yield (#47)":
-    check nflExpr"""(block
+    check lfnExpr"""(block
       (type IntPair (tuple (x int) (y int)))
       (iterator upTo (([lo hi] IntPair)) (: int)
         (var i lo)
@@ -126,77 +126,77 @@ suite "nfl backend":
       total)""" == 10
 
   test "var and set expression":
-    check nflExpr"(var ((x 1)) (set! x (+ x 2)) x)" == 3
+    check lfnExpr"(var ((x 1)) (set! x (+ x 2)) x)" == 3
 
   test "typed var and set expression":
-    check nflExpr"(var (((x int) 1)) (set! x (+ x 2)) x)" == 3
+    check lfnExpr"(var (((x int) 1)) (set! x (+ x 2)) x)" == 3
 
   test "do expression":
-    let inc = nflExpr"(do ((x int)) (+ x 1))"
+    let inc = lfnExpr"(do ((x int)) (+ x 1))"
     check inc(2) == 3
 
   test "do expression with explicit return type (#40)":
-    let doubler = nflExpr"(do ((x int)) (: int) (* x 2))"
+    let doubler = lfnExpr"(do ((x int)) (: int) (* x 2))"
     check doubler(21) == 42
 
   test "do expression with implicit result (#40)":
-    let five = nflExpr"(do () (: int) (set! result 5))"
+    let five = lfnExpr"(do () (: int) (set! result 5))"
     check five() == 5
 
   test "do expression accumulating into result then returning explicitly (#40)":
-    let sumTo = nflExpr"""(do ((n int)) (: int)
+    let sumTo = lfnExpr"""(do ((n int)) (: int)
       (set! result 0)
       (set! result (+ result n))
       (return result))"""
     check sumTo(5) == 5
 
   test "autoloaded core macros":
-    check nflExpr"(and true true)" == true
-    check nflExpr"(or false true)" == true
+    check lfnExpr"(and true true)" == true
+    check lfnExpr"(or false true)" == true
 
   test "autoload can be disabled for expressions":
-    check compiles(nflExpr("(+ 1 2)", autoloadCore = false))
+    check compiles(lfnExpr("(+ 1 2)", autoloadCore = false))
 
   test "field and indexing interop":
-    check nflExpr"(let ((xs [10 20 30])) (. xs len))" == 3
-    check nflExpr"(let ((xs [10 20 30])) xs.len)" == 3
-    check nflExpr"(let ((xs [10 20 30])) (at xs 1))" == 20
-    check nflExpr"(let ((xs [10 20 30])) (|[]| xs 1))" == 20
+    check lfnExpr"(let ((xs [10 20 30])) (. xs len))" == 3
+    check lfnExpr"(let ((xs [10 20 30])) xs.len)" == 3
+    check lfnExpr"(let ((xs [10 20 30])) (at xs 1))" == 20
+    check lfnExpr"(let ((xs [10 20 30])) (|[]| xs 1))" == 20
 
   test "constructs imported Nim objects":
-    check nflExpr("""(let ((p (new ImportedPerson (name "Ada") (age 36)))) (importedPersonAge p))""") == 36
+    check lfnExpr("""(let ((p (new ImportedPerson (name "Ada") (age 36)))) (importedPersonAge p))""") == 36
 
   test "passes Nim named arguments to ordinary calls":
-    check nflExpr("""(describePerson (: age 36) (: name "Ada"))""") == "Ada:36"
+    check lfnExpr("""(describePerson (: age 36) (: name "Ada"))""") == "Ada:36"
 
   test "autoloaded sequence helper macros":
-    check nflExpr"(let ((xs [10 20 30])) (first xs))" == 10
-    check nflExpr"(let ((xs [10 20 30])) (first (rest xs)))" == 20
-    check nflExpr"(let ((xs [10 20 30])) (empty? xs))" == false
-    check nflExpr"(let ((xs (@ [10 20])) (ys (@ [30 40]))) (at (append xs ys) 2))" == 30
+    check lfnExpr"(let ((xs [10 20 30])) (first xs))" == 10
+    check lfnExpr"(let ((xs [10 20 30])) (first (rest xs)))" == 20
+    check lfnExpr"(let ((xs [10 20 30])) (empty? xs))" == false
+    check lfnExpr"(let ((xs (@ [10 20])) (ys (@ [30 40]))) (at (append xs ys) 2))" == 30
 
   test "runtime quote returns public datum scalars":
-    let nilDatum = nflExpr"'nil"
+    let nilDatum = lfnExpr"'nil"
     check nilDatum.kind == ndNil
 
-    let boolDatum = nflExpr"'false"
+    let boolDatum = lfnExpr"'false"
     check boolDatum.kind == ndBool
     check boolDatum.boolVal == false
 
-    let intDatum = nflExpr"'42"
+    let intDatum = lfnExpr"'42"
     check intDatum.kind == ndInt
     check intDatum.intVal == 42
 
-    let stringDatum = nflExpr("'\"hello\"")
+    let stringDatum = lfnExpr("'\"hello\"")
     check stringDatum.kind == ndString
     check stringDatum.strVal == "hello"
 
-    let symbolDatum = nflExpr"'alpha"
+    let symbolDatum = lfnExpr"'alpha"
     check symbolDatum.kind == ndSymbol
     check symbolDatum.sym == "alpha"
 
   test "runtime quote preserves nested list and vector structure":
-    let datum = nflExpr"'(alpha [1 beta] (gamma nil))"
+    let datum = lfnExpr"'(alpha [1 beta] (gamma nil))"
     check datum.kind == ndList
     check datum.items.len == 3
     check datum.items[0].kind == ndSymbol
@@ -210,115 +210,115 @@ suite "nfl backend":
     check datum.items[2].items[0].sym == "gamma"
     check datum.items[2].items[1].kind == ndNil
 
-suite "nfl backend — for / case / raise / try":
+suite "lfn backend — for / case / raise / try":
   test "for loop sums elements":
-    check nflExpr"(var ((acc 0)) (for (x [1 2 3]) (set! acc (+ acc x))) acc)" == 6
+    check lfnExpr"(var ((acc 0)) (for (x [1 2 3]) (set! acc (+ acc x))) acc)" == 6
 
   test "for loop over range":
-    check nflExpr"(var ((acc 0)) (for (i (.. 1 5)) (set! acc (+ acc i))) acc)" == 15
+    check lfnExpr"(var ((acc 0)) (for (i (.. 1 5)) (set! acc (+ acc i))) acc)" == 15
 
   test "case expression returns correct branch":
-    check nflExpr"(case 0 (of 0 10) (of 1 20) (else 99))" == 10
-    check nflExpr"(case 1 (of 0 10) (of 1 20) (else 99))" == 20
-    check nflExpr"(case 2 (of 0 10) (of 1 20) (else 99))" == 99
+    check lfnExpr"(case 0 (of 0 10) (of 1 20) (else 99))" == 10
+    check lfnExpr"(case 1 (of 0 10) (of 1 20) (else 99))" == 20
+    check lfnExpr"(case 2 (of 0 10) (of 1 20) (else 99))" == 99
 
   test "case expression with multi-value of branch":
-    check nflExpr"(case 2 (of (1 2 3) 10) (else 0))" == 10
-    check nflExpr"(case 4 (of (1 2 3) 10) (else 0))" == 0
+    check lfnExpr"(case 2 (of (1 2 3) 10) (else 0))" == 10
+    check lfnExpr"(case 4 (of (1 2 3) 10) (else 0))" == 0
 
   test "case expression with range of branch":
-    check nflExpr"(case 5 (of (.. 1 9) 1) (else 0))" == 1
-    check nflExpr"(case 1 (of (.. 1 9) 1) (else 0))" == 1
-    check nflExpr"(case 9 (of (.. 1 9) 1) (else 0))" == 1
-    check nflExpr"(case 10 (of (.. 1 9) 1) (else 0))" == 0
+    check lfnExpr"(case 5 (of (.. 1 9) 1) (else 0))" == 1
+    check lfnExpr"(case 1 (of (.. 1 9) 1) (else 0))" == 1
+    check lfnExpr"(case 9 (of (.. 1 9) 1) (else 0))" == 1
+    check lfnExpr"(case 10 (of (.. 1 9) 1) (else 0))" == 0
 
   test "case expression with mixed value/range of branch":
-    check nflExpr"(case 4 (of (1 (.. 3 5) 7) 1) (else 0))" == 1
-    check nflExpr"(case 7 (of (1 (.. 3 5) 7) 1) (else 0))" == 1
-    check nflExpr"(case 6 (of (1 (.. 3 5) 7) 1) (else 0))" == 0
+    check lfnExpr"(case 4 (of (1 (.. 3 5) 7) 1) (else 0))" == 1
+    check lfnExpr"(case 7 (of (1 (.. 3 5) 7) 1) (else 0))" == 1
+    check lfnExpr"(case 6 (of (1 (.. 3 5) 7) 1) (else 0))" == 0
 
   test "case expression with wrapped single compound-expression of value":
     # A bare `(of (+ 1 2) …)` reads as the value list `+, 1, 2`; a single
     # computed value must be wrapped: `(of ((+ 1 2)) …)`.
-    check nflExpr"(case 3 (of ((+ 1 2)) 10) (else 0))" == 10
+    check lfnExpr"(case 3 (of ((+ 1 2)) 10) (else 0))" == 10
 
   test "match — literal patterns":
-    check nflExpr"""(match 0 (0 "zero") (1 "one") (_ "other"))""" == "zero"
-    check nflExpr"""(match 1 (0 "zero") (1 "one") (_ "other"))""" == "one"
-    check nflExpr"""(match 9 (0 "zero") (1 "one") (_ "other"))""" == "other"
+    check lfnExpr"""(match 0 (0 "zero") (1 "one") (_ "other"))""" == "zero"
+    check lfnExpr"""(match 1 (0 "zero") (1 "one") (_ "other"))""" == "one"
+    check lfnExpr"""(match 9 (0 "zero") (1 "one") (_ "other"))""" == "other"
 
   test "match — bare symbol pattern binds the scrutinee":
-    check nflExpr"(match 41 (n (+ n 1)))" == 42
+    check lfnExpr"(match 41 (n (+ n 1)))" == 42
 
   test "match — quoted symbol pattern compares by equality":
-    check nflExpr"""(match mcRed ('mcRed "stop") ('mcGreen "go") (_ "?"))""" == "stop"
+    check lfnExpr"""(match mcRed ('mcRed "stop") ('mcGreen "go") (_ "?"))""" == "stop"
 
   test "match — vector pattern destructures":
-    check nflExpr"(match [1 2] ([a b] (+ a b)) (_ 0))" == 3
+    check lfnExpr"(match [1 2] ([a b] (+ a b)) (_ 0))" == 3
 
   test "match — rest-capture vector pattern":
-    check nflExpr"(match (@ [1 2 3]) ([h & t] (+ h (. t len))) (_ 0))" == 3
+    check lfnExpr"(match (@ [1 2 3]) ([h & t] (+ h (. t len))) (_ 0))" == 3
 
   test "match — vector pattern arity picks the right clause":
-    check nflExpr"(match (@ [1]) ([a b] 2) ([a] 1) (_ 0))" == 1
-    check nflExpr"(match (@ [1 2]) ([a b] 2) ([a] 1) (_ 0))" == 2
+    check lfnExpr"(match (@ [1]) ([a b] 2) ([a] 1) (_ 0))" == 1
+    check lfnExpr"(match (@ [1 2]) ([a b] 2) ([a] 1) (_ 0))" == 2
 
   test "match — guard clause":
-    check nflExpr"(match 11 (n :when (> n 10) 100) (n 0))" == 100
-    check nflExpr"(match 5 (n :when (> n 10) 100) (n 0))" == 0
+    check lfnExpr"(match 11 (n :when (> n 10) 100) (n 0))" == 100
+    check lfnExpr"(match 5 (n :when (> n 10) 100) (n 0))" == 0
 
   test "match — guard clause references pattern bindings":
-    check nflExpr"(match [3 4] ([a b] :when (> (+ a b) 5) (+ a b)) (_ 0))" == 7
+    check lfnExpr"(match [3 4] ([a b] :when (> (+ a b) 5) (+ a b)) (_ 0))" == 7
 
   test "match — no branch matched raises":
     expect(ValueError):
-      discard nflExpr"(match 9 (0 0) (1 1))"
+      discard lfnExpr"(match 9 (0 0) (1 1))"
 
   test "match — object pattern tests and binds fields (#48)":
-    check nflExpr"""(match (new ImportedPerson (name "Ada") (age 36))
+    check lfnExpr"""(match (new ImportedPerson (name "Ada") (age 36))
       ([:name n :age a] (& n ($ a)))
       (_ "?"))""" == "Ada36"
 
   test "match — object pattern shorthand target (#48)":
-    check nflExpr"""(match (new ImportedPerson (name "Ada") (age 36))
+    check lfnExpr"""(match (new ImportedPerson (name "Ada") (age 36))
       ([:name] name)
       (_ "?"))""" == "Ada"
 
   test "match — object pattern field target is itself a match pattern (#48)":
-    check nflExpr"""(match (new ImportedPerson (name "Ada") (age 36))
+    check lfnExpr"""(match (new ImportedPerson (name "Ada") (age 36))
       ([:name "Bob" :age a] "bob")
       ([:name n :age a] n)
       (_ "?"))""" == "Ada"
 
   test "match — of pattern tests runtime type via inheritance (#48)":
-    check nflExpr"""(match (asMatchShape (newMatchCircle 2.0)) ((of MatchCircle) "circle") ((of MatchRect) "rect") (_ "?"))""" == "circle"
-    check nflExpr"""(match (asMatchShape (newMatchRect 3.0 4.0)) ((of MatchCircle) "circle") ((of MatchRect) "rect") (_ "?"))""" == "rect"
+    check lfnExpr"""(match (asMatchShape (newMatchCircle 2.0)) ((of MatchCircle) "circle") ((of MatchRect) "rect") (_ "?"))""" == "circle"
+    check lfnExpr"""(match (asMatchShape (newMatchRect 3.0 4.0)) ((of MatchCircle) "circle") ((of MatchRect) "rect") (_ "?"))""" == "rect"
 
   test "match — of pattern with a nested object pattern binds downcast fields (#48)":
-    check nflExpr"(match (asMatchShape (newMatchCircle 2.0)) ((of MatchCircle [:matchRadius r]) r) (_ 0.0))" == 2.0
-    check nflExpr"(match (asMatchShape (newMatchRect 3.0 4.0)) ((of MatchRect [:matchWidth w :matchHeight h]) (* w h)) (_ 0.0))" == 12.0
+    check lfnExpr"(match (asMatchShape (newMatchCircle 2.0)) ((of MatchCircle [:matchRadius r]) r) (_ 0.0))" == 2.0
+    check lfnExpr"(match (asMatchShape (newMatchRect 3.0 4.0)) ((of MatchRect [:matchWidth w :matchHeight h]) (* w h)) (_ 0.0))" == 12.0
 
   test "match — of pattern guard references a field the pattern bound under a downcast (#48)":
-    check nflExpr"""(match (asMatchShape (newMatchCircle 5.0)) ((of MatchCircle [:matchRadius r]) :when (> r 1.0) "big") (_ "small"))""" == "big"
-    check nflExpr"""(match (asMatchShape (newMatchCircle 0.5)) ((of MatchCircle [:matchRadius r]) :when (> r 1.0) "big") (_ "small"))""" == "small"
+    check lfnExpr"""(match (asMatchShape (newMatchCircle 5.0)) ((of MatchCircle [:matchRadius r]) :when (> r 1.0) "big") (_ "small"))""" == "big"
+    check lfnExpr"""(match (asMatchShape (newMatchCircle 0.5)) ((of MatchCircle [:matchRadius r]) :when (> r 1.0) "big") (_ "small"))""" == "small"
 
   test "match — of pattern falls through to _ when the type doesn't match":
-    check nflExpr"(match (asMatchShape (newMatchRect 3.0 4.0)) ((of MatchCircle [:matchRadius r]) r) (_ -1.0))" == -1.0
+    check lfnExpr"(match (asMatchShape (newMatchRect 3.0 4.0)) ((of MatchCircle [:matchRadius r]) r) (_ -1.0))" == -1.0
 
   test "match — case-object discriminant matched via an object pattern's 'sym field target (#48)":
-    check nflExpr"(match (newVariantCircle 2.0) ([:vKind 'mvkCircle :vRadius r] r) (_ 0.0))" == 2.0
-    check nflExpr"(match (newVariantRect 3.0 4.0) ([:vKind 'mvkCircle :vRadius r] r) ([:vKind 'mvkRect :vWidth w :vHeight h] (* w h)) (_ 0.0))" == 12.0
+    check lfnExpr"(match (newVariantCircle 2.0) ([:vKind 'mvkCircle :vRadius r] r) (_ 0.0))" == 2.0
+    check lfnExpr"(match (newVariantRect 3.0 4.0) ([:vKind 'mvkCircle :vRadius r] r) ([:vKind 'mvkRect :vWidth w :vHeight h] (* w h)) (_ 0.0))" == 12.0
 
   test "raise caught by enclosing try":
-    check nflExpr("(try (raise (newException ValueError \"boom\")) (except ValueError \"caught\"))") == "caught"
+    check lfnExpr("(try (raise (newException ValueError \"boom\")) (except ValueError \"caught\"))") == "caught"
 
   test "try successful path":
-    check nflExpr("(try \"ok\" (except ValueError \"err\"))") == "ok"
+    check lfnExpr("(try \"ok\" (except ValueError \"err\"))") == "ok"
 
   test "try bare catch-all":
-    check nflExpr("(try (raise (newException CatchableError \"any\")) (except \"handled\"))") == "handled"
+    check lfnExpr("(try (raise (newException CatchableError \"any\")) (except \"handled\"))") == "handled"
 
-nflModule """
+lfnModule """
 (import std/strutils)
 (defmacro hygienic ()
   (let ((tmp (gensym "tmp")))
@@ -343,7 +343,7 @@ nflModule """
 (proc shout ((name string)) (: string)
   (name.toUpperAscii))
 (when true nil)
-(var shouted (toUpperAscii "nfl"))
+(var shouted (toUpperAscii "lfn"))
 (var shoutedAgain (greet "macro"))
 (var shoutedByMethod (shout "method"))
 (var hygienicResult (hygienic))
@@ -680,7 +680,7 @@ nflModule """
 ; Unexported template: squares an int.
 (template square ((x int))
   (* x x))
-; Exported template with explicit return type — callable under base name from Nim/NFL.
+; Exported template with explicit return type — callable under base name from Nim/LFN.
 (template double* ((x int)) (: int)
   (* x 2))
 ; Template with bare-symbol (untyped) param — e.g. used for code injection.
@@ -694,7 +694,7 @@ nflModule """
 (iterator upTo ((n int)) (: int)
   (for (i (.. 0 (- n 1)))
     (yield i)))
-; Exported iterator — callable from NFL for and from Nim.
+; Exported iterator — callable from LFN for and from Nim.
 (iterator range2* ((n int)) (: int)
   (for (i (.. 0 (- n 1)))
     (yield i)))
@@ -857,11 +857,11 @@ nflModule """
        (except (,e ValueError) (. ,e msg)))))
 (var exceptGensymHygieneResult
   (guard-it (raise (newException ValueError "boom"))))
-""", "module-test.nfl"
+""", "module-test.lfn"
 
-suite "nfl module backend":
+suite "lfn module backend":
   test "import and var declaration":
-    check shouted == "NFL"
+    check shouted == "LFN"
 
   test "proc definition":
     check shoutedAgain == "MACRO"
@@ -1102,7 +1102,7 @@ suite "nfl module backend":
 
   test "generic proc with pragma compiles and works":
     check inlinedId(5) == 5
-    check inlinedId("nfl") == "nfl"
+    check inlinedId("lfn") == "lfn"
 
   test "generic type with pragma compiles":
     let b = BoxPure[int](val: 3)
@@ -1126,7 +1126,7 @@ suite "nfl module backend":
   test "generic iterator — two type params":
     check genericIterSum2 == 6   # 3 + 3
 
-suite "nfl module backend — for / case / raise / try":
+suite "lfn module backend — for / case / raise / try":
   test "for loop sums sequence elements":
     check forSeqSum == 15
 
@@ -1181,7 +1181,7 @@ suite "nfl module backend — for / case / raise / try":
   test "defer — trailing defer in a body still returns the implicit result":
     check deferTrailingResult() == 42
 
-suite "nfl module backend — template / iterator":
+suite "lfn module backend — template / iterator":
   test "template definition produces correct value":
     check templateResult == 49   # square(7) = 7 * 7 = 49
 
@@ -1194,14 +1194,14 @@ suite "nfl module backend — template / iterator":
   test "iterator sum via for loop":
     check iterSum == 10   # 0 + 1 + 2 + 3 + 4 = 10
 
-  test "exported iterator callable from NFL for":
+  test "exported iterator callable from LFN for":
     var s = 0
     for x in range2(4):
       s += x
     check s == 6   # 0 + 1 + 2 + 3 = 6
 
-suite "nfl module backend — operator procs (#29)":
-  test "unexported operator proc — dispatches via NFL prefix call":
+suite "lfn module backend — operator procs (#29)":
+  test "unexported operator proc — dispatches via LFN prefix call":
     check opSum == 7
 
   test "exported multi-char operator proc — ** strips to exported *":
@@ -1214,7 +1214,7 @@ suite "nfl module backend — operator procs (#29)":
     check opDoubleProduct == 24
     check opProduct == 12
 
-suite "nfl module backend — func / converter (#21 follow-on)":
+suite "lfn module backend — func / converter (#21 follow-on)":
   test "func compiles and is callable":
     check doublePure(21) == 42
     check funcResult == 42
@@ -1241,7 +1241,7 @@ suite "nfl module backend — func / converter (#21 follow-on)":
 # discard (#27), distinct/tuple/ref (#28), and method (#30 foundation).
 # ---------------------------------------------------------------------------
 
-nflModule """
+lfnModule """
 ; --- while loop sums 0+1+2+3+4 = 10 (#24) ---
 (var whileSum
   (block
@@ -1302,14 +1302,14 @@ nflModule """
   (new TreeNode (val v)))
 (var aNode (mkNode 7))
 (var nodeVal (. aNode val))
-""", "new-forms-test.nfl"
+""", "new-forms-test.lfn"
 
-suite "nfl backend — while / break / continue / return / discard (#24-#27)":
+suite "lfn backend — while / break / continue / return / discard (#24-#27)":
   test "while loop accumulates sum":
     check whileSum == 10   # 0+1+2+3+4 = 10
 
-  test "while sums inline via nflExpr":
-    check nflExpr"(var ((i 0)(s 0)) (while (< i 5) (set! s (+ s i)) (set! i (+ i 1))) s)" == 10
+  test "while sums inline via lfnExpr":
+    check lfnExpr"(var ((i 0)(s 0)) (while (< i 5) (set! s (+ s i)) (set! i (+ i 1))) s)" == 10
 
   test "break exits loop at target":
     check breakAt == 3
@@ -1324,7 +1324,7 @@ suite "nfl backend — while / break / continue / return / discard (#24-#27)":
     # enclosing `while`, not the intervening anonymous block. Bounded at
     # 100 so a regression fails on the wrong value instead of hanging the
     # test suite.
-    check nflExpr"""
+    check lfnExpr"""
       (var ((i 0) (y 0))
         (while (< i 100)
           (set! y (if (>= i 3) (block (break) 1) 0))
@@ -1344,11 +1344,11 @@ suite "nfl backend — while / break / continue / return / discard (#24-#27)":
   test "discard suppresses unused-result warning":
     check discardRan == true
 
-suite "nfl backend — distinct / tuple / ref types (#28)":
+suite "lfn backend — distinct / tuple / ref types (#28)":
   test "distinct type wraps base":
     check float(metreDist) == 5.0
 
-  test "tuple type fields are accessible from NFL proc":
+  test "tuple type fields are accessible from LFN proc":
     let pt: Point2D = (x: 3.0, y: 4.0)
     check getPtX(pt) == 3.0
     check getPtY(pt) == 4.0
@@ -1365,7 +1365,7 @@ suite "nfl backend — distinct / tuple / ref types (#28)":
 # method + object inheritance (#30, #33)
 # ---------------------------------------------------------------------------
 
-nflModule """
+lfnModule """
 ; Define a base ref type using object inheritance (#33).
 (type Shape (ref (object (of RootObj) (color string))))
 (type Circle (ref (object (of Shape) (radius float))))
@@ -1386,9 +1386,9 @@ nflModule """
   (* (area s) factor))
 (var circScaledAreaOmitted (scaledArea circ))
 (var circScaledAreaOverridden (scaledArea circ 2.0))
-""", "method-test.nfl"
+""", "method-test.lfn"
 
-suite "nfl backend — method / object inheritance (#30, #33)":
+suite "lfn backend — method / object inheritance (#30, #33)":
   test "object inheritance compiles and base field is accessible":
     check circColor == "red"
 
@@ -1407,7 +1407,7 @@ suite "nfl backend — method / object inheritance (#30, #33)":
 # case object / discriminated union (#65)
 # ---------------------------------------------------------------------------
 
-nflModule """
+lfnModule """
 (type VariantShapeKind (enum skCircle skRect skSquare skPoint))
 
 ; Plain fields, a case clause, a single-tag branch, a multi-tag branch (of
@@ -1446,9 +1446,9 @@ nflModule """
 
 (var leftNode (new Node (tag nkLeft) (leftVal 5)))
 (var rightNode (new Node (tag nkRight) (rightVal "hi")))
-""", "case-object-test.nfl"
+""", "case-object-test.lfn"
 
-suite "nfl backend — case object / discriminated union (#65)":
+suite "lfn backend — case object / discriminated union (#65)":
   test "declares, constructs via new, and dispatches on each branch":
     check area(variantCircle) > 12.0 and area(variantCircle) < 13.0   # π×2² ≈ 12.566
     check area(variantSquare) == 12.0
@@ -1476,7 +1476,7 @@ suite "nfl backend — case object / discriminated union (#65)":
 # implicit result variable  (#36)
 # ---------------------------------------------------------------------------
 
-nflModule """
+lfnModule """
 ; Body is only a set! of result — Nim auto-returns result, no explicit return.
 (proc justResult () (: int)
   (set! result 5))
@@ -1495,9 +1495,9 @@ nflModule """
 (method resultDouble ((d Doubler) (n int)) (: int)
   (set! result n)
   (set! result (* result (. d factor))))
-""", "result-test.nfl"
+""", "result-test.lfn"
 
-suite "nfl backend — implicit result variable (#36)":
+suite "lfn backend — implicit result variable (#36)":
   test "set! result as the only body form returns it":
     check justResult() == 5
 
@@ -1510,16 +1510,16 @@ suite "nfl backend — implicit result variable (#36)":
   test "method gets an implicit result too":
     check resultDouble(Doubler(factor: 2), 3) == 6
 
-nflModule """
+lfnModule """
 ; A typed do nested inside a typed proc each get their own independent
 ; `result` binding — the inner do's `result` legitimately shadows the
 ; outer proc's `result` rather than colliding with it (#40).
 (proc nestedResult () (: int)
   (var g (do () (: int) (set! result 1)))
   (set! result (g)))
-""", "nested-result-test.nfl"
+""", "nested-result-test.lfn"
 
-suite "nfl backend — do/lambda implicit result variable (#40)":
+suite "lfn backend — do/lambda implicit result variable (#40)":
   test "a typed do nested in a typed proc gets its own independent result":
     check nestedResult() == 1
 
@@ -1527,7 +1527,7 @@ suite "nfl backend — do/lambda implicit result variable (#40)":
 # named block / break-from (#41)
 # ---------------------------------------------------------------------------
 
-nflModule """
+lfnModule """
 ; --- fall-through value: no break-from taken ---
 (proc firstOver ((xs [seq int]) (limit int)) (: int)
   (block :search
@@ -1579,9 +1579,9 @@ nflModule """
     (if doBreak (break-from :early) nil)
     (. stmtPositionLog add 1))
   (. stmtPositionLog add 2))
-""", "named-block-test.nfl"
+""", "named-block-test.lfn"
 
-suite "nfl backend — named block / break-from (#41)":
+suite "lfn backend — named block / break-from (#41)":
   test "fall-through value when break-from is never taken":
     check firstOver(@[1, 2, 3], 100) == -1
 
@@ -1617,7 +1617,7 @@ suite "nfl backend — named block / break-from (#41)":
 # catch / throw (#55)
 # ---------------------------------------------------------------------------
 
-nflModule """
+lfnModule """
 ; --- throw crosses a proc boundary to reach the enclosing catch, unlike
 ; break-from which cannot escape searchAt's own routine body ---
 (proc searchAt ((xs [seq int]) (target int) (i int)) (: int)
@@ -1673,8 +1673,8 @@ nflModule """
         (if (>= i 3) (break) nil))
       i)))
 
-; --- same tag, different value type: the `e of NflThrowVal[typeof(body)]`
-; guard in nflCatch must re-raise rather than let a mismatched downcast
+; --- same tag, different value type: the `e of LfnThrowVal[typeof(body)]`
+; guard in lfnCatch must re-raise rather than let a mismatched downcast
 ; through, so the throw escapes this catch (typed int) entirely and is only
 ; caught by the ordinary try/except wrapping it. ---
 (var mismatchLog "")
@@ -1686,12 +1686,12 @@ nflModule """
     (catch :same
       (throwStringSame)
       -1)
-    (except (e NflThrow)
+    (except (e LfnThrow)
       (set! mismatchLog (. e tag))
       -99)))
-""", "catch-throw-test.nfl"
+""", "catch-throw-test.lfn"
 
-suite "nfl backend — catch / throw (#55)":
+suite "lfn backend — catch / throw (#55)":
   test "throw crosses a proc boundary to reach the enclosing catch":
     check findInList(@[3, 1, 4, 1, 5, 9], 4) == 4
     check findInList(@[3, 1, 4, 1, 5, 9], 7) == -1
@@ -1726,7 +1726,7 @@ suite "nfl backend — catch / throw (#55)":
 # prog1 / prog2 (#56)
 # ---------------------------------------------------------------------------
 
-nflModule """
+lfnModule """
 (var (progLog [seq string]) (@ []))
 (var (progXs [seq int]) (@ [1 2 3]))
 
@@ -1751,15 +1751,15 @@ nflModule """
   (prog1 (. progLog add "one") (. progLog add "two"))
   (prog2 (. progLog add "three") (. progLog add "four"))
   (. progLog add "five"))
-""", "prog-test.nfl"
+""", "prog-test.lfn"
 
-suite "nfl backend — prog1 / prog2 (#56)":
+suite "lfn backend — prog1 / prog2 (#56)":
   test "prog1 in expression position":
-    check nflExpr"(prog1 1 2 3)" == 1
-    check nflExpr"(var ((x 0)) (prog1 x (set! x 99)))" == 0
+    check lfnExpr"(prog1 1 2 3)" == 1
+    check lfnExpr"(var ((x 0)) (prog1 x (set! x 99)))" == 0
 
   test "prog2 in expression position":
-    check nflExpr"(prog2 1 2 3)" == 2
+    check lfnExpr"(prog2 1 2 3)" == 2
 
   test "prog1 evaluates every form, in order, for side effect":
     progXs = @[1, 2, 3]
@@ -1780,7 +1780,7 @@ suite "nfl backend — prog1 / prog2 (#56)":
 # labelled break / continue (#54)
 # ---------------------------------------------------------------------------
 
-nflModule """
+lfnModule """
 ; --- labelled break from a nested loop exits the outer loop ---
 (var (labelledBreakLog [seq int]) (@ []))
 (proc labelledBreakOuter ((n int)) (: int)
@@ -1883,9 +1883,9 @@ nflModule """
         (break :outer))
       (break :outer))
     count))
-""", "labelled-loop-test.nfl"
+""", "labelled-loop-test.lfn"
 
-suite "nfl backend — labelled break / continue (#54)":
+suite "lfn backend — labelled break / continue (#54)":
   test "labelled break from a nested loop exits the outer loop":
     labelledBreakLog = @[]
     check labelledBreakOuter(3) == 1
@@ -1921,7 +1921,7 @@ suite "nfl backend — labelled break / continue (#54)":
 # static-when — compile-time feature detection (#32)
 # ---------------------------------------------------------------------------
 
-nflModule """
+lfnModule """
 ; OS detection (#32): exactly one clause is selected at compile time, so
 ; this reduces to a plain string literal in the emitted Nim, portable to
 ; whatever platform actually runs the test suite.
@@ -1934,7 +1934,7 @@ nflModule """
 
 ; A name declared by every branch (#32's headline feature-detection use
 ; case) is visible at module scope regardless of which branch is selected —
-; unlike NFL's runtime `when` (a plain `if`), this branch's body reaches
+; unlike LFN's runtime `when` (a plain `if`), this branch's body reaches
 ; top level with no enclosing Nim scope.
 (static-when
   ((defined windows)
@@ -1950,9 +1950,9 @@ nflModule """
 (static-when
   ((defined this_symbol_is_never_defined_32)
     (set! staticWhenSideEffect 999)))
-""", "static-when-test.nfl"
+""", "static-when-test.lfn"
 
-suite "nfl module backend — static-when (#32)":
+suite "lfn module backend — static-when (#32)":
   test "selects the branch matching the compiling platform's OS":
     check staticWhenPlatform.toLowerAscii == hostOS.toLowerAscii
 
@@ -1967,9 +1967,9 @@ suite "nfl module backend — static-when (#32)":
   test "an unmatched clause with no else contributes nothing":
     check staticWhenSideEffect == 0
 
-suite "nfl backend — static-when (#32)":
+suite "lfn backend — static-when (#32)":
   test "expression position selects a branch's value":
-    check nflExpr"""(static-when
+    check lfnExpr"""(static-when
       ((defined this_symbol_is_never_defined_32) 1)
       (else 2))""" == 2
 

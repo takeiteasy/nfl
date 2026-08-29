@@ -1,6 +1,6 @@
 # Nim Interop
 
-NFL has full access to the Nim standard library and any Nim package. Everything you can write in Nim is reachable from NFL.
+LFN has full access to the Nim standard library and any Nim package. Everything you can write in Nim is reachable from LFN.
 
 ## Importing Nim modules
 
@@ -35,12 +35,12 @@ scope, leaving everything else in the module qualified (`module.other`):
 (echo (pow 2.0 10.0))           ; sqrt is not brought into scope here
 ```
 
-`from` only targets real Nim modules — see below for importing another `.nfl`
+`from` only targets real Nim modules — see below for importing another `.lfn`
 file.
 
 ## Calling Nim procedures
 
-Nim procedures are called with the same `(name args...)` syntax as NFL procedures:
+Nim procedures are called with the same `(name args...)` syntax as LFN procedures:
 
 ```lisp
 (import std/math)
@@ -51,10 +51,10 @@ Nim procedures are called with the same `(name args...)` syntax as NFL procedure
 ## Compile-time feature detection
 
 Nim's built-in compile-time predicates — `defined`, `sizeof`, `compiles`,
-and the like — are ordinary Nim procedures, callable from NFL exactly like
+and the like — are ordinary Nim procedures, callable from LFN exactly like
 `sqrt` or `pow` above. They're most useful as the test in a `static-when`
 clause (see [language-reference.md](language-reference.md#static-when--compile-time-feature-detection)),
-NFL's lowering of Nim's `when`:
+LFN's lowering of Nim's `when`:
 
 ```lisp
 (static-when
@@ -219,14 +219,14 @@ including a value-less typed binding:
   n)
 ```
 
-See `examples/pragmas.nfl` for a complete runnable demonstration.
+See `examples/pragmas.lfn` for a complete runnable demonstration.
 
-## NFL-defined templates and iterators from Nim
+## LFN-defined templates and iterators from Nim
 
-When you export an NFL-defined template or iterator (with `*`), it is a real Nim symbol and can be called from Nim code that imports the compiled module, exactly like a hand-written Nim template or iterator.
+When you export an LFN-defined template or iterator (with `*`), it is a real Nim symbol and can be called from Nim code that imports the compiled module, exactly like a hand-written Nim template or iterator.
 
 ```lisp
-; In myfuncs.nfl — these are exported Nim symbols.
+; In myfuncs.lfn — these are exported Nim symbols.
 (template square* ((x int)) (: int)
   (* x x))
 
@@ -257,27 +257,27 @@ as `proc` — as do `func` and `converter`:
 
 `converter` is useful at interop boundaries where values arrive as a domain
 type (e.g. a `distinct` wrapper) but a stdlib or foreign Nim proc expects the
-underlying type — see `examples/interop.nfl` for a `Meters` wrapper converted
+underlying type — see `examples/interop.lfn` for a `Meters` wrapper converted
 to `float` before being passed to a `sqrt`-based proc. As in plain Nim (see
 [`converter`](language-reference.md#converter--implicit-type-conversion)
 above), the conversion applies implicitly at the call site — no explicit call
 needed.
 
-## Splitting a project across multiple .nfl files
+## Splitting a project across multiple .lfn files
 
-`(import ./path.nfl)` — a module path ending in `.nfl` — pulls another NFL
+`(import ./path.lfn)` — a module path ending in `.lfn` — pulls another LFN
 source file into the current one. The path resolves relative to the
 importing file's own directory:
 
 ```lisp
-; helpers.nfl
+; helpers.lfn
 (defmacro double (x) `(* 2 ,x))
 (proc addOne ((x int)) (: int) (+ x 1))
 ```
 
 ```lisp
-; main.nfl
-(import ./helpers.nfl)
+; main.lfn
+(import ./helpers.lfn)
 (echo (addOne (double 5)))   ; 11
 ```
 
@@ -289,19 +289,19 @@ from that point on, the same as if it had been defined locally.
 
 A few consequences follow from that model:
 
-- **`.nfl` imports are top-level only.** `(import ./helpers.nfl)` is only
+- **`.lfn` imports are top-level only.** `(import ./helpers.lfn)` is only
   valid at module scope, not inside a `proc`/`block`/`let` body (plain Nim
   module imports, e.g. `(import std/os)`, still work in either position).
 - **Diamond imports are deduplicated.** If two files both import the same
   third file, its declarations are only inlined once — the second `(import
   ...)` is a no-op — so you don't get duplicate-definition errors.
-- **Circular imports are a compile error.** `a.nfl` importing `b.nfl`
-  importing `a.nfl` is reported as `circular import: a.nfl -> b.nfl ->
-  a.nfl` rather than looping forever.
-- Since imports are inlined, plain Nim code cannot `import` a `.nfl` file
+- **Circular imports are a compile error.** `a.lfn` importing `b.lfn`
+  importing `a.lfn` is reported as `circular import: a.lfn -> b.lfn ->
+  a.lfn` rather than looping forever.
+- Since imports are inlined, plain Nim code cannot `import` a `.lfn` file
   directly (it isn't compiled to a standalone Nim module) — only another
-  `.nfl` file can pull it in via `(import ...)`. `nfl shim` generates a thin
-  Nim module that delegates to a given `.nfl` file, which plain Nim code can
+  `.lfn` file can pull it in via `(import ...)`. `lfn shim` generates a thin
+  Nim module that delegates to a given `.lfn` file, which plain Nim code can
   `import` instead — see [package-layout.md](package-layout.md) for the
   package shape this fits into and its limitations (in particular, macros
   still don't cross the Nim import boundary).

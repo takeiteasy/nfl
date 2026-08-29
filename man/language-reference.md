@@ -110,7 +110,7 @@ A **vector pattern** destructures a tuple or indexable value by position:
 ```
 
 At most one `& rest` capture is allowed per pattern, and it must be the
-last two elements. Arity mismatches are not diagnosed by NFL: for a tuple
+last two elements. Arity mismatches are not diagnosed by LFN: for a tuple
 value, a pattern with too many/few elements is a Nim compile error; for a
 seq or array, an out-of-range index is a runtime error.
 
@@ -191,7 +191,7 @@ is legal, because reassigning a `ref object`'s field doesn't rebind the
 any other Nim assignment.
 
 The last form, `(set! (getter obj) new-value)`, assigns through an
-*accessor call*: `getter` must be a plain identifier, and NFL emits a call
+*accessor call*: `getter` must be a plain identifier, and LFN emits a call
 to the setter proc named `getter=` — Nim's convention for a settable
 property. This is how `defclass`'s generated `:accessor` setters are used
 (see [CLOS-lite classes](#clos-lite-classes-preamble)); it works for any
@@ -250,7 +250,7 @@ supplied when a call omits the argument:
 
 A default expression may reference an earlier parameter in the same list,
 and, unlike an [object field default](#type--type-declaration), carries no
-compile-time-evaluable restriction — any expression is allowed. NFL does not
+compile-time-evaluable restriction — any expression is allowed. LFN does not
 require defaulted parameters to come last; Nim itself permits a defaulted
 parameter before a non-defaulted one (call it with a named argument). A
 destructured parameter (`([a b] Point)`) may not carry a default.
@@ -276,7 +276,7 @@ operator names that don't collide with reader delimiters (`+`, `-`, `<=`,
   (MyInt (+ (int a) (int b))))
 ```
 
-The defined operator can be called like any proc from NFL (`(+ x y)`) and
+The defined operator can be called like any proc from LFN (`(+ x y)`) and
 infix from plain Nim (`x + y`).
 
 A trailing `*` still marks a proc as exported, but for an operator name it
@@ -433,7 +433,7 @@ a `do` is essentially always called through a proc-typed value (it has no
 name to call directly), and Nim's compiler resolves such a default
 incorrectly once the call goes through a proc value rather than a named
 `proc` symbol, producing a broken C-level reference at the call site. There
-is no NFL-level workaround; use `proc` (and call it by name) if the default
+is no LFN-level workaround; use `proc` (and call it by name) if the default
 needs to reference an earlier parameter.
 
 ### `template` — Nim template definition
@@ -556,7 +556,7 @@ explicit value still overrides it:
 A field default must be a **compile-time-evaluable** Nim expression — a
 literal, another compile-time constant, or a call to a proc Nim can evaluate
 at compile time. This is a Nim restriction on object-field defaults, not an
-NFL one, so it isn't checked at the NFL level; a violation surfaces as a Nim
+LFN one, so it isn't checked at the LFN level; a violation surfaces as a Nim
 compile error. A [parameter default](#proc--named-procedure) carries no such
 restriction. The `case` discriminator can also carry a default — see below.
 
@@ -747,7 +747,7 @@ different: it lowers to Nim's `when`, so exactly one clause is selected
 *while the program is being compiled*, and every other clause's body is
 never even type-checked. Use it to gate code on things only known at
 compile time — `defined`, `sizeof`, `compiles`, and similar (see
-[nim-interop.md](nim-interop.md) for calling these from NFL).
+[nim-interop.md](nim-interop.md) for calling these from LFN).
 
 ```lisp
 (static-when
@@ -760,7 +760,7 @@ compile time — `defined`, `sizeof`, `compiles`, and similar (see
 Each clause is `(test body...)`; a trailing `(else body...)` is optional at
 statement/module scope, but **required in expression position** — an
 all-false `static-when` used as a value would otherwise have no value to
-produce, so NFL rejects that case at compile time rather than letting Nim
+produce, so LFN rejects that case at compile time rather than letting Nim
 fail obscurely.
 
 Because a `when` branch does not open a new Nim scope, a declaration inside
@@ -781,12 +781,12 @@ feature-detection code work:
 ```
 
 The same name may be declared in more than one clause (as `platformName` is
-above) — NFL treats this as the ordinary cross-platform pattern, not a
+above) — LFN treats this as the ordinary cross-platform pattern, not a
 duplicate-declaration error, and the declaration from whichever clause is
 actually selected is the one that exists once compiled.
 
 Two forms are *not* usable inside a `static-when` clause: `defmacro` and an
-NFL-module `import` (`(import foo.nfl)`) are both top-level-only in the
+LFN-module `import` (`(import foo.lfn)`) are both top-level-only in the
 expander. Plain Nim `import` (`(import strutils)`) works fine.
 
 `static-when` is unrelated to the preamble `when`/`unless` macros just
@@ -1159,7 +1159,7 @@ the same idea applied to `proc`/`var`/etc.):
 (make-array n fill)             ; a length-n seq filled with `fill` — unlike
                                  ; CL, both arguments are required: Nim can
                                  ; only infer the element type from an actual
-                                 ; value, and NFL has no call-site syntax for
+                                 ; value, and LFN has no call-site syntax for
                                  ; a bare type argument instead
 (length items)                  ; same as (. items len)
 (reverse items)
@@ -1190,8 +1190,8 @@ the same idea applied to `proc`/`var`/etc.):
 (import std/os)
 ```
 
-`(import ./path.nfl)` inline-includes another NFL source file instead — see
-[Splitting a project across multiple .nfl files](nim-interop.md#splitting-a-project-across-multiple-nfl-files).
+`(import ./path.lfn)` inline-includes another LFN source file instead — see
+[Splitting a project across multiple .lfn files](nim-interop.md#splitting-a-project-across-multiple-lfn-files).
 
 ## Selective imports
 
@@ -1246,7 +1246,7 @@ match CL's own names) just take a mechanical `def` prefix. `defvar` and
 `defparameter` expand identically, both to `var`; their CL-style
 distinction (`defvar` sets a name only if unbound, `defparameter` always
 resets it) has no meaning in an ordinary compiled file and is only
-observable in [`nfl repl`](cli.md#repl), which re-enters the same name
+observable in [`lfn repl`](cli.md#repl), which re-enters the same name
 more than once.
 
 ```lisp
@@ -1261,7 +1261,7 @@ A CL-flavoured `defclass`/`make-instance` layer over the [`type`/`ref`/
 [`method`](#method--method-definition) forms above, for readers who'd
 rather see CLOS-style class syntax. `defclass` is a plain macro — it
 expands to a `type` declaration plus one or two accessor `proc`s per named
-slot option. `make-instance` is a Nim macro (`nflMakeInstance`, in
+slot option. `make-instance` is a Nim macro (`lfnMakeInstance`, in
 `runtime.nim`): unlike `defclass`, it runs at Nim semcheck time, when a
 class's whole `of` inheritance chain — and every ancestor's `:initarg`
 pragmas — is visible, which lets it resolve an initializer against an
@@ -1327,7 +1327,7 @@ An `:initarg` is an alias, not a rename — a slot's own field name keeps
 working alongside it, initarg'd or not. It resolves across inheritance too:
 `Dog`'s `make-instance` call above reaches `name`'s `:nom` even though
 `defclass Dog` never sees `Animal`'s slots at its own expansion time,
-because `nflMakeInstance` reads the `:initarg` back off `Animal`'s Nim type
+because `lfnMakeInstance` reads the `:initarg` back off `Animal`'s Nim type
 definition, at Nim semcheck time, when `Dog`'s whole inheritance chain is
 resolved. Its value is conventionally keyword-shaped (`:nom`), matching
 `:accessor`/`:reader`/`:initform`'s own keys, but any symbol works — unlike
@@ -1344,7 +1344,7 @@ inheritance both require.
 Deliberately out of scope for now (tracked separately): a `defmethod`
 distinct from the plain [`method` alias](#cl-style-declaration-spellings-preamble)
 above — CLOS-lite adds no dispatch mechanism of its own. See
-`examples/clos.nfl` for a runnable demonstration.
+`examples/clos.lfn` for a runnable demonstration.
 
 ## Quoting
 
@@ -1357,7 +1357,7 @@ above — CLOS-lite adds no dispatch mechanism of its own. See
 
 ## Operators
 
-NFL uses standard infix operators in prefix position:
+LFN uses standard infix operators in prefix position:
 
 ```lisp
 (+ a b)   (- a b)   (* a b)   (/ a b)   (div a b)

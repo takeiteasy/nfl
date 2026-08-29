@@ -55,11 +55,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            asset: nfl-linux-amd64.tar.gz
+            asset: lfn-linux-amd64.tar.gz
           - os: macos-latest
-            asset: nfl-macos-arm64.tar.gz
+            asset: lfn-macos-arm64.tar.gz
           - os: windows-latest
-            asset: nfl-windows-amd64.zip
+            asset: lfn-windows-amd64.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -69,11 +69,11 @@ jobs:
       - run: nimble build -y -d:release
       - name: Package (Unix)
         if: runner.os != 'Windows'
-        run: tar -czf ${{ matrix.asset }} -C bin nfl
+        run: tar -czf ${{ matrix.asset }} -C bin lfn
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path bin/nfl.exe -DestinationPath ${{ matrix.asset }}
+        run: Compress-Archive -Path bin/lfn.exe -DestinationPath ${{ matrix.asset }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
@@ -86,7 +86,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
-          pattern: "nfl-*"
+          pattern: "lfn-*"
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:

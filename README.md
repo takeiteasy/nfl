@@ -1,6 +1,6 @@
-# Nim Flavoured Lisp
+# Lisp Flavoured Nim
 
-**NFL** is a Lisp dialect that compiles to Nim. It processes s-expressions into Nim AST via macros, giving you Lisp syntax with full access to the Nim ecosystem and type system. Inspired by [Hylang](https://hylang.org/). Docs are hosted [here](https://takeiteasy.github.io/nfl/), and release builds are [here](https://github.com/takeiteasy/nfl/tags).
+**LFN** is a Lisp dialect that compiles to Nim. It processes s-expressions into Nim AST via macros, giving you Lisp syntax with full access to the Nim ecosystem and type system. Inspired by [Hylang](https://hylang.org/). Docs are hosted [here](https://takeiteasy.github.io/lfn/), and release builds are [here](https://github.com/takeiteasy/lfn/tags).
 
 ## Quick example
 
@@ -10,14 +10,14 @@
 (proc greet ((name string)) (: string)
   (toUpperAscii name))
 
-(echo (greet "nfl"))
+(echo (greet "lfn"))
 ```
 
 Compile and run:
 
 ```sh
-nfl compile hello.nfl && ./hello
-# NFL
+lfn compile hello.lfn && ./hello
+# LFN
 ```
 
 ## Building
@@ -28,11 +28,11 @@ Requires **Nim >= 2.2.4**.
 nimble build
 ```
 
-This produces a `bin/nfl` binary. To run it against a file:
+This produces a `bin/lfn` binary. To run it against a file:
 
 ```sh
-nfl check   file.nfl   # type-check only
-nfl compile file.nfl   # compile to binary
+lfn check   file.lfn   # type-check only
+lfn compile file.lfn   # compile to binary
 ```
 
 ## Documentation
@@ -41,20 +41,20 @@ nfl compile file.nfl   # compile to binary
 - [Language Reference](man/language-reference.md) — all language forms
 - [Macro System](man/macros.md) — writing and using macros
 - [Nim Interop](man/nim-interop.md) — calling Nim stdlib, dot notation, exports, pragmas
-- [CLI Reference](man/cli.md) — every `nfl` subcommand and flag
-- [The REPL](man/repl.md) — `nfl repl`'s interactive session model
+- [CLI Reference](man/cli.md) — every `lfn` subcommand and flag
+- [The REPL](man/repl.md) — `lfn repl`'s interactive session model
 - [Package Layout](man/package-layout.md) — organizing application and library projects
 - API documentation is generated from source via `nimble docs` (see [man/api.md](man/api.md)) into `docs/`, served via GitHub Pages
 - [Changelog](CHANGELOG.md) — notable changes per release
 
 ## Examples
 
-The `examples/` directory contains runnable `.nfl` programs covering types, loops, error handling, macros, pragmas, and Nim interop.
+The `examples/` directory contains runnable `.lfn` programs covering types, loops, error handling, macros, pragmas, and Nim interop.
 
 ## License
 
 ```
-NFL — Nim Flavoured Lisp
+LFN — Lisp Flavoured Nim
 Copyright (C) 2025 George Watson
 
 This program is free software: you can redistribute it and/or modify

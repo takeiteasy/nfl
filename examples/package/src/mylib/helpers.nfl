@@ -1,5 +1,0 @@
-; Helper procs, imported by util.nfl below via (import ./helpers.nfl).
-; Not compiled to its own Nim module directly -- util.nfl's shim pulls it in
-; transitively through the inline-include mechanism (see man/nim-interop.md).
-(proc bump* ((n int)) (: int)
-  (+ n 1))

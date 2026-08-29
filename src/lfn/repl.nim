@@ -1,4 +1,4 @@
-## The `nfl repl` session engine (#14) — an interactive read/expand/compile/
+## The `lfn repl` session engine (#14) — an interactive read/expand/compile/
 ## run loop backed by an actual `nim c` per accepted input, rather than any
 ## kind of interpreter. See `man/repl.md` for the user-facing model this
 ## implements: full-session replay (every accepted input is kept in a
@@ -36,33 +36,33 @@ type
     rawForms: seq[Syntax] ## `readAll(source, …)` — replayed through a fresh
                           ## `MacroEnv` on every subsequent input so macro
                           ## definitions accumulate the same way a real
-                          ## `nfl check` over the whole transcript would.
+                          ## `lfn check` over the whole transcript would.
     names: seq[string]   ## Every name this entry declares/redefines —
                           ## `declaredNames` on its expanded forms, or (for
                           ## `ekMacroDef`) the macro's own name.
-    printable: bool      ## Wrap in `nflReplShow` when embedding into
-                          ## `session.nfl` — true only when the entry
+    printable: bool      ## Wrap in `lfnReplShow` when embedding into
+                          ## `session.lfn` — true only when the entry
                           ## expanded to exactly one non-declaration form.
     kind: EntryKind
 
   EntryOffset = object
-    startLine, endLine: int  ## 1-based line range in `session.nfl` this
-                              ## entry's own text occupies (its `nflReplShow`
+    startLine, endLine: int  ## 1-based line range in `session.lfn` this
+                              ## entry's own text occupies (its `lfnReplShow`
                               ## wrapper lines, if any, are excluded).
     entryIdx: int             ## Index into the transcript being compiled.
 
   ReplSession* = object
     entries: seq[ReplEntry]
     dir: string           ## One temp dir for the whole session — holds
-                           ## `session.nfl`, `wrapper.nim`, and the compiled
+                           ## `session.lfn`, `wrapper.nim`, and the compiled
                            ## binary; reused across inputs (unlike
                            ## `cli.nim`'s per-call `tempBuildDir`) so a
                            ## shared nimcache actually speeds up successive
                            ## compiles.
     importDir: string     ## `getCurrentDir()` at session start — passed as
                            ## `expandModule`'s `currentDir` so a relative
-                           ## `(import ./helpers.nfl)` resolves against
-                           ## where `nfl repl` was launched, not against the
+                           ## `(import ./helpers.lfn)` resolves against
+                           ## where `lfn repl` was launched, not against the
                            ## session's temp dir (see module doc).
     autoloadCore: bool
     lastOutput: string     ## Captured stdout+stderr of the last successful
@@ -87,17 +87,17 @@ const replFileLabel = "<repl>"
   ## The label used for reader/macro-expansion errors, which run against an
   ## entry's own isolated text (see `tryAddInput`) — so its line numbers are
   ## already entry-relative and need no rewriting, unlike the Nim compiler's
-  ## own diagnostics, which run against the concatenated `session.nfl` on
+  ## own diagnostics, which run against the concatenated `session.lfn` on
   ## disk and are rewritten by `rewriteDiagnostics`.
 
 proc initSession*(autoloadCore = true): ReplSession =
-  ## Starts a new session: one temp dir for its `session.nfl`/`wrapper.nim`/
+  ## Starts a new session: one temp dir for its `session.lfn`/`wrapper.nim`/
   ## binary (removed by `closeSession`), plus a *stable, shared* nimcache
-  ## dir reused across every `nfl repl` process (not per-session) so
-  ## `nfl/compiler` and the preamble aren't recompiled from scratch on every
-  ## launch — only `session.nfl`'s own accumulated content forces a
+  ## dir reused across every `lfn repl` process (not per-session) so
+  ## `lfn/compiler` and the preamble aren't recompiled from scratch on every
+  ## launch — only `session.lfn`'s own accumulated content forces a
   ## recompile each input.
-  result.dir = getTempDir() / ("nfl-repl-" & $getCurrentProcessId())
+  result.dir = getTempDir() / ("lfn-repl-" & $getCurrentProcessId())
   createDir(result.dir)
   # `expandFilename` resolves symlinks (realpath) — needed because on macOS
   # `getTempDir()` returns a `/var/...` path while the Nim compiler reports
@@ -119,10 +119,10 @@ proc closeSession*(session: ReplSession) =
     removeDir(session.dir)
 
 proc sharedNimcacheDir(): string =
-  getTempDir() / "nfl-repl-cache"
+  getTempDir() / "lfn-repl-cache"
 
 proc transcriptText*(session: ReplSession): string =
-  ## The whole accepted session, as NFL source — what `:transcript` prints.
+  ## The whole accepted session, as LFN source — what `:transcript` prints.
   for e in session.entries:
     result.add e.source
     result.add "\n"
@@ -164,7 +164,7 @@ proc readEntry*(readLine: proc (prompt: string; line: var string): bool {.closur
       if buffer.len == 0:
         return ReadResult(outcome: roEof)
       return ReadResult(outcome: roError,
-        message: "nfl repl: unexpected end of input (unterminated form)")
+        message: "lfn repl: unexpected end of input (unterminated form)")
     first = false
     let trimmed = line.strip()
     if buffer.len == 0 and trimmed.len > 0 and trimmed[0] == ':':
@@ -228,7 +228,7 @@ proc spliceRedefinition(entries: seq[ReplEntry]; newEntry: ReplEntry): seq[ReplE
   ## redefinition lands before any later entry that uses it. Appending
   ## unconditionally would, for a macro redefined after an entry that calls
   ## it, put the new `defmacro` textually after its own call site once
-  ## dropped-and-appended, which fails to expand at all: NFL requires a
+  ## dropped-and-appended, which fails to expand at all: LFN requires a
   ## macro to be defined before use within a module, and the whole
   ## transcript is re-expanded as one module on every input (see the module
   ## doc's replay model). An ordinary expression entry never declares a
@@ -257,12 +257,12 @@ proc classify(session: ReplSession; rawForms: seq[Syntax]; kind: EntryKind;
   ## input, and a consumed `defmacro` never reappears in that output, so
   ## there'd be no way to tell where the new entry's own contribution
   ## starts). `session.importDir` (not the session's temp dir) is passed as
-  ## `currentDir` so a relative `(import ./helpers.nfl)` resolves against
-  ## where `nfl repl` was launched.
+  ## `currentDir` so a relative `(import ./helpers.lfn)` resolves against
+  ## where `lfn repl` was launched.
   var env = newMacroEnv()
   try:
     if session.autoloadCore:
-      discard expandModule(readAll(coreSource, "std/core.nfl"), env)
+      discard expandModule(readAll(coreSource, "std/core.lfn"), env)
     for e in session.entries:
       # Skip an earlier entry that the new one is about to replace
       # (`spliceRedefinition` uses this same `disjoint(e.names, …)` test).
@@ -291,7 +291,7 @@ proc classify(session: ReplSession; rawForms: seq[Syntax]; kind: EntryKind;
     (false, @[], false, $err.diagnostic)
 
 # ---------------------------------------------------------------------------
-# Emitting session.nfl / wrapper.nim and mapping Nim diagnostics back
+# Emitting session.lfn / wrapper.nim and mapping Nim diagnostics back
 # ---------------------------------------------------------------------------
 
 proc entryLineCount(source: string): int =
@@ -304,7 +304,7 @@ proc buildSessionText(entries: seq[ReplEntry]): tuple[text: string; offsets: seq
   for idx, e in entries:
     let lines = entryLineCount(e.source)
     if e.printable:
-      text.add "(nflReplShow\n"
+      text.add "(lfnReplShow\n"
       inc line
       offsets.add EntryOffset(startLine: line, endLine: line + lines - 1, entryIdx: idx)
       text.add e.source
@@ -326,10 +326,10 @@ proc entryForLine(offsets: seq[EntryOffset]; line: int): tuple[ok: bool; entryId
   (false, 0, 0)
 
 proc rewriteDiagnostics(output, sessionPath: string; offsets: seq[EntryOffset]): string =
-  ## Rewrites every `sessionPath:line:col` (NFL-style, `diagnostics.nim`'s
+  ## Rewrites every `sessionPath:line:col` (LFN-style, `diagnostics.nim`'s
   ## `$Diagnostic`) or `sessionPath(line, col)` (Nim-style, `backend.nim`'s
   ## `attachLineInfo`) occurrence in `output` to `<repl:N>:relLine:col` /
-  ## `<repl:N>(relLine, col)`, mapping the absolute `session.nfl` line back
+  ## `<repl:N>(relLine, col)`, mapping the absolute `session.lfn` line back
   ## to the entry it came from (1-based, `N`) and that entry's own relative
   ## line. Everything else passes through unchanged.
   result = newStringOfCap(output.len)
@@ -387,7 +387,7 @@ proc nimStringLit(s: string): string =
 proc repoSrcPath(): string =
   ## Mirrors `cli.nim`'s helper of the same name — see `nimStringLit`.
   let candidate = getCurrentDir() / "src"
-  if dirExists(candidate / "nfl"):
+  if dirExists(candidate / "lfn"):
     absolutePath(candidate)
   else:
     ""
@@ -413,7 +413,7 @@ proc tryAddInput*(session: var ReplSession; source: string; forms: seq[Syntax]):
   ## failure the session is left exactly as it was (transactional — see the
   ## module doc), and `message` carries a diagnostic already rewritten to
   ## point at `<repl:N>` REPL input, never at generated Nim or the on-disk
-  ## `session.nfl`.
+  ## `session.lfn`.
   let (kind, macroName) = rawEntryKind(forms)
   let classified = classify(session, forms, kind, macroName)
   if not classified.ok:
@@ -427,10 +427,10 @@ proc tryAddInput*(session: var ReplSession; source: string; forms: seq[Syntax]):
   let candidate = spliceRedefinition(session.entries, newEntry)
 
   let (sessionText, offsets) = buildSessionText(candidate)
-  let sessionPath = session.dir / "session.nfl"
+  let sessionPath = session.dir / "session.lfn"
   # The wrapper's own name, not just its directory, must be per-session:
   # `--nimcache:` (below) is a *shared* dir across every concurrent
-  # `nfl repl` process (that's the point — it's what makes `nfl/compiler`
+  # `lfn repl` process (that's the point — it's what makes `lfn/compiler`
   # and the preamble not recompile on every launch), and Nim's nimcache
   # object-file naming keys off a module's basename. Two sessions both
   # naming their wrapper `wrapper.nim` would race to write (and could pick
@@ -439,15 +439,15 @@ proc tryAddInput*(session: var ReplSession; source: string; forms: seq[Syntax]):
   let exePath = session.dir / ("session" & ExeExt)
   writeFile(sessionPath, sessionText)
   writeFile(wrapperPath,
-    "import nfl/compiler\n" &
-    "nflModule(" & nimStringLit(sessionText) & ", " & nimStringLit(sessionPath) &
+    "import lfn/compiler\n" &
+    "lfnModule(" & nimStringLit(sessionText) & ", " & nimStringLit(sessionPath) &
     ", autoloadCore = " & $session.autoloadCore &
     ", importDir = " & nimStringLit(session.importDir) & ")\n")
 
   # Full recompile of the whole transcript on every input, O(session size) —
   # correct (it's what "full replay" means) but a long session gets slower
   # per input; a shared nimcache (below) only avoids recompiling
-  # `nfl/compiler` and the preamble each launch, not the session's own
+  # `lfn/compiler` and the preamble each launch, not the session's own
   # growing source. Incremental compilation strategies are tracked as a
   # follow-up (#92).
   var compileArgs = @["c", "--hints:off", "--nimcache:" & sharedNimcacheDir(), "--out:" & exePath]
@@ -457,14 +457,14 @@ proc tryAddInput*(session: var ReplSession; source: string; forms: seq[Syntax]):
   compileArgs.add wrapperPath
   let compiled = runCaptured("nim", compileArgs)
   if not compiled.spawned:
-    return AddResult(outcome: aoError, message: "nfl repl: nim executable not found in PATH")
+    return AddResult(outcome: aoError, message: "lfn repl: nim executable not found in PATH")
   if compiled.exitCode != 0:
     return AddResult(outcome: aoError,
       message: rewriteDiagnostics(compiled.output, sessionPath, offsets))
 
   let ran = runCaptured(exePath, @[])
   if not ran.spawned:
-    return AddResult(outcome: aoError, message: "nfl repl: failed to run compiled session")
+    return AddResult(outcome: aoError, message: "lfn repl: failed to run compiled session")
   let rewrittenRun = rewriteDiagnostics(ran.output, sessionPath, offsets)
   if ran.exitCode != 0:
     return AddResult(outcome: aoError, message: rewrittenRun)

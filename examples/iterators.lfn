@@ -1,5 +1,5 @@
-; Demonstrates Nim iterator definitions from NFL.
-; Iterators work with NFL `for` loops exactly like Nim's built-in iterators.
+; Demonstrates Nim iterator definitions from LFN.
+; Iterators work with LFN `for` loops exactly like Nim's built-in iterators.
 
 ; An iterator that yields integers in the half-open range [0, n).
 (iterator upTo ((n int)) (: int)

@@ -1,6 +1,6 @@
 # Macro System
 
-NFL macros are compile-time transformations that operate on s-expressions. They are defined with `defmacro` and expand before lowering to Nim AST.
+LFN macros are compile-time transformations that operate on s-expressions. They are defined with `defmacro` and expand before lowering to Nim AST.
 
 ## Defining macros
 
@@ -119,7 +119,7 @@ Use `<`/`>` for cross-kind numeric comparison instead.
 
 `first`/`rest`/`append`/`length`/`reverse` also exist as [preamble
 macros](#preamble-macros) that expand to *runtime* sequence operations
-(`at`, `slice`, `nflReversed`, …). The two never collide: inside a macro or
+(`at`, `slice`, `lfnReversed`, …). The two never collide: inside a macro or
 `defmacro-proc` *body*, a call to one of these names always resolves to the
 builtin above, operating on syntax. Inside a **quasiquoted template**, the
 same call is left as literal, unexpanded syntax — it's the *preamble
@@ -167,7 +167,7 @@ Differences from `defmacro`:
   a definition-time error, since either would otherwise make the shadowed
   name silently unreachable.
 
-See `examples/macro-procs.nfl` for a runnable demonstration.
+See `examples/macro-procs.lfn` for a runnable demonstration.
 
 ## Hygiene
 
@@ -266,7 +266,7 @@ computed (unquoted) binding name:
            (if ,v ,v (or ,@(rest args)))))))
 ```
 
-See `examples/hygiene.nfl` for a runnable demonstration.
+See `examples/hygiene.lfn` for a runnable demonstration.
 
 A `gensym`'d or auto-renamed symbol may be used anywhere a plain symbol
 could — including as a `proc` or `do` parameter name. Since a routine's own
@@ -277,18 +277,18 @@ name itself varies per expansion.
 
 ## Sharing macros across files
 
-`(import ./helpers.nfl)` makes that file's `defmacro` and `defmacro-proc`
+`(import ./helpers.lfn)` makes that file's `defmacro` and `defmacro-proc`
 definitions visible from the import point on, exactly as if they'd been
 defined locally:
 
 ```lisp
-; helpers.nfl
+; helpers.lfn
 (defmacro double (x) `(* 2 ,x))
 ```
 
 ```lisp
-; main.nfl
-(import ./helpers.nfl)
+; main.lfn
+(import ./helpers.lfn)
 (echo (double 21))   ; 42
 ```
 
@@ -305,14 +305,14 @@ A macro name defined in two files that end up in the same compile unit is a
 `duplicate macro definition` error — there is no shadowing, aliasing, or
 namespacing between files.
 
-See [`nim-interop.md`'s "Splitting a project across multiple .nfl
-files"](nim-interop.md#splitting-a-project-across-multiple-nfl-files) for the
+See [`nim-interop.md`'s "Splitting a project across multiple .lfn
+files"](nim-interop.md#splitting-a-project-across-multiple-lfn-files) for the
 underlying inline-include model, diamond-import dedup, and circular-import
 diagnostics.
 
 ## Preamble macros
 
-The NFL preamble (`src/nfl/preamble.nfl`) is loaded before every file and provides:
+The LFN preamble (`src/lfn/preamble.lfn`) is loaded before every file and provides:
 
 | Macro | Expands to |
 |-------|-----------|
@@ -327,10 +327,10 @@ The NFL preamble (`src/nfl/preamble.nfl`) is loaded before every file and provid
 | `(rest items)` | `(slice items 1 (- (. items len) 1))` |
 | `(empty? items)` | `(== (. items len) 0)` |
 | `(append left right)` | `(& left right)` |
-| `(map items op)` | `(nflSeqMap items op)` |
-| `(filter items pred)` | `(nflSeqFilter items pred)` |
-| `(foldl items init op)` | `(nflSeqFoldl items init op)` |
-| `(foldr items init op)` | `(nflSeqFoldr items init op)` |
+| `(map items op)` | `(lfnSeqMap items op)` |
+| `(filter items pred)` | `(lfnSeqFilter items pred)` |
+| `(foldl items init op)` | `(lfnSeqFoldl items init op)` |
+| `(foldr items init op)` | `(lfnSeqFoldr items init op)` |
 | `(-> v forms...)` | thread-first pipeline |
 | `(->> v forms...)` | thread-last pipeline |
 | `(as-> v name forms...)` | named threading |
@@ -356,7 +356,7 @@ who'd rather see a `def...` prefix:
 aliases. Their CL-style distinction (`defvar` sets a name only if it's
 unbound; `defparameter` always resets it) is not a property of macro
 expansion; it's only observable when the same name is entered a second
-time, which happens in [`nfl repl`](repl.md#defvar-vs-defparameter), not in
+time, which happens in [`lfn repl`](repl.md#defvar-vs-defparameter), not in
 an ordinary compiled file.
 
 ### CL-style sequence functions
@@ -364,23 +364,23 @@ an ordinary compiled file.
 Argument order follows the rest of the preamble (items first, as with
 `map`/`filter`/`foldl` above), not CL's own order. `position` returns `-1`
 when not found (Nim's own sentinel), not CL's `nil`. `n` and `fill` are both
-required in `make-array` — NFL has no call-site syntax for a bare type
+required in `make-array` — LFN has no call-site syntax for a bare type
 argument, so the fill value is what tells Nim the array's element type.
 
 | Macro | Expands to |
 |-------|-----------|
-| `(make-array n fill)` | `(nflMakeArray n fill)` |
+| `(make-array n fill)` | `(lfnMakeArray n fill)` |
 | `(length items)` | `(. items len)` |
-| `(reverse items)` | `(nflReversed items)` |
-| `(sort items)` | `(nflSorted items)` |
-| `(mapcar items op)` | `(nflSeqMap items op)` |
-| `(reduce items init op)` | `(nflSeqFoldl items init op)` |
-| `(remove-if items pred)` | `(nflSeqRemoveIf items pred)` |
-| `(remove-if-not items pred)` | `(nflSeqFilter items pred)` |
-| `(count-if items pred)` | `(nflSeqCount items pred)` |
-| `(some items pred)` | `(nflSeqAny items pred)` |
-| `(every items pred)` | `(nflSeqEvery items pred)` |
-| `(position items value)` | `(nflSeqPosition items value)` |
+| `(reverse items)` | `(lfnReversed items)` |
+| `(sort items)` | `(lfnSorted items)` |
+| `(mapcar items op)` | `(lfnSeqMap items op)` |
+| `(reduce items init op)` | `(lfnSeqFoldl items init op)` |
+| `(remove-if items pred)` | `(lfnSeqRemoveIf items pred)` |
+| `(remove-if-not items pred)` | `(lfnSeqFilter items pred)` |
+| `(count-if items pred)` | `(lfnSeqCount items pred)` |
+| `(some items pred)` | `(lfnSeqAny items pred)` |
+| `(every items pred)` | `(lfnSeqEvery items pred)` |
+| `(position items value)` | `(lfnSeqPosition items value)` |
 | `(elt items i)`, `(aref items i)` | `(at items i)` |
 | `(subseq items start [end])` | `(slice items start end-1)` (exclusive end, CL-style) |
 
@@ -405,4 +405,4 @@ the full picture, including what's deliberately left out.
   (echo "form two"))
 ```
 
-See `examples/macros.nfl` for more examples including `cond` and boolean short-circuit usage.
+See `examples/macros.lfn` for more examples including `cond` and boolean short-circuit usage.

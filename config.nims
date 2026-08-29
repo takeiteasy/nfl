@@ -5,12 +5,12 @@ when withDir(thisDir(), system.fileExists("nimble.paths")):
 
 import std/strutils
 
-# Nim currently rejects `nim c file.nfl` before config.nims can redirect the
+# Nim currently rejects `nim c file.lfn` before config.nims can redirect the
 # project to a generated wrapper. Revisit this if Nim exposes a frontend hook
 # for non-Nim project source files.
-let nflProjectPath = projectPath()
-if nflProjectPath.endsWith(".nfl"):
+let lfnProjectPath = projectPath()
+if lfnProjectPath.endsWith(".lfn"):
   hint("QuitCalled", false)
-  quit("NFL source files are compiled through the nfl CLI, not by passing them directly to Nim.\n" &
-    "Use: nfl check " & nflProjectPath & "\n" &
-    "Or:  nfl compile " & nflProjectPath, 1)
+  quit("LFN source files are compiled through the lfn CLI, not by passing them directly to Nim.\n" &
+    "Use: lfn check " & lfnProjectPath & "\n" &
+    "Or:  lfn compile " & lfnProjectPath, 1)

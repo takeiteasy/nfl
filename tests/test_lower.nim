@@ -1,35 +1,35 @@
 import std/strutils
 import std/unittest
 
-import nfl/diagnostics
-import nfl/lower
-import nfl/reader
-import nfl/synforms
-import nfl/syntax
+import lfn/diagnostics
+import lfn/lower
+import lfn/reader
+import lfn/synforms
+import lfn/syntax
 
 proc expectLowerError(source, messagePart: string) =
   try:
-    discard lowerExpr(readOne(source, "lower-test.nfl"))
+    discard lowerExpr(readOne(source, "lower-test.lfn"))
     fail()
   except CompilerError as err:
-    check err.diagnostic.span.file == "lower-test.nfl"
+    check err.diagnostic.span.file == "lower-test.lfn"
     check err.diagnostic.message.contains(messagePart)
 
 proc expectLowerModuleError(source, messagePart: string) =
   try:
-    discard lowerModule(readAll(source, "lower-test.nfl"))
+    discard lowerModule(readAll(source, "lower-test.lfn"))
     fail()
   except CompilerError as err:
-    check err.diagnostic.span.file == "lower-test.nfl"
+    check err.diagnostic.span.file == "lower-test.lfn"
     check err.diagnostic.message.contains(messagePart)
 
 suite "lowering validation":
   test "allows set! for var bindings":
-    discard lowerExpr(readOne("(var ((x 1)) (set! x 2) x)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(var ((x 1)) (set! x 2) x)", "lower-test.lfn"))
 
   test "allows typed let and var bindings":
-    discard lowerExpr(readOne("(let (((x int) 1)) x)", "lower-test.nfl"))
-    discard lowerExpr(readOne("(var (((x int) 1)) (set! x 2) x)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (((x int) 1)) x)", "lower-test.lfn"))
+    discard lowerExpr(readOne("(var (((x int) 1)) (set! x 2) x)", "lower-test.lfn"))
 
   test "rejects set! for let bindings":
     expectLowerError("(let ((x 1)) (set! x 2) x)", "immutable binding")
@@ -38,18 +38,18 @@ suite "lowering validation":
     expectLowerError("(set! x 2)", "not a mutable local")
 
   test "allows set! to a dot-field place, incl. on a let binding (#75)":
-    discard lowerExpr(readOne("(let ((o 1)) (set! (. o field) 2))", "lower-test.nfl"))
-    discard lowerExpr(readOne("(var ((o 1)) (set! (. o field) 2))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let ((o 1)) (set! (. o field) 2))", "lower-test.lfn"))
+    discard lowerExpr(readOne("(var ((o 1)) (set! (. o field) 2))", "lower-test.lfn"))
 
   test "allows set! to an at-index place, incl. on a let binding (#75)":
-    discard lowerExpr(readOne("(let ((s 1)) (set! (at s 0) 2))", "lower-test.nfl"))
-    discard lowerExpr(readOne("(var ((s 1)) (set! (at s 0) 2))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let ((s 1)) (set! (at s 0) 2))", "lower-test.lfn"))
+    discard lowerExpr(readOne("(var ((s 1)) (set! (at s 0) 2))", "lower-test.lfn"))
 
   test "allows set! to a slice place (#75)":
-    discard lowerExpr(readOne("(let ((s 1)) (set! (slice s 0 1) 2))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let ((s 1)) (set! (slice s 0 1) 2))", "lower-test.lfn"))
 
   test "allows set! to an accessor-call place (#75)":
-    discard lowerExpr(readOne("(let ((o 1)) (set! (fieldName o) 2))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let ((o 1)) (set! (fieldName o) 2))", "lower-test.lfn"))
 
   test "rejects set! to a dot-method-call place":
     expectLowerError("(let ((o 1)) (set! (. o method extra) 2))", "field access, not a method call")
@@ -64,22 +64,22 @@ suite "lowering validation":
     expectLowerError("(let ((x 1) (x 2)) x)", "duplicate binding")
 
   test "allows list/tuple destructuring bindings (#12)":
-    discard lowerExpr(readOne("(let (([a b] pair)) (+ a b))", "lower-test.nfl"))
-    discard lowerExpr(readOne("(var (([a b] pair)) (set! a 1) a)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (([a b] pair)) (+ a b))", "lower-test.lfn"))
+    discard lowerExpr(readOne("(var (([a b] pair)) (set! a 1) a)", "lower-test.lfn"))
 
   test "allows rest-capture destructuring":
-    discard lowerExpr(readOne("(let (([head & rest] xs)) head)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (([head & rest] xs)) head)", "lower-test.lfn"))
 
   test "allows nested destructuring":
-    discard lowerExpr(readOne("(let (([a [b c]] nested)) (+ a (+ b c)))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (([a [b c]] nested)) (+ a (+ b c)))", "lower-test.lfn"))
 
   test "destructuring skips _ placeholders":
     # `_` is never declared, so repeated `_` in a pattern is not a duplicate
     # binding — lowering doesn't track undeclared-identifier references
     # (that's left to Nim's own compile pass), so this only checks that
     # lowering itself succeeds.
-    discard lowerExpr(readOne("(let (([_ b] pair)) b)", "lower-test.nfl"))
-    discard lowerExpr(readOne("(let (([_ _] pair)) 1)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (([_ b] pair)) b)", "lower-test.lfn"))
+    discard lowerExpr(readOne("(let (([_ _] pair)) 1)", "lower-test.lfn"))
 
   test "rejects duplicate names across a destructuring pattern":
     expectLowerError("(let (([a a] pair)) a)", "duplicate binding: a")
@@ -103,8 +103,8 @@ suite "lowering validation":
     expectLowerError("(let (([a b] {.used.} pair)) (+ a b))", "destructuring pattern cannot carry a pragma clause")
 
   test "allows destructuring in var/const sections (#47)":
-    discard lowerModule(readAll("(var (([a b] pair)))\n(set! a 1)\na", "lower-test.nfl"))
-    discard lowerModule(readAll("(const (([a b] pair)))\na", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (([a b] pair)))\n(set! a 1)\na", "lower-test.lfn"))
+    discard lowerModule(readAll("(const (([a b] pair)))\na", "lower-test.lfn"))
 
   test "rejects destructuring in a var/const section without a value":
     expectLowerModuleError("(var (([a b])))", "var section binding without a type annotation requires a value")
@@ -117,11 +117,11 @@ suite "lowering validation":
     expectLowerError("(do ([a b]) a)", "a destructured parameter requires a type annotation")
 
   test "allows a typed destructuring do parameter (#47)":
-    discard lowerExpr(readOne("(do (([a b] Pair)) (+ a b))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(do (([a b] Pair)) (+ a b))", "lower-test.lfn"))
 
   test "allows a parameter default (#77)":
-    discard lowerExpr(readOne("(do ((x int 5)) x)", "lower-test.nfl"))
-    discard lowerExpr(readOne("(do ((x [seq int] (list 1 2))) x)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(do ((x int 5)) x)", "lower-test.lfn"))
+    discard lowerExpr(readOne("(do ((x [seq int] (list 1 2))) x)", "lower-test.lfn"))
 
   test "rejects a do parameter default referencing an earlier parameter (#86)":
     # Allowed for `proc` (#77, see test_lower's proc-family suite / #84
@@ -137,7 +137,7 @@ suite "lowering validation":
     # Built directly (not via the reader) so both `a` occurrences share a
     # `hygieneId`, as a hygiene-renamed or `gensym`'d name would — matching
     # the ticket's report that #86 also reproduces with such names.
-    let span = Span(file: "lower-test.nfl", line: 1, col: 1, endLine: 1, endCol: 1)
+    let span = Span(file: "lower-test.lfn", line: 1, col: 1, endLine: 1, endCol: 1)
     let aDecl = newSymbol("a", span, hygieneId = 7)
     let aRef = newSymbol("a", span, hygieneId = 7)
     let doSx = newList(@[
@@ -155,7 +155,7 @@ suite "lowering validation":
       check err.diagnostic.message.contains("a `do` parameter default cannot reference an earlier parameter")
 
   test "allows a do parameter default referencing an unrelated earlier-declared name (#77)":
-    discard lowerExpr(readOne("(do ((a int) (b int 5)) (+ a b))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(do ((a int) (b int 5)) (+ a b))", "lower-test.lfn"))
 
   test "rejects a default value on a destructured parameter (#77)":
     expectLowerError("(do (([a b] Pair (make-pair))) a)", "a destructured parameter cannot have a default value")
@@ -164,11 +164,11 @@ suite "lowering validation":
     expectLowerError("(do ((x int 1 2)) x)", "parameter must be a symbol, (name type) or (name type default)")
 
   test "allows an object destructuring pattern (#47)":
-    discard lowerExpr(readOne("(let (([:name n :age a] person)) (+ a 1))", "lower-test.nfl"))
-    discard lowerExpr(readOne("(let (([:name :age] person)) (+ age 1))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (([:name n :age a] person)) (+ a 1))", "lower-test.lfn"))
+    discard lowerExpr(readOne("(let (([:name :age] person)) (+ age 1))", "lower-test.lfn"))
 
   test "allows a nested object pattern inside a positional pattern (#47)":
-    discard lowerExpr(readOne("(let (([a [:name n]] pair)) n)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (([a [:name n]] pair)) n)", "lower-test.lfn"))
 
   test "rejects a non-keyword object pattern key":
     expectLowerError("(let (([:name n age] pair)) n)", "object pattern key must be a :field keyword")
@@ -204,7 +204,7 @@ suite "lowering validation":
     expectLowerError("(slice xs 0)", "slice expects 3 arguments, got 2")
 
   test "allows object construction":
-    discard lowerExpr(readOne("(new Person (name \"Ada\") (age 36))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(new Person (name \"Ada\") (age 36))", "lower-test.lfn"))
 
   test "rejects malformed object construction":
     expectLowerError("(new)", "new expects a type and field initializers")
@@ -222,15 +222,15 @@ suite "lowering validation":
 (new Person
   (name "Ada")
   (name "Grace"))
-""", "lower-test.nfl"))
+""", "lower-test.lfn"))
       fail()
     except CompilerError as err:
-      check err.diagnostic.span.file == "lower-test.nfl"
+      check err.diagnostic.span.file == "lower-test.lfn"
       check err.diagnostic.span.line == 3
       check err.diagnostic.message.contains("duplicate new field: name")
 
   test "allows named tuple construction (#35)":
-    discard lowerExpr(readOne("(tuple-new Point2D (x 1.0) (y 2.0))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(tuple-new Point2D (x 1.0) (y 2.0))", "lower-test.lfn"))
 
   test "rejects malformed named tuple construction":
     expectLowerError("(tuple-new)", "tuple-new expects a type and at least one field initializer")
@@ -243,7 +243,7 @@ suite "lowering validation":
     expectLowerError("(tuple-new Point2D (x 1.0) (x 2.0))", "duplicate tuple-new field: x")
 
   test "allows named arguments in ordinary calls":
-    discard lowerExpr(readOne("(makePerson (: name \"Ada\") (: age 36))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(makePerson (: name \"Ada\") (: age 36))", "lower-test.lfn"))
 
   test "rejects malformed named arguments":
     expectLowerError("(: name \"Ada\")", "named argument marker is only allowed in call argument position")
@@ -259,10 +259,10 @@ suite "lowering validation":
 (makePerson
   (: name "Ada")
   (: name "Grace"))
-""", "lower-test.nfl"))
+""", "lower-test.lfn"))
       fail()
     except CompilerError as err:
-      check err.diagnostic.span.file == "lower-test.nfl"
+      check err.diagnostic.span.file == "lower-test.lfn"
       check err.diagnostic.span.line == 3
       check err.diagnostic.message.contains("duplicate named argument: name")
 
@@ -274,11 +274,11 @@ suite "lowering validation":
     expectLowerError("`(a b)", "runtime quasiquote is not implemented yet")
 
   test "allows type declarations at statement scope":
-    discard lowerModule(readAll("(type Count int)\n(type Person (object (name string)))\n(type Mood (enum happy sad))\n", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Count int)\n(type Person (object (name string)))\n(type Mood (enum happy sad))\n", "lower-test.lfn"))
 
   test "allows enum values with explicit ordinals":
     discard lowerModule(readAll(
-      "(type ErrCode (enum (Ok 0) (NotFound 404) ServerError))", "lower-test.nfl"))
+      "(type ErrCode (enum (Ok 0) (NotFound 404) ServerError))", "lower-test.lfn"))
 
   test "rejects type declarations in expression position":
     expectLowerError("(let ((x (type Count int))) x)", "type is only allowed at statement/module scope")
@@ -300,15 +300,15 @@ suite "lowering validation":
     expectLowerModuleError("(type Person (object (name string 1 2)))", "expected pragma clause between field name and type")
 
   test "allows an object field default (#76)":
-    discard lowerModule(readAll("(type Person (object (name string \"anon\") (age int 0)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Person (object (name string \"anon\") (age int 0)))", "lower-test.lfn"))
 
   test "allows a pragma'd object field default (#76)":
-    discard lowerModule(readAll("(type Person (object (name {.used.} string \"anon\")))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Person (object (name {.used.} string \"anon\")))", "lower-test.lfn"))
 
   test "allows a case discriminator default (#76)":
     discard lowerModule(readAll(
       "(type S (object (case kind K ka) (of ka (a int)) (of kb (b int))))",
-      "lower-test.nfl"))
+      "lower-test.lfn"))
 
   test "rejects malformed enum type declarations":
     expectLowerModuleError("(type Mood (enum))", "enum type expects values")
@@ -329,14 +329,14 @@ suite "lowering validation":
     expectLowerModuleError("(type Mood [T] (enum happy sad))", "enum type cannot be generic")
 
   test "allows distinct type declaration":
-    discard lowerModule(readAll("(type UserId (distinct int))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type UserId (distinct int))", "lower-test.lfn"))
 
   test "rejects distinct with wrong arity":
     expectLowerModuleError("(type UserId (distinct))", "distinct expects a base type")
     expectLowerModuleError("(type UserId (distinct int string))", "distinct expects a base type")
 
   test "allows tuple type declaration":
-    discard lowerModule(readAll("(type Point (tuple (x float) (y float)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Point (tuple (x float) (y float)))", "lower-test.lfn"))
 
   test "rejects tuple with no fields":
     expectLowerModuleError("(type Empty (tuple))", "tuple type expects at least one field")
@@ -349,10 +349,10 @@ suite "lowering validation":
     expectLowerModuleError("(type Bad (tuple (x int) (x int)))", "duplicate tuple field: x")
 
   test "allows ref type declaration (ref symbol)":
-    discard lowerModule(readAll("(type NodeRef (ref Node))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type NodeRef (ref Node))", "lower-test.lfn"))
 
   test "allows ref type declaration (ref object)":
-    discard lowerModule(readAll("(type PersonRef (ref (object (name string))))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type PersonRef (ref (object (name string))))", "lower-test.lfn"))
 
   test "rejects ref with wrong arity":
     expectLowerModuleError("(type Bad (ref))", "ref expects a base type")
@@ -362,19 +362,19 @@ suite "lowering validation":
     expectLowerModuleError("(type Bad (ref (enum a b)))", "ref base must be a type symbol")
 
   test "allows exported proc":
-    discard lowerModule(readAll("(proc greet* ((name string)) (: string) name)", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc greet* ((name string)) (: string) name)", "lower-test.lfn"))
 
   test "allows unexported operator proc name":
     discard lowerModule(readAll(
-      "(type MyInt (distinct int))\n(proc |+| ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+      "(type MyInt (distinct int))\n(proc |+| ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.lfn"))
 
   test "allows exported operator proc name":
     discard lowerModule(readAll(
-      "(type MyInt (distinct int))\n(proc +* ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+      "(type MyInt (distinct int))\n(proc +* ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.lfn"))
 
   test "allows exported multi-char operator proc name (** strips to *)":
     discard lowerModule(readAll(
-      "(type MyInt (distinct int))\n(proc ** ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+      "(type MyInt (distinct int))\n(proc ** ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.lfn"))
 
   test "rejects operator proc name mixing identifier and operator characters":
     expectLowerModuleError(
@@ -382,14 +382,14 @@ suite "lowering validation":
       "must be a plain identifier or an operator")
 
   test "allows exported var declaration":
-    discard lowerModule(readAll("(var version* \"1.0\")", "lower-test.nfl"))
+    discard lowerModule(readAll("(var version* \"1.0\")", "lower-test.lfn"))
 
   test "exported var declaration binding resolves under base name":
     # The binding is registered as `x`, not `x*`, so references without `*` work.
-    discard lowerModule(readAll("(var x* 1)\n(var y (+ x* 0))", "lower-test.nfl"))
+    discard lowerModule(readAll("(var x* 1)\n(var y (+ x* 0))", "lower-test.lfn"))
 
   test "allows exported type and object fields":
-    discard lowerModule(readAll("(type Person* (object (name* string) (age int)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Person* (object (name* string) (age int)))", "lower-test.lfn"))
 
   test "rejects export marker in proc name mid-position":
     expectLowerModuleError("(proc gre*et ((name string)) name)", "must be a plain identifier or an operator")
@@ -399,7 +399,7 @@ suite "lowering validation":
     # with an empty base — an operator name is made entirely of operator
     # characters, so the two meanings are only disambiguated by whether
     # stripping the trailing `*` leaves a nonempty operator name.
-    discard lowerModule(readAll("(proc * ((name string)) name)", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc * ((name string)) name)", "lower-test.lfn"))
 
   test "rejects export marker in var name mid-position":
     expectLowerModuleError("(var x*y 1)", "export marker is only allowed at the end of a name")
@@ -409,18 +409,18 @@ suite "lowering validation":
 
   test "allows unexported |**| operator proc name (#46)":
     discard lowerModule(readAll(
-      "(type MyInt (distinct int))\n(proc |**| ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+      "(type MyInt (distinct int))\n(proc |**| ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.lfn"))
 
   test "allows exported *** operator proc name, strips to ** (#46)":
     discard lowerModule(readAll(
-      "(type MyInt (distinct int))\n(proc *** ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+      "(type MyInt (distinct int))\n(proc *** ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.lfn"))
 
   test "allows unexported |+*| operator proc name (#46)":
     # Escaping suppresses marker-stripping entirely, so `|+*|` is the
     # unexported two-char operator `+*` — a different meaning from the
     # unescaped `+*`, which is exported `+` (see #29).
     discard lowerModule(readAll(
-      "(type MyInt (distinct int))\n(proc |+*| ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.nfl"))
+      "(type MyInt (distinct int))\n(proc |+*| ((a MyInt) (b MyInt)) (: MyInt) a)", "lower-test.lfn"))
 
   test "rejects export marker inside escaped non-operator name (#46)":
     expectLowerModuleError(
@@ -428,16 +428,16 @@ suite "lowering validation":
       "export marker is not applied inside |...|")
 
   test "allows typed var declaration":
-    discard lowerModule(readAll("(var (limit int) 100)", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (limit int) 100)", "lower-test.lfn"))
 
   test "allows typed exported var declaration":
-    discard lowerModule(readAll("(var (scale* int) 2)", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (scale* int) 2)", "lower-test.lfn"))
 
   test "allows typed var declaration with generic/vector type":
-    discard lowerModule(readAll("(var (xs [seq int]))", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (xs [seq int]))", "lower-test.lfn"))
 
   test "allows typed var declaration without a value":
-    discard lowerModule(readAll("(var (buf int))", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (buf int))", "lower-test.lfn"))
 
   test "rejects untyped var declaration without a value":
     expectLowerModuleError("(var x)", "without a type annotation requires a value")
@@ -449,30 +449,30 @@ suite "lowering validation":
     expectLowerError("(let ((x (var y 1))) x)", "var is only allowed at statement/module scope")
 
   test "distinguishes local var-with-body from module-level var declaration by shape":
-    discard lowerExpr(readOne("(var ((x 1)) x)", "lower-test.nfl"))
-    discard lowerModule(readAll("(var x 1)", "lower-test.nfl"))
-    discard lowerModule(readAll("(var (x int) 1)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(var ((x 1)) x)", "lower-test.lfn"))
+    discard lowerModule(readAll("(var x 1)", "lower-test.lfn"))
+    discard lowerModule(readAll("(var (x int) 1)", "lower-test.lfn"))
 
   test "allows multi-binding var section":
-    discard lowerModule(readAll("(var ((x 1) (y 2)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(var ((x 1) (y 2)))", "lower-test.lfn"))
 
   test "allows typed multi-binding var section":
-    discard lowerModule(readAll("(var (((x int) 1) ((y int) 2)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (((x int) 1) ((y int) 2)))", "lower-test.lfn"))
 
   test "allows multi-binding const section":
-    discard lowerModule(readAll("(const ((a 1) (b 2)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(const ((a 1) (b 2)))", "lower-test.lfn"))
 
   test "rejects empty var section":
     expectLowerModuleError("(var ())", "expects at least one binding")
 
   test "still lowers local var-with-body binding list unchanged":
-    discard lowerExpr(readOne("(var ((x 1) (y 2)) (+ x y))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(var ((x 1) (y 2)) (+ x y))", "lower-test.lfn"))
 
   test "allows value-less typed binding in var section":
-    discard lowerModule(readAll("(var (((x int))))", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (((x int))))", "lower-test.lfn"))
 
   test "allows mix of value-less and valued typed bindings in var section":
-    discard lowerModule(readAll("(var (((x int)) ((y int) 1)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (((x int)) ((y int) 1)))", "lower-test.lfn"))
 
   test "rejects value-less untyped binding in var section":
     expectLowerModuleError("(var ((x)))", "var section binding without a type annotation requires a value")
@@ -481,24 +481,24 @@ suite "lowering validation":
     expectLowerModuleError("(const (((a int))))", "const section binding requires a value")
 
   test "allows value-less typed binding with pragma in var section":
-    discard lowerModule(readAll("(var (((x int) {.volatile.})))", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (((x int) {.volatile.})))", "lower-test.lfn"))
 
   test "rejects const binding-list form with a body":
     expectLowerModuleError("(const ((a 1)) a)", "const does not support a local binding body")
 
   test "allows const declaration":
-    discard lowerModule(readAll("(const answer 42)", "lower-test.nfl"))
-    discard lowerModule(readAll("(const greeting \"hello\")", "lower-test.nfl"))
+    discard lowerModule(readAll("(const answer 42)", "lower-test.lfn"))
+    discard lowerModule(readAll("(const greeting \"hello\")", "lower-test.lfn"))
 
   test "allows typed const declaration":
-    discard lowerModule(readAll("(const (limit int) 100)", "lower-test.nfl"))
+    discard lowerModule(readAll("(const (limit int) 100)", "lower-test.lfn"))
 
   test "allows exported const":
-    discard lowerModule(readAll("(const maxCoord* 1000)", "lower-test.nfl"))
-    discard lowerModule(readAll("(const (scale* int) 2)", "lower-test.nfl"))
+    discard lowerModule(readAll("(const maxCoord* 1000)", "lower-test.lfn"))
+    discard lowerModule(readAll("(const (scale* int) 2)", "lower-test.lfn"))
 
   test "exported const binding resolves under base name":
-    discard lowerModule(readAll("(const x* 1)\n(const y (+ x* 0))", "lower-test.nfl"))
+    discard lowerModule(readAll("(const x* 1)\n(const y (+ x* 0))", "lower-test.lfn"))
 
   test "rejects const with wrong arity":
     expectLowerModuleError("(const x)", "expects 2")
@@ -519,31 +519,31 @@ suite "lowering validation":
     expectLowerError("(let ((x (const a 1))) x)", "const is only allowed at statement/module scope")
 
   test "allows pragma on proc":
-    discard lowerModule(readAll("(proc add {.inline.} ((x int) (y int)) (+ x y))", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc add {.inline.} ((x int) (y int)) (+ x y))", "lower-test.lfn"))
 
   test "allows pragma on proc with return type":
-    discard lowerModule(readAll("(proc add {.inline.} ((x int) (y int)) (: int) (+ x y))", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc add {.inline.} ((x int) (y int)) (: int) (+ x y))", "lower-test.lfn"))
 
   test "allows multi-marker pragma on proc":
-    discard lowerModule(readAll("(proc add {.inline, noSideEffect.} ((x int)) x)", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc add {.inline, noSideEffect.} ((x int)) x)", "lower-test.lfn"))
 
   test "allows pragma on exported proc":
-    discard lowerModule(readAll("(proc add* {.inline.} ((x int)) x)", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc add* {.inline.} ((x int)) x)", "lower-test.lfn"))
 
   test "allows pragma on type declaration":
-    discard lowerModule(readAll("(type Person {.bycopy.} (object (name string)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Person {.bycopy.} (object (name string)))", "lower-test.lfn"))
 
   test "allows pragma on object field":
-    discard lowerModule(readAll("(type Person (object (name {.exportc.} string)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Person (object (name {.exportc.} string)))", "lower-test.lfn"))
 
   test "allows pragma on var declaration":
-    discard lowerModule(readAll("(var x {.volatile.} 1)", "lower-test.nfl"))
+    discard lowerModule(readAll("(var x {.volatile.} 1)", "lower-test.lfn"))
 
   test "allows pragma on const":
-    discard lowerModule(readAll("(const x {.used.} 1)", "lower-test.nfl"))
+    discard lowerModule(readAll("(const x {.used.} 1)", "lower-test.lfn"))
 
   test "allows pragma on typed const":
-    discard lowerModule(readAll("(const (x int) {.used.} 1)", "lower-test.nfl"))
+    discard lowerModule(readAll("(const (x int) {.used.} 1)", "lower-test.lfn"))
 
   test "rejects pragma in expression position":
     expectLowerError("{.inline.}", "pragma is only allowed as a declaration annotation")
@@ -557,54 +557,54 @@ suite "lowering validation":
     expectLowerModuleError("(proc add (pragma foo*) ((x int)) x)", "pragma entry must be a marker symbol")
 
   test "allows value pragma on proc":
-    discard lowerModule(readAll("(proc cFoo {.importc: \"foo\", cdecl.} () (: int) 0)", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc cFoo {.importc: \"foo\", cdecl.} () (: int) 0)", "lower-test.lfn"))
 
   test "allows value pragma on var declaration":
-    discard lowerModule(readAll("(var x {.importc: \"gFoo\".} int)", "lower-test.nfl"))
+    discard lowerModule(readAll("(var x {.importc: \"gFoo\".} int)", "lower-test.lfn"))
 
   test "allows typed var declaration with pragma and no value":
-    discard lowerModule(readAll("(var (x int) {.volatile.})", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (x int) {.volatile.})", "lower-test.lfn"))
 
   test "allows typed var declaration with pragma and value":
-    discard lowerModule(readAll("(var (x int) {.volatile.} 42)", "lower-test.nfl"))
+    discard lowerModule(readAll("(var (x int) {.volatile.} 42)", "lower-test.lfn"))
 
   test "rejects export marker in value pragma key":
     expectLowerModuleError("(proc add (pragma (: foo* 1)) ((x int)) x)", "pragma key must be a non-empty symbol")
 
   test "allows pragma on local let binding (untyped)":
-    discard lowerExpr(readOne("(let ((x {.volatile.} 1)) x)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let ((x {.volatile.} 1)) x)", "lower-test.lfn"))
 
   test "allows pragma on local let binding (typed)":
-    discard lowerExpr(readOne("(let (((x int) {.volatile.} 5)) x)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(let (((x int) {.volatile.} 5)) x)", "lower-test.lfn"))
 
   test "allows pragma on local var binding":
-    discard lowerExpr(readOne("(var ((x {.volatile.} 1)) x)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(var ((x {.volatile.} 1)) x)", "lower-test.lfn"))
 
   test "rejects non-pragma clause between binding target and value":
     expectLowerError("(let ((x 42 1)) x)", "expected pragma clause between binding target and value")
 
   test "allows generic proc declaration":
-    discard lowerModule(readAll("(proc identity [T] ((x T)) (: T) x)", "lower-test.nfl"))
-    discard lowerModule(readAll("(proc pair [T U] ((a T) (b U)) (: T) a)", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc identity [T] ((x T)) (: T) x)", "lower-test.lfn"))
+    discard lowerModule(readAll("(proc pair [T U] ((a T) (b U)) (: T) a)", "lower-test.lfn"))
 
   test "allows generic type declaration":
-    discard lowerModule(readAll("(type Box [T] (object (value T)))", "lower-test.nfl"))
-    discard lowerModule(readAll("(type Pair [T U] (object (fst T) (snd U)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Box [T] (object (value T)))", "lower-test.lfn"))
+    discard lowerModule(readAll("(type Pair [T U] (object (fst T) (snd U)))", "lower-test.lfn"))
 
   test "allows generic proc with pragma":
-    discard lowerModule(readAll("(proc identity [T] {.inline.} ((x T)) (: T) x)", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc identity [T] {.inline.} ((x T)) (: T) x)", "lower-test.lfn"))
 
   test "allows generic type with pragma":
-    discard lowerModule(readAll("(type Box [T] {.bycopy.} (object (value T)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Box [T] {.bycopy.} (object (value T)))", "lower-test.lfn"))
 
   test "allows generic type reference in param type":
-    discard lowerModule(readAll("(proc unbox [T] ((b [Box T])) (: T) b)", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc unbox [T] ((b [Box T])) (: T) b)", "lower-test.lfn"))
 
   test "allows generic type reference in new":
     discard lowerModule(readAll("""
 (type Box [T] (object (value T)))
 (var b (new [Box int] (value 5)))
-""", "lower-test.nfl"))
+""", "lower-test.lfn"))
 
   test "rejects empty generic parameter list":
     expectLowerModuleError("(proc f [] (()) ())", "generic parameter list must not be empty")
@@ -624,10 +624,10 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows for loop with single binding":
-    discard lowerExpr(readOne("(for (x xs) (echo x))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(for (x xs) (echo x))", "lower-test.lfn"))
 
   test "allows for loop with multiple binding vars":
-    discard lowerExpr(readOne("(for ((i x) xs) (echo i))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(for ((i x) xs) (echo i))", "lower-test.lfn"))
 
   test "rejects for with non-pair clause":
     expectLowerError("(for xs (echo x))", "for clause must be a")
@@ -655,10 +655,10 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows case with of and else branches":
-    discard lowerExpr(readOne("(case n (of 0 \"zero\") (else \"other\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(case n (of 0 \"zero\") (else \"other\"))", "lower-test.lfn"))
 
   test "allows case without else":
-    discard lowerExpr(readOne("(case n (of 0 \"zero\") (of 1 \"one\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(case n (of 0 \"zero\") (of 1 \"one\"))", "lower-test.lfn"))
 
   test "rejects case with no branches":
     expectLowerError("(case n)", "case expects a value and at least one branch")
@@ -679,19 +679,19 @@ suite "lowering validation":
     expectLowerError("(case n (else))", "case else branch expects a body")
 
   test "allows case with multi-value of branch":
-    discard lowerExpr(readOne("(case n (of (1 2 3) \"low\") (else \"other\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(case n (of (1 2 3) \"low\") (else \"other\"))", "lower-test.lfn"))
 
   test "allows case with range of branch":
-    discard lowerExpr(readOne("(case n (of (.. 1 9) \"low\") (else \"other\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(case n (of (.. 1 9) \"low\") (else \"other\"))", "lower-test.lfn"))
 
   test "allows case with mixed value/range of branch":
-    discard lowerExpr(readOne("(case n (of (1 (.. 3 5) 7) \"mixed\") (else \"other\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(case n (of (1 (.. 3 5) 7) \"mixed\") (else \"other\"))", "lower-test.lfn"))
 
   test "allows case with wrapped single compound-expression of value":
     # A bare `(of (+ 1 2) …)` is read as a value list `+, 1, 2` (see
     # isCaseValueList) — a single computed value must be wrapped in an
     # extra list: `(of ((+ 1 2)) …)`.
-    discard lowerExpr(readOne("(case n (of ((+ 1 2)) \"three\") (else \"other\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(case n (of ((+ 1 2)) \"three\") (else \"other\"))", "lower-test.lfn"))
 
   test "rejects case range of branch with wrong arity":
     expectLowerError("(case n (of (.. 1) \"low\"))", "case range branch expects (.. lo hi)")
@@ -704,13 +704,13 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows match with literal, wildcard, and bind patterns":
-    discard lowerExpr(readOne("(match n (0 \"zero\") (m (+ m 1)) (_ \"other\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(match n (0 \"zero\") (m (+ m 1)) (_ \"other\"))", "lower-test.lfn"))
 
   test "allows match with quoted symbol pattern":
-    discard lowerExpr(readOne("(match n ('Red \"stop\") (_ \"go\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(match n ('Red \"stop\") (_ \"go\"))", "lower-test.lfn"))
 
   test "allows match with vector pattern and guard":
-    discard lowerExpr(readOne("(match n ([a b] :when (> a b) a) (_ 0))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(match n ([a b] :when (> a b) a) (_ 0))", "lower-test.lfn"))
 
   test "rejects match with no clauses":
     expectLowerError("(match n)", "match expects a value and at least one clause")
@@ -734,13 +734,13 @@ suite "lowering validation":
     expectLowerError("(match n ([1 b] b))", "destructuring pattern element must be a symbol")
 
   test "allows object patterns in match, with match-pattern field targets (#48)":
-    discard lowerExpr(readOne("(match n ([:name a] a) (_ \"other\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(match n ([:name a] a) (_ \"other\"))", "lower-test.lfn"))
 
   test "allows an object pattern field target that tests a quoted symbol (#48)":
-    discard lowerExpr(readOne("(match n ([:kind 'skCircle :radius r] r) (_ 0))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(match n ([:kind 'skCircle :radius r] r) (_ 0))", "lower-test.lfn"))
 
   test "allows an object pattern with a bare-key shorthand target (#48)":
-    discard lowerExpr(readOne("(match n ([:name] name) (_ \"other\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(match n ([:name] name) (_ \"other\"))", "lower-test.lfn"))
 
   test "rejects a non-keyword object pattern key in match (#48)":
     expectLowerError("(match n ([:name a b] a))", "object pattern key must be a :field keyword")
@@ -752,13 +752,13 @@ suite "lowering validation":
     expectLowerError("(match n ([:name & rest] rest))", "& rest capture is not supported in an object pattern")
 
   test "allows an of pattern with no nested pattern (#48)":
-    discard lowerExpr(readOne("(match n ((of Circle) 1) (_ 0))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(match n ((of Circle) 1) (_ 0))", "lower-test.lfn"))
 
   test "allows an of pattern with a nested object pattern (#48)":
-    discard lowerExpr(readOne("(match n ((of Circle [:radius r]) r) (_ 0))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(match n ((of Circle [:radius r]) r) (_ 0))", "lower-test.lfn"))
 
   test "allows an of pattern's guard to reference a field the pattern bound (#48)":
-    discard lowerExpr(readOne("(match n ((of Circle [:radius r]) :when (> r 0) r) (_ 0))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(match n ((of Circle [:radius r]) :when (> r 0) r) (_ 0))", "lower-test.lfn"))
 
   test "rejects an of pattern with a non-symbol type":
     expectLowerError("(match n ((of 1 [:radius r]) r))", "of pattern expects a type name")
@@ -771,10 +771,10 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows raise with argument":
-    discard lowerExpr(readOne("(raise e)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(raise e)", "lower-test.lfn"))
 
   test "allows bare raise":
-    discard lowerExpr(readOne("(raise)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(raise)", "lower-test.lfn"))
 
   test "rejects raise with too many arguments":
     expectLowerError("(raise e1 e2)", "raise expects 0 or 1 arguments, got 2")
@@ -784,22 +784,22 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows try with typed except":
-    discard lowerExpr(readOne("(try (riskyCall) (except ValueError (echo \"bad\")))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(try (riskyCall) (except ValueError (echo \"bad\")))", "lower-test.lfn"))
 
   test "allows try with named except binding":
-    discard lowerExpr(readOne("(try (riskyCall) (except (e ValueError) (echo (. e msg))))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(try (riskyCall) (except (e ValueError) (echo (. e msg))))", "lower-test.lfn"))
 
   test "allows try with bare except catch-all":
-    discard lowerExpr(readOne("(try (riskyCall) (except (echo \"oops\")))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(try (riskyCall) (except (echo \"oops\")))", "lower-test.lfn"))
 
   test "allows try with finally only":
-    discard lowerExpr(readOne("(try (riskyCall) (finally (cleanup)))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(try (riskyCall) (finally (cleanup)))", "lower-test.lfn"))
 
   test "allows try with except and finally":
-    discard lowerExpr(readOne("(try (riskyCall) (except ValueError (echo \"bad\")) (finally (cleanup)))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(try (riskyCall) (except ValueError (echo \"bad\")) (finally (cleanup)))", "lower-test.lfn"))
 
   test "allows try with multiple except branches":
-    discard lowerExpr(readOne("(try (riskyCall) (except ValueError (echo \"v\")) (except IOError (echo \"io\")))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(try (riskyCall) (except ValueError (echo \"v\")) (except IOError (echo \"io\")))", "lower-test.lfn"))
 
   test "rejects try with empty body":
     expectLowerError("(try (except ValueError (echo \"bad\")))", "try body must not be empty")
@@ -827,18 +827,18 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows a named block with no break-from":
-    discard lowerExpr(readOne("(block :search 1 2)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(block :search 1 2)", "lower-test.lfn"))
 
   test "allows break-from targeting an enclosing named block":
-    discard lowerExpr(readOne("(block :search (break-from :search 1))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(block :search (break-from :search 1))", "lower-test.lfn"))
 
   test "allows valueless break-from":
-    discard lowerExpr(readOne("(block :search (break-from :search))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(block :search (break-from :search))", "lower-test.lfn"))
 
   test "allows break-from nested inside a loop inside a named block":
     discard lowerExpr(readOne(
       "(block :search (for (x xs) (if (> x 3) (break-from :search x) nil)) -1)",
-      "lower-test.nfl"))
+      "lower-test.lfn"))
 
   test "rejects a named block with an empty body":
     expectLowerError("(block :search)", "block expects at least one expression")
@@ -872,19 +872,19 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows a catch with a matching throw inside":
-    discard lowerExpr(readOne("(catch :found (throw :found 1) -1)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(catch :found (throw :found 1) -1)", "lower-test.lfn"))
 
   test "allows a throw with no enclosing catch":
     # The whole point of #55 over #41's lexical break-from: a throw need not
     # be lexically inside any catch at all — matching happens at runtime.
-    discard lowerExpr(readOne("(throw :found 1)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(throw :found 1)", "lower-test.lfn"))
 
   test "allows throw crossing a proc boundary inside a catch":
     discard lowerModule(readAll(
-      "(catch :found (proc f () (throw :found 1)) -1)", "lower-test.nfl"))
+      "(catch :found (proc f () (throw :found 1)) -1)", "lower-test.lfn"))
 
   test "allows a catch with no throw inside":
-    discard lowerExpr(readOne("(catch :found 1 2)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(catch :found 1 2)", "lower-test.lfn"))
 
   test "rejects catch with an empty body":
     expectLowerError("(catch :found)", "catch expects at least one body expression")
@@ -908,16 +908,16 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows prog1 with a single expression":
-    discard lowerExpr(readOne("(prog1 1)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(prog1 1)", "lower-test.lfn"))
 
   test "allows prog1 with trailing side-effect forms":
-    discard lowerExpr(readOne("(var ((x 1)) (prog1 1 (set! x 2) (echo x)))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(var ((x 1)) (prog1 1 (set! x 2) (echo x)))", "lower-test.lfn"))
 
   test "allows prog2 with exactly two expressions":
-    discard lowerExpr(readOne("(prog2 1 2)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(prog2 1 2)", "lower-test.lfn"))
 
   test "allows prog2 with trailing side-effect forms":
-    discard lowerExpr(readOne("(prog2 (echo 1) 2 (echo 3))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(prog2 (echo 1) 2 (echo 3))", "lower-test.lfn"))
 
   test "rejects prog1 with no arguments":
     expectLowerError("(prog1)", "prog1 expects at least 1 argument(s), got 0")
@@ -931,10 +931,10 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows defer inside a block body":
-    discard lowerExpr(readOne("(block (defer (cleanup)))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(block (defer (cleanup)))", "lower-test.lfn"))
 
   test "allows defer inside a proc body":
-    discard lowerModule(readAll("(proc f () (defer (cleanup)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc f () (defer (cleanup)))", "lower-test.lfn"))
 
   test "rejects empty defer":
     expectLowerError("(block (defer))", "expected body expression")
@@ -950,25 +950,25 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows basic template":
-    discard lowerModule(readAll("(template double ((x int)) (* x 2))", "lower-test.nfl"))
+    discard lowerModule(readAll("(template double ((x int)) (* x 2))", "lower-test.lfn"))
 
   test "allows template with bare-symbol (untyped) param":
-    discard lowerModule(readAll("(template withLog (body) body)", "lower-test.nfl"))
+    discard lowerModule(readAll("(template withLog (body) body)", "lower-test.lfn"))
 
   test "allows exported template":
-    discard lowerModule(readAll("(template double* ((x int)) (* x 2))", "lower-test.nfl"))
+    discard lowerModule(readAll("(template double* ((x int)) (* x 2))", "lower-test.lfn"))
 
   test "allows template with pragma":
-    discard lowerModule(readAll("(template double {.deprecated.} ((x int)) (* x 2))", "lower-test.nfl"))
+    discard lowerModule(readAll("(template double {.deprecated.} ((x int)) (* x 2))", "lower-test.lfn"))
 
   test "allows generic template":
-    discard lowerModule(readAll("(template echo2 [T] ((x T)) (block (echo x) (echo x)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(template echo2 [T] ((x T)) (block (echo x) (echo x)))", "lower-test.lfn"))
 
   test "allows generic iterator":
-    discard lowerModule(readAll("(iterator genericUpTo [T] ((n T)) (: T) (yield n))", "lower-test.nfl"))
+    discard lowerModule(readAll("(iterator genericUpTo [T] ((n T)) (: T) (yield n))", "lower-test.lfn"))
 
   test "allows template with return type":
-    discard lowerModule(readAll("(template double ((x int)) (: int) (* x 2))", "lower-test.nfl"))
+    discard lowerModule(readAll("(template double ((x int)) (: int) (* x 2))", "lower-test.lfn"))
 
   test "rejects template with too few arguments":
     expectLowerModuleError("(template tooShort ())", "template expects name, parameters, and body")
@@ -990,13 +990,13 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows basic iterator":
-    discard lowerModule(readAll("(iterator upTo ((n int)) (: int) (yield n))", "lower-test.nfl"))
+    discard lowerModule(readAll("(iterator upTo ((n int)) (: int) (yield n))", "lower-test.lfn"))
 
   test "allows exported iterator":
-    discard lowerModule(readAll("(iterator upTo* ((n int)) (: int) (yield n))", "lower-test.nfl"))
+    discard lowerModule(readAll("(iterator upTo* ((n int)) (: int) (yield n))", "lower-test.lfn"))
 
   test "allows iterator with pragma":
-    discard lowerModule(readAll("(iterator upTo {.inline.} ((n int)) (: int) (yield n))", "lower-test.nfl"))
+    discard lowerModule(readAll("(iterator upTo {.inline.} ((n int)) (: int) (yield n))", "lower-test.lfn"))
 
   test "rejects iterator missing return type":
     expectLowerModuleError("(iterator upTo ((n int)) (yield n))", "iterator requires an explicit return type")
@@ -1022,7 +1022,7 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows yield with expression":
-    discard lowerExpr(readOne("(yield 42)", "lower-test.nfl"))
+    discard lowerExpr(readOne("(yield 42)", "lower-test.lfn"))
 
   test "rejects yield with no arguments":
     expectLowerError("(yield)", "yield expects exactly one expression")
@@ -1035,7 +1035,7 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows while loop":
-    discard lowerExpr(readOne("(while true (echo \"tick\"))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(while true (echo \"tick\"))", "lower-test.lfn"))
 
   test "rejects while with missing body":
     expectLowerError("(while true)", "while expects a condition and body")
@@ -1044,7 +1044,7 @@ suite "lowering validation":
     expectLowerError("(while)", "while expects a condition and body")
 
   test "allows break in statement position":
-    discard lowerModule(readAll("(while true (break))", "lower-test.nfl"))
+    discard lowerModule(readAll("(while true (break))", "lower-test.lfn"))
 
   test "rejects break with a non-label argument":
     expectLowerModuleError("(while true (break 1))", "break target must be a :name label")
@@ -1054,7 +1054,7 @@ suite "lowering validation":
       "break expects 0 or 1 arguments, got 2")
 
   test "allows continue in statement position":
-    discard lowerModule(readAll("(while true (continue))", "lower-test.nfl"))
+    discard lowerModule(readAll("(while true (continue))", "lower-test.lfn"))
 
   test "rejects continue with a non-label argument":
     expectLowerModuleError("(while true (continue 1))", "continue target must be a :name label")
@@ -1068,25 +1068,25 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows a labelled while loop with a labelled break":
-    discard lowerModule(readAll("(while :outer true (break :outer))", "lower-test.nfl"))
+    discard lowerModule(readAll("(while :outer true (break :outer))", "lower-test.lfn"))
 
   test "allows a labelled for loop with a labelled continue":
     discard lowerModule(readAll(
-      "(for :outer (x xs) (continue :outer))", "lower-test.nfl"))
+      "(for :outer (x xs) (continue :outer))", "lower-test.lfn"))
 
   test "allows a labelled break from a nested loop":
     discard lowerModule(readAll("""
       (while :outer true
         (while true
           (if true (break :outer) nil)))
-    """, "lower-test.nfl"))
+    """, "lower-test.lfn"))
 
   test "allows a labelled continue from a nested loop":
     discard lowerModule(readAll("""
       (while :outer true
         (while true
           (if true (continue :outer) nil)))
-    """, "lower-test.nfl"))
+    """, "lower-test.lfn"))
 
   test "rejects a labelled break targeting an unknown label":
     expectLowerModuleError("(while true (break :nope))",
@@ -1123,20 +1123,20 @@ suite "lowering validation":
       (while :outer true
         (while :outer true
           (break :outer)))
-    """, "lower-test.nfl"))
+    """, "lower-test.lfn"))
 
   # ---------------------------------------------------------------------------
   # return  (#25)
   # ---------------------------------------------------------------------------
 
   test "allows return with value":
-    discard lowerModule(readAll("(proc f () (: int) (return 42))", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc f () (: int) (return 42))", "lower-test.lfn"))
 
   test "allows bare return":
-    discard lowerModule(readAll("(proc f () (return))", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc f () (return))", "lower-test.lfn"))
 
   test "allows return inside a proc body":
-    discard lowerModule(readAll("(proc f () (: int) (if true (return 1) 2))", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc f () (: int) (if true (return 1) 2))", "lower-test.lfn"))
 
   test "rejects return with too many arguments":
     expectLowerError("(return 1 2)", "return expects 0 or 1 arguments, got 2")
@@ -1146,10 +1146,10 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows discard with expression":
-    discard lowerModule(readAll("(discard (someCall))", "lower-test.nfl"))
+    discard lowerModule(readAll("(discard (someCall))", "lower-test.lfn"))
 
   test "allows bare discard":
-    discard lowerModule(readAll("(discard)", "lower-test.nfl"))
+    discard lowerModule(readAll("(discard)", "lower-test.lfn"))
 
   test "rejects discard with too many arguments":
     expectLowerModuleError("(discard x y)", "discard expects 0 or 1 arguments, got 2")
@@ -1159,7 +1159,7 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows method definition":
-    discard lowerModule(readAll("(method greet ((self string)) (: string) self)", "lower-test.nfl"))
+    discard lowerModule(readAll("(method greet ((self string)) (: string) self)", "lower-test.lfn"))
 
   test "rejects method in expression position":
     expectLowerError("(method m () m)", "method is only allowed at statement/module scope")
@@ -1169,19 +1169,19 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows func definition":
-    discard lowerModule(readAll("(func double ((x int)) (: int) (* x 2))", "lower-test.nfl"))
+    discard lowerModule(readAll("(func double ((x int)) (: int) (* x 2))", "lower-test.lfn"))
 
   test "allows generic func definition":
-    discard lowerModule(readAll("(func identity [T] ((x T)) (: T) x)", "lower-test.nfl"))
+    discard lowerModule(readAll("(func identity [T] ((x T)) (: T) x)", "lower-test.lfn"))
 
   test "rejects func in expression position":
     expectLowerError("(let ((x (func f () 1))) x)", "func is only allowed at statement/module scope")
 
   test "allows converter definition":
-    discard lowerModule(readAll("(converter toFloat ((x int)) (: float) (float x))", "lower-test.nfl"))
+    discard lowerModule(readAll("(converter toFloat ((x int)) (: float) (float x))", "lower-test.lfn"))
 
   test "allows generic converter definition":
-    discard lowerModule(readAll("(converter wrap [T] ((x T)) (: T) x)", "lower-test.nfl"))
+    discard lowerModule(readAll("(converter wrap [T] ((x T)) (: T) x)", "lower-test.lfn"))
 
   test "rejects converter missing return type":
     expectLowerModuleError("(converter toFloat ((x int)) (float x))",
@@ -1204,10 +1204,10 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows from-import of named symbols":
-    discard lowerModule(readAll("(from std/strutils import toUpperAscii toLowerAscii)", "lower-test.nfl"))
+    discard lowerModule(readAll("(from std/strutils import toUpperAscii toLowerAscii)", "lower-test.lfn"))
 
   test "allows from-import-except":
-    discard lowerModule(readAll("(from std/math import (except sqrt))", "lower-test.nfl"))
+    discard lowerModule(readAll("(from std/math import (except sqrt))", "lower-test.lfn"))
 
   test "rejects from missing the import keyword":
     expectLowerModuleError("(from std/strutils bring toUpperAscii)",
@@ -1221,9 +1221,9 @@ suite "lowering validation":
     expectLowerModuleError("(from std/math import (except))",
       "from ... import (except ...) expects at least one symbol")
 
-  test "rejects from importing an nfl file":
-    expectLowerModuleError("(from ./helpers.nfl import foo)",
-      "from does not support importing nfl files")
+  test "rejects from importing an lfn file":
+    expectLowerModuleError("(from ./helpers.lfn import foo)",
+      "from does not support importing lfn files")
 
   test "rejects from with invalid module path":
     expectLowerModuleError("(from /std/strutils import toUpperAscii)", "invalid import path")
@@ -1240,10 +1240,10 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows object with inheritance clause":
-    discard lowerModule(readAll("(type Animal (ref (object (of RootObj) (name string))))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Animal (ref (object (of RootObj) (name string))))", "lower-test.lfn"))
 
   test "allows inheritance-only object (no extra fields)":
-    discard lowerModule(readAll("(type Base (object (of RootObj)))", "lower-test.nfl"))
+    discard lowerModule(readAll("(type Base (object (of RootObj)))", "lower-test.lfn"))
 
   test "rejects malformed inheritance clause (missing base)":
     expectLowerModuleError("(type Bad (object (of) (x int)))", "object inheritance clause must be (of Base)")
@@ -1266,25 +1266,25 @@ suite "lowering validation":
           (of [skRect] (width float) (height float))
           (of skPoint)
           (else (extra string))))
-      """, "lower-test.nfl"))
+      """, "lower-test.lfn"))
 
   test "allows a case object with no plain fields before the case clause":
     discard lowerModule(readAll("""
       (type K (enum kA kB))
       (type S (object (case kind K) (of kA) (of kB)))
-      """, "lower-test.nfl"))
+      """, "lower-test.lfn"))
 
   test "allows a case object composed with ref":
     discard lowerModule(readAll("""
       (type K (enum kA kB))
       (type S (ref (object (case kind K) (of kA) (of kB))))
-      """, "lower-test.nfl"))
+      """, "lower-test.lfn"))
 
   test "allows an exported case discriminator":
     discard lowerModule(readAll("""
       (type K (enum kA kB))
       (type S* (object (case kind* K) (of kA) (of kB)))
-      """, "lower-test.nfl"))
+      """, "lower-test.lfn"))
 
   test "rejects an of branch with no preceding case clause":
     expectLowerModuleError(
@@ -1338,10 +1338,10 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows set! result in a proc with a return type":
-    discard lowerModule(readAll("(proc f () (: int) (set! result 5))", "lower-test.nfl"))
+    discard lowerModule(readAll("(proc f () (: int) (set! result 5))", "lower-test.lfn"))
 
   test "allows set! result in a method with a return type":
-    discard lowerModule(readAll("(method f ((self string)) (: int) (set! result 5))", "lower-test.nfl"))
+    discard lowerModule(readAll("(method f ((self string)) (: int) (set! result 5))", "lower-test.lfn"))
 
   test "rejects set! result in a void proc":
     expectLowerModuleError("(proc f () (set! result 5))", "not a mutable local")
@@ -1357,7 +1357,7 @@ suite "lowering validation":
   # ---------------------------------------------------------------------------
 
   test "allows set! result in a do with a return type":
-    discard lowerExpr(readOne("(do () (: int) (set! result 5))", "lower-test.nfl"))
+    discard lowerExpr(readOne("(do () (: int) (set! result 5))", "lower-test.lfn"))
 
   test "rejects set! result in a do with no return type as an unrelated free variable":
     expectLowerError("(do () (set! result 5))", "not a mutable local")
@@ -1374,64 +1374,64 @@ suite "lowering validation":
 
 suite "isDeclForm / declaredNames":
   test "decl forms are recognized":
-    for src in ["(var x 1)", "(const x 1)", "(import ./a.nfl)",
+    for src in ["(var x 1)", "(const x 1)", "(import ./a.lfn)",
                 "(proc f () (: int) 1)", "(template f () 1)",
                 "(iterator f () (: int) (yield 1))", "(type T int)",
                 "(func f () (: int) 1)", "(converter f ((x int)) (: float) x)",
                 "(discard 1)", "(break)", "(continue)"]:
-      check isDeclForm(readOne(src, "t.nfl"))
+      check isDeclForm(readOne(src, "t.lfn"))
 
   test "ordinary expressions are not decl forms":
     for src in ["(+ 1 2)", "x", "42", "(echo \"hi\")", "(if true 1 2)"]:
-      check not isDeclForm(readOne(src, "t.nfl"))
+      check not isDeclForm(readOne(src, "t.lfn"))
 
   test "a block is a decl form only when a child is":
-    check isDeclForm(readOne("(block (type T int) (proc f () (: int) 1))", "t.nfl"))
-    check not isDeclForm(readOne("(block (+ 1 2) (+ 3 4))", "t.nfl"))
+    check isDeclForm(readOne("(block (type T int) (proc f () (: int) 1))", "t.lfn"))
+    check not isDeclForm(readOne("(block (+ 1 2) (+ 3 4))", "t.lfn"))
 
   test "declaredNames extracts a plain var/const/proc/type name":
-    check declaredNames(readOne("(var x 1)", "t.nfl")) == @["x"]
-    check declaredNames(readOne("(const x 1)", "t.nfl")) == @["x"]
-    check declaredNames(readOne("(proc f () (: int) 1)", "t.nfl")) == @["f"]
-    check declaredNames(readOne("(type T int)", "t.nfl")) == @["T"]
+    check declaredNames(readOne("(var x 1)", "t.lfn")) == @["x"]
+    check declaredNames(readOne("(const x 1)", "t.lfn")) == @["x"]
+    check declaredNames(readOne("(proc f () (: int) 1)", "t.lfn")) == @["f"]
+    check declaredNames(readOne("(type T int)", "t.lfn")) == @["T"]
 
   test "declaredNames strips the export marker":
-    check declaredNames(readOne("(proc f* () (: int) 1)", "t.nfl")) == @["f"]
-    check declaredNames(readOne("(var x* 1)", "t.nfl")) == @["x"]
+    check declaredNames(readOne("(proc f* () (: int) 1)", "t.lfn")) == @["f"]
+    check declaredNames(readOne("(var x* 1)", "t.lfn")) == @["x"]
 
   test "declaredNames handles a typed (name Type) target":
-    check declaredNames(readOne("(var (x int) 1)", "t.nfl")) == @["x"]
+    check declaredNames(readOne("(var (x int) 1)", "t.lfn")) == @["x"]
 
   test "declaredNames handles a var/const section (multiple bindings)":
-    check declaredNames(readOne("(var ((x 1) (y 2)))", "t.nfl")) == @["x", "y"]
+    check declaredNames(readOne("(var ((x 1) (y 2)))", "t.lfn")) == @["x", "y"]
 
   test "declaredNames recurses into a block":
     check declaredNames(readOne(
-      "(block (type T (object (n int))) (proc f () (: int) 1))", "t.nfl")) ==
+      "(block (type T (object (n int))) (proc f () (: int) 1))", "t.lfn")) ==
       @["T", "f"]
 
   test "declaredNames is empty for a non-decl form":
-    check declaredNames(readOne("(+ 1 2)", "t.nfl")).len == 0
+    check declaredNames(readOne("(+ 1 2)", "t.lfn")).len == 0
 
   test "static-when is a decl form only when a clause body is":
     check isDeclForm(readOne(
-      "(static-when ((defined windows) (proc f () (: int) 1)))", "t.nfl"))
+      "(static-when ((defined windows) (proc f () (: int) 1)))", "t.lfn"))
     check not isDeclForm(readOne(
-      "(static-when ((defined windows) (+ 1 2)) (else (+ 3 4)))", "t.nfl"))
+      "(static-when ((defined windows) (+ 1 2)) (else (+ 3 4)))", "t.lfn"))
 
   test "declaredNames recurses into static-when clauses":
     check declaredNames(readOne(
       "(static-when ((defined windows) (proc plat () (: int) 1)) " &
-      "(else (proc plat () (: int) 2)))", "t.nfl")) == @["plat", "plat"]
+      "(else (proc plat () (: int) 2)))", "t.lfn")) == @["plat", "plat"]
 
 suite "static-when (#32)":
   test "accepts a well-formed static-when with else, in expression position":
     discard lowerExpr(readOne(
-      "(static-when ((defined windows) 1) (else 2))", "lower-test.nfl"))
+      "(static-when ((defined windows) 1) (else 2))", "lower-test.lfn"))
 
   test "accepts a well-formed static-when without else, at statement position":
     discard lowerModule(readAll(
-      "(static-when ((defined windows) (discard 1)))", "lower-test.nfl"))
+      "(static-when ((defined windows) (discard 1)))", "lower-test.lfn"))
 
   test "rejects static-when with no clauses":
     expectLowerError("(static-when)", "at least one clause")
@@ -1462,14 +1462,14 @@ suite "static-when (#32)":
 
   test "does not require an else clause at statement position":
     discard lowerModule(readAll(
-      "(static-when ((defined windows) (discard 1)))", "lower-test.nfl"))
+      "(static-when ((defined windows) (discard 1)))", "lower-test.lfn"))
 
   test "the same name declared in two branches lowers cleanly (same kind)":
     discard lowerModule(readAll(
       "(static-when ((defined windows) (var y 1)) (else (var y 2))) (set! y 5)",
-      "lower-test.nfl"))
+      "lower-test.lfn"))
 
   test "the same name declared in two branches lowers cleanly (mixed kind, mutable wins)":
     discard lowerModule(readAll(
       "(static-when ((defined windows) (var y 1)) (else (const y 2))) (set! y 5)",
-      "lower-test.nfl"))
+      "lower-test.lfn"))

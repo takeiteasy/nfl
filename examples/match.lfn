@@ -43,7 +43,7 @@
 (echo (match (@ [11 2 3]) ([h & _] :when (> h 10) "big") (_ "small")))
 
 ; Object-variant patterns (#48) — two composable pattern kinds, neither
-; needing NFL to know a type's field order at compile time:
+; needing LFN to know a type's field order at compile time:
 ;
 ;   (of Type)          — tests the scrutinee's runtime type via Nim's `of`
 ;   (of Type pattern)  — same test, then matches `pattern` against a

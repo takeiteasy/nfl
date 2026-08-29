@@ -1,6 +1,6 @@
 ## Macro expansion: walks reader output (`Syntax`) and repeatedly rewrites
 ## macro calls (both `defmacro` template-style macros and `defmacro-proc`
-## procedural macros) until none remain, inlining `(import file.nfl)` forms
+## procedural macros) until none remain, inlining `(import file.lfn)` forms
 ## along the way. Runs before `lower.nim`, which turns the fully-expanded
 ## forms into Nim AST.
 
@@ -35,7 +35,7 @@ proc expandExpr*(env: MacroEnv; sx: Syntax; depth = 0): Syntax
 proc expandModule*(forms: seq[Syntax]; env: MacroEnv = newMacroEnv(); currentDir = ""; selfPath = ""): seq[Syntax]
   ## Expands a whole module's top-level forms, registering `defmacro`/
   ## `defmacro-proc` definitions as they're encountered and inlining
-  ## `(import file.nfl)` forms in place (resolved relative to `currentDir`).
+  ## `(import file.lfn)` forms in place (resolved relative to `currentDir`).
   ## `selfPath`, when set, is pushed onto the include stack so importing
   ## the entry file itself is caught as a circular import.
 
@@ -1150,13 +1150,13 @@ proc expandExpr*(env: MacroEnv; sx: Syntax; depth = 0): Syntax =
   else:
     sx.copySyntax()
 
-proc isNflImportForm(form: Syntax): bool =
+proc isLfnImportForm(form: Syntax): bool =
   form.kind == sxList and form.items.len == 2 and form.items[0].isSymbol("import") and
-    form.items[1].kind == sxSymbol and form.items[1].sym.endsWith(".nfl")
+    form.items[1].kind == sxSymbol and form.items[1].sym.endsWith(".lfn")
 
-proc resolveNflImportPath(currentDir, raw: string): string =
+proc resolveLfnImportPath(currentDir, raw: string): string =
   ## Never falls back to `getCurrentDir()` — this runs at Nim compile time
-  ## inside the `nflModule` macro during `nfl run`/`compile`/`check`, where
+  ## inside the `lfnModule` macro during `lfn run`/`compile`/`check`, where
   ## the VM refuses it (compile-time FFI). `currentDir` is empty only for
   ## synthetic, non-file-backed sources, which can't resolve relative
   ## imports meaningfully anyway.
@@ -1164,8 +1164,8 @@ proc resolveNflImportPath(currentDir, raw: string): string =
   else: normalizedPath(absolutePath(raw, currentDir))
 
 proc expandModuleFile(path: string; env: MacroEnv; span: Span): seq[Syntax] =
-  ## Inline-includes an `.nfl` file's expanded forms in place of the
-  ## `(import path.nfl)` form that referenced it (#10). Files already fully
+  ## Inline-includes an `.lfn` file's expanded forms in place of the
+  ## `(import path.lfn)` form that referenced it (#10). Files already fully
   ## included are skipped (diamond imports don't duplicate declarations);
   ## a file still being included when it's requested again — including the
   ## entry file itself, which `expandModule*` also pushes onto
@@ -1189,8 +1189,8 @@ proc expandModule*(forms: seq[Syntax]; env: MacroEnv = newMacroEnv(); currentDir
       env.defineMacro parseDefmacro(form)
     elif form.kind == sxList and form.items.len > 0 and form.items[0].isSymbol("defmacro-proc"):
       env.defineMacroProc parseDefmacroProc(form)
-    elif form.isNflImportForm():
-      result.add expandModuleFile(resolveNflImportPath(currentDir, form.items[1].sym), env, form.span)
+    elif form.isLfnImportForm():
+      result.add expandModuleFile(resolveLfnImportPath(currentDir, form.items[1].sym), env, form.span)
     else:
       result.add expandExpr(env, form)
   if selfPath.len > 0:

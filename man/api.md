@@ -1,6 +1,6 @@
 # API Documentation
 
-NFL's API reference is generated from source with [Nim's docgen](https://nim-lang.org/docs/docgen.html), driven by the `docs` nimble task.
+LFN's API reference is generated from source with [Nim's docgen](https://nim-lang.org/docs/docgen.html), driven by the `docs` nimble task.
 
 ## Generating
 
@@ -8,9 +8,9 @@ NFL's API reference is generated from source with [Nim's docgen](https://nim-lan
 nimble docs
 ```
 
-This runs `nim doc --project --index:on` over `src/nfl/cli.nim` (which imports every other module, directly or transitively) and writes one HTML page per module directly into `docs/`, plus docgen's search index (`theindex.html`, per-module `*.idx` files and `dochack.js`) and a thin `docs/index.html` landing page linking to the module pages. Every module page therefore has a full-text search box. Output lands in `docs/` (not `docs/api/`) for local preview convenience; the prose guides live in `/man` at the repo root instead so they don't collide with generated output. `docs/` itself is gitignored — the published copy comes from CI, not from a commit (see Publishing below).
+This runs `nim doc --project --index:on` over `src/lfn/cli.nim` (which imports every other module, directly or transitively) and writes one HTML page per module directly into `docs/`, plus docgen's search index (`theindex.html`, per-module `*.idx` files and `dochack.js`) and a thin `docs/index.html` landing page linking to the module pages. Every module page therefore has a full-text search box. Output lands in `docs/` (not `docs/api/`) for local preview convenience; the prose guides live in `/man` at the repo root instead so they don't collide with generated output. `docs/` itself is gitignored — the published copy comes from CI, not from a commit (see Publishing below).
 
-Regenerate after adding or editing doc comments (`##`) on exported symbols, or after adding a new module under `src/nfl/`.
+Regenerate after adding or editing doc comments (`##`) on exported symbols, or after adding a new module under `src/lfn/`.
 
 ## `--index:on` and `dochack.js`
 

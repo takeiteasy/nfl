@@ -1,18 +1,18 @@
 import std/unittest
 
-import nfl/compiler
+import lfn/compiler
 
-nflModule staticRead("sequence_helpers.nfl"), "tests/sequence_helpers.nfl"
-nflModule staticRead("clos.nfl"), "tests/clos.nfl"
+lfnModule staticRead("sequence_helpers.lfn"), "tests/sequence_helpers.lfn"
+lfnModule staticRead("clos.lfn"), "tests/clos.lfn"
 
-suite "nfl stdlib":
-  test "sequence helpers from nfl file":
+suite "lfn stdlib":
+  test "sequence helpers from lfn file":
     check firstValue == 1
     check restValues == @[2, 3, 4]
     check emptyValues == true
     check appendedValues == @[1, 2, 3, 4, 5, 6]
 
-  test "higher-order sequence helpers from nfl file":
+  test "higher-order sequence helpers from lfn file":
     check mappedValues == @[2, 4, 6, 8]
     check mappedWithCapture == @[11, 12, 13, 14]
     check filteredValues == @[1, 2, 3]
@@ -20,7 +20,7 @@ suite "nfl stdlib":
     check foldedRight == -2
     check mappedStrings == @[1, 2, 3]
 
-  test "CL-style sequence functions from nfl file":
+  test "CL-style sequence functions from lfn file":
     check madeArray == @[9, 9, 9]
     check lengthValue == 4
     check reversedValues == @[4, 3, 2, 1]
@@ -38,7 +38,7 @@ suite "nfl stdlib":
     check subseqValue == @[2, 3]
     check subseqToEndValue == @[3, 4]
 
-  test "CLOS-lite defclass/make-instance from nfl file (#66)":
+  test "CLOS-lite defclass/make-instance from lfn file (#66)":
     check rexName == "Rex"
     check rexBreed == "corgi"
     check rexSpeaks == "woof"

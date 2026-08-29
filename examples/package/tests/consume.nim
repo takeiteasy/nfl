@@ -1,5 +1,5 @@
-## Plain Nim consuming a shimmed NFL library module -- no `nfl` CLI involved
-## at import time, only at `nfl shim` generation time. See
+## Plain Nim consuming a shimmed LFN library module -- no `lfn` CLI involved
+## at import time, only at `lfn shim` generation time. See
 ## ../../../man/package-layout.md for the layout this exercises.
 import mylib/util
 

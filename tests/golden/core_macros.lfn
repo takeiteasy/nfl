@@ -3,7 +3,7 @@
 (cond
   (false (echo "skip"))
   (true (echo "take")))
-(-> "nfl" toUpperAscii)
+(-> "lfn" toUpperAscii)
 (map [1 2 3] (do ((x int)) (* x 2)))
 (progn (echo "a") (echo "b"))
 (defproc square ((x int)) (: int) (* x x))

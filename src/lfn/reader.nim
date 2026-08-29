@@ -1,4 +1,4 @@
-## The NFL reader: a hand-written recursive-descent tokenizer/parser that
+## The LFN reader: a hand-written recursive-descent tokenizer/parser that
 ## turns source text into a sequence of `Syntax` nodes (see `syntax.nim`).
 ## Handles lists, vectors, strings, escaped `|...|` symbols, quote/quasiquote/
 ## unquote, Nim pragma clauses `{. .}`, and `;`/`#| |#` comments.

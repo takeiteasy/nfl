@@ -55,7 +55,7 @@ type
       ##
       ## Needed because Nim's *unlabelled* `break` exits the innermost
       ## enclosing `block` OR loop, whichever is lexically nearer — and
-      ## NFL's `(block …)` compiles to a real `block:` whenever it appears
+      ## LFN's `(block …)` compiles to a real `block:` whenever it appears
       ## in expression position (`emitBegin`/`emitBlockExpr`). Without this,
       ## a bare `(break)` nested inside such a block (e.g. a non-tail item
       ## of `(if … (block (break) …) …)` used as a value) would silently
@@ -229,7 +229,7 @@ proc plainIntLit(v: BiggestInt): NimNode =
   ## `newLit` on a `BiggestInt` yields an `nnkInt64Lit`, which Nim types as a
   ## concrete `int64` rather than an untyped integer literal — that
   ## suppresses literal narrowing, converter matching and generic inference.
-  ## Build the node directly so NFL integer literals behave like ordinary
+  ## Build the node directly so LFN integer literals behave like ordinary
   ## Nim integer literals.
   result = nnkIntLit.newNimNode()
   result.intVal = v
@@ -274,7 +274,7 @@ proc identForSymbol(ctx: var EmitContext; sx: Syntax; symKind = nskLet): NimNode
     let entry = ctx.hygienicSymbols[sx.hygieneId]
     if entry.kind != symKind and symKind != nskLet:
       raiseCompilerError(sx.span,
-        "internal error: hygienic symbol " & sx.sym & " declared with conflicting kinds")
+        "internal error: hygienic symbol " & sx.sym & " declared with colfnicting kinds")
     return entry.node.copyNimTree().attachLineInfo(sx)
   ident(sx.sym).attachLineInfo(sx)
 
@@ -506,7 +506,7 @@ proc emitLabelledBlock(ctx: var EmitContext; sx: Syntax): NimNode =
   ## A `var TMP: typeof(…)` where that type is `void` is illegal in Nim, so
   ## this always guards with `when …is void` and skips the carrier var
   ## entirely in that branch — needed even in `emitExpr`'s call site
-  ## (`emitBegin`), since NFL emits every proc's tail expression through
+  ## (`emitBegin`), since LFN emits every proc's tail expression through
   ## `emitExpr` regardless of whether the proc has an explicit (possibly
   ## void) return type; the `auto` return type then infers void from
   ## whichever branch `when` actually selects, same as a plain (unlabelled)
@@ -545,7 +545,7 @@ proc emitPatternIdentDefs(ctx: var EmitContext; pattern: Syntax; valueNode: NimN
   ## slicing — into that temp; an object pattern (#47) instead dot-accesses
   ## each named field. A nested pattern recurses with a fresh temp bound to
   ## its element's accessor expression. Mirrors lower.nim's `validatePattern`,
-  ## which runs first in the normal compiler pipeline (`nflModule`/`nflExpr`)
+  ## which runs first in the normal compiler pipeline (`lfnModule`/`lfnExpr`)
   ## and rejects malformed shapes; this assumes a valid pattern, the same
   ## division of labor `emitNew` and `lowerNew` use for field-initializer
   ## shape.
@@ -1100,8 +1100,8 @@ proc emitConst(ctx: var EmitContext; sx: Syntax): NimNode =
 
 proc emitImport(sx: Syntax): NimNode =
   expectArity(sx, "import", sx.items.len - 1, 1)
-  if sx.items[1].kind == sxSymbol and sx.items[1].sym.endsWith(".nfl"):
-    raiseCompilerError(sx.span, "nfl file imports are only allowed at the top level of a module")
+  if sx.items[1].kind == sxSymbol and sx.items[1].sym.endsWith(".lfn"):
+    raiseCompilerError(sx.span, "lfn file imports are only allowed at the top level of a module")
   nnkImportStmt.newTree(emitModulePath(sx.items[1])).attachLineInfo(sx)
 
 proc emitFrom(sx: Syntax): NimNode =
@@ -1321,23 +1321,23 @@ proc emitTupleNew(ctx: var EmitContext; sx: Syntax): NimNode =
 proc emitQuotedDatum(sx: Syntax): NimNode =
   case sx.kind
   of sxNil:
-    result = newCall(bindSym"nflNilDatum").attachLineInfo(sx)
+    result = newCall(bindSym"lfnNilDatum").attachLineInfo(sx)
   of sxBool:
-    result = newCall(bindSym"nflBoolDatum", newLit(sx.boolVal)).attachLineInfo(sx)
+    result = newCall(bindSym"lfnBoolDatum", newLit(sx.boolVal)).attachLineInfo(sx)
   of sxInt:
-    result = newCall(bindSym"nflIntDatum", newLit(sx.intVal)).attachLineInfo(sx)
+    result = newCall(bindSym"lfnIntDatum", newLit(sx.intVal)).attachLineInfo(sx)
   of sxFloat:
-    result = newCall(bindSym"nflFloatDatum", newLit(sx.floatVal)).attachLineInfo(sx)
+    result = newCall(bindSym"lfnFloatDatum", newLit(sx.floatVal)).attachLineInfo(sx)
   of sxString:
-    result = newCall(bindSym"nflStringDatum", newLit(sx.strVal)).attachLineInfo(sx)
+    result = newCall(bindSym"lfnStringDatum", newLit(sx.strVal)).attachLineInfo(sx)
   of sxSymbol:
-    result = newCall(bindSym"nflSymbolDatum", newLit(sx.sym)).attachLineInfo(sx)
+    result = newCall(bindSym"lfnSymbolDatum", newLit(sx.sym)).attachLineInfo(sx)
   of sxList:
-    result = newCall(bindSym"nflListDatum").attachLineInfo(sx)
+    result = newCall(bindSym"lfnListDatum").attachLineInfo(sx)
     for item in sx.items:
       result.add emitQuotedDatum(item)
   of sxVector:
-    result = newCall(bindSym"nflVectorDatum").attachLineInfo(sx)
+    result = newCall(bindSym"lfnVectorDatum").attachLineInfo(sx)
     for item in sx.items:
       result.add emitQuotedDatum(item)
 
@@ -1529,7 +1529,7 @@ proc emitMatchTest(ctx: var EmitContext; pattern: Syntax; tmp: NimNode): NimNode
           restIdx = i
           break
       let headCount = if restIdx >= 0: restIdx else: pattern.items.len
-      newCall(bindSym"nflMatchArity", tmp.copyNimTree(), newLit(headCount), newLit(restIdx < 0)).attachLineInfo(pattern)
+      newCall(bindSym"lfnMatchArity", tmp.copyNimTree(), newLit(headCount), newLit(restIdx < 0)).attachLineInfo(pattern)
   of sxList:
     if pattern.items.len == 2 and pattern.items[0].isSymbol("quote") and pattern.items[1].kind == sxSymbol:
       # 'sym — equality against the symbol's value (an enum label, a const, …).
@@ -1762,7 +1762,7 @@ proc emitCatchCore(ctx: var EmitContext; sx: Syntax; asExpr: bool): NimNode =
   ## Shared implementation for `(catch :tag body…)` (#55) in expression and
   ## statement contexts — mirrors `emitTryCore`'s `asExpr` split. Unlike a
   ## named `block`, there is no carrier var or label frame to manage here:
-  ## the whole form lowers to a single call/wrap of the runtime's `nflCatch`
+  ## the whole form lowers to a single call/wrap of the runtime's `lfnCatch`
   ## template, which does the tag comparison and value extraction itself.
   let tag = blockLabelName(sx.items[1])
   let body =
@@ -1773,7 +1773,7 @@ proc emitCatchCore(ctx: var EmitContext; sx: Syntax; asExpr: bool): NimNode =
       for i in 2 ..< sx.items.len:
         stmts.add ctx.emitStmt(sx.items[i])
       stmts
-  newCall(bindSym"nflCatch", newLit(tag), body).attachLineInfo(sx)
+  newCall(bindSym"lfnCatch", newLit(tag), body).attachLineInfo(sx)
 
 proc emitCatch(ctx: var EmitContext; sx: Syntax): NimNode =
   ctx.emitCatchCore(sx, true)
@@ -1783,7 +1783,7 @@ proc emitCatchStmt(ctx: var EmitContext; sx: Syntax): NimNode =
 
 proc emitThrow(ctx: var EmitContext; sx: Syntax): NimNode =
   ## Emits `(throw :tag value)` (#55) as a raw `nnkRaiseStmt` raising the
-  ## runtime's `newNflThrow(...)` — see the doc comment on `newNflThrow` for
+  ## runtime's `newLfnThrow(...)` — see the doc comment on `newLfnThrow` for
   ## why this is a literal `raise` node rather than a call to a
   ## `{.noreturn.}` proc. Left unwrapped in expression position — like
   ## `emitRaise`/`emitBreakFrom` — since Nim treats a raw `nnkRaiseStmt` as
@@ -1792,7 +1792,7 @@ proc emitThrow(ctx: var EmitContext; sx: Syntax): NimNode =
   let tag = blockLabelName(sx.items[1])
   let value = ctx.emitExpr(sx.items[2])
   nnkRaiseStmt.newTree(
-    newCall(bindSym"newNflThrow", newLit(tag), value)
+    newCall(bindSym"newLfnThrow", newLit(tag), value)
   ).attachLineInfo(sx)
 
 proc emitTryCore(ctx: var EmitContext; sx: Syntax; asExpr: bool): NimNode =
@@ -1919,7 +1919,7 @@ proc emitExpr(ctx: var EmitContext; sx: Syntax): NimNode =
       ctx.emitCatch(sx)
     elif sx.items[0].isSymbol("throw"):
       # Unwrapped for the same reason as `break-from`/`raise` just above:
-      # `nflThrow` is `{.noreturn.}`, so this must type-unify with whatever
+      # `lfnThrow` is `{.noreturn.}`, so this must type-unify with whatever
       # the call site expects rather than being forced to a concrete type.
       ctx.emitThrow(sx)
     elif sx.items[0].isSymbol("try"):
@@ -2053,7 +2053,7 @@ proc emitStmt(ctx: var EmitContext; sx: Syntax): NimNode =
       return ctx.emitYield(sx)
     if sx.items[0].isSymbol("type"):
       return ctx.emitTypeDecl(sx)
-  newCall(bindSym"nflStmt", ctx.emitExpr(sx)).attachLineInfo(sx)
+  newCall(bindSym"lfnStmt", ctx.emitExpr(sx)).attachLineInfo(sx)
 
 proc emitExpr*(sx: Syntax): NimNode =
   ## Emits a single lowered expression as a Nim expression `NimNode`, in

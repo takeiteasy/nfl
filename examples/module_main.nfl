@@ -1,5 +1,0 @@
-; Splitting a project across multiple .nfl files (#10) — (import ./path.nfl)
-; inline-includes another NFL source file, sharing macro visibility.
-(import ./module_helpers.nfl)
-
-(echo (addOne (double 5)))

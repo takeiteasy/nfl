@@ -1,0 +1,5 @@
+; Splitting a project across multiple .lfn files (#10) — (import ./path.lfn)
+; inline-includes another LFN source file, sharing macro visibility.
+(import ./module_helpers.lfn)
+
+(echo (addOne (double 5)))

@@ -1,6 +1,6 @@
-; The library's importable surface. `nfl shim` (see man/package-layout.md)
+; The library's importable surface. `lfn shim` (see man/package-layout.md)
 ; turns this into util.nim, so plain Nim code can (import mylib/util).
-(import ./helpers.nfl)
+(import ./helpers.lfn)
 
 (proc double* ((n int)) (: int)
   (* n 2))

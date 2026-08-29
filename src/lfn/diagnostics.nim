@@ -1,5 +1,5 @@
 ## Shared diagnostic type and error-raising helpers used across the reader,
-## expander, lowerer, and backend, so all NFL-level errors carry a `Span`
+## expander, lowerer, and backend, so all LFN-level errors carry a `Span`
 ## and format consistently regardless of which pass raised them.
 
 import std/strformat

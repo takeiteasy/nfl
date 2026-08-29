@@ -1,6 +1,6 @@
 nimble.develop
 nimble.paths
-/nfl
+/lfn
 /tests/test_lisp
 /tests/test_reader
 /tests/test_expand
@@ -9,13 +9,12 @@ nimble.paths
 /tests/test_cli
 /tests/test_repl
 /tests/test_stdlib
-/src/nfl/cli
-/src/nfl/nfl
+/src/lfn/cli
+/src/lfn/lfn
 /examples/*
 !/examples/*.lisp
 !/examples/*.nim
-!/examples/*.nfl
-!/examples/*.nfl
+!/examples/*.lfn
 !/examples/package/
 /examples/package/tests/consume
 nimbledeps

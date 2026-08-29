@@ -1,5 +1,5 @@
 ## Lowering: rewrites already macro-expanded `Syntax` forms in place,
-## resolving NFL-specific surface syntax (`let`/`set!`, `loop`/`recur`,
+## resolving LFN-specific surface syntax (`let`/`set!`, `loop`/`recur`,
 ## `defclass`, object-variant `match` patterns, and similar) down to a
 ## shape `backend.nim` can emit directly as Nim AST. Runs after
 ## `expand.nim` and before `backend.nim`.
@@ -623,11 +623,11 @@ proc lowerFunc(ctx: var LowerContext; sx: Syntax) =
 proc lowerConverter(ctx: var LowerContext; sx: Syntax) =
   ## Nim requires a converter to declare exactly one parameter and an
   ## explicit return (target) type; both are enforced in lowerRoutine so the
-  ## error surfaces as an NFL diagnostic rather than a raw Nim compile error.
+  ## error surfaces as an LFN diagnostic rather than a raw Nim compile error.
   lowerRoutine(ctx, sx, "converter", requireReturnType = true)
 
 proc lowerYield(ctx: var LowerContext; sx: Syntax) =
-  ## Validates a `(yield expr)` form.  NFL does not enforce that yield only
+  ## Validates a `(yield expr)` form.  LFN does not enforce that yield only
   ## appears inside an iterator body — Nim's semantic pass handles that.
   if sx.items.len != 2:
     raiseCompilerError(sx.span, "yield expects exactly one expression")
@@ -717,8 +717,8 @@ proc lowerConst(ctx: var LowerContext; sx: Syntax) =
   lowerExpr(ctx, sx.items[valueIdx])
   declare(ctx, newSymbol(baseName, nameSpan, hygieneId), bkImmutable)
 
-proc isNflModulePath(sym: string): bool =
-  sym.endsWith(".nfl")
+proc isLfnModulePath(sym: string): bool =
+  sym.endsWith(".lfn")
 
 proc validateModulePath(module: Syntax; formName: string) =
   if module.kind != sxSymbol:
@@ -729,8 +729,8 @@ proc validateModulePath(module: Syntax; formName: string) =
 proc lowerImport(sx: Syntax) =
   expectArity(sx, "import", sx.items.len - 1, 1)
   validateModulePath(sx.items[1], "import")
-  if sx.items[1].sym.isNflModulePath():
-    raiseCompilerError(sx.span, "nfl file imports are only allowed at the top level of a module")
+  if sx.items[1].sym.isLfnModulePath():
+    raiseCompilerError(sx.span, "lfn file imports are only allowed at the top level of a module")
 
 proc validateFieldName(name: Syntax; what: string): string =
   if name.kind != sxSymbol:
@@ -745,8 +745,8 @@ proc lowerFrom(sx: Syntax) =
   if sx.items.len < 4:
     raiseCompilerError(sx.span, "from expects (from module import sym...)")
   validateModulePath(sx.items[1], "from")
-  if sx.items[1].sym.isNflModulePath():
-    raiseCompilerError(sx.items[1].span, "from does not support importing nfl files")
+  if sx.items[1].sym.isLfnModulePath():
+    raiseCompilerError(sx.items[1].span, "from does not support importing lfn files")
   if not sx.items[2].isSymbol("import"):
     raiseCompilerError(sx.items[2].span, "from expects the literal symbol 'import' after the module")
   let rest = sx.items[3 .. ^1]
@@ -1054,7 +1054,7 @@ proc lowerDiscard(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerDefer(ctx: var LowerContext; sx: Syntax) =
   ## Validates `(defer body…)`. Only allowed inside a proc/block/etc. body —
-  ## Nim rejects `defer` at module top level, so NFL diagnoses it up front
+  ## Nim rejects `defer` at module top level, so LFN diagnoses it up front
   ## instead of surfacing a raw Nim compiler error.
   if ctx.bodyDepth == 0:
     raiseCompilerError(sx.span, "defer is only allowed inside a proc or block body")
@@ -1633,8 +1633,8 @@ proc lowerStmt(ctx: var LowerContext; sx: Syntax) =
 
 proc lowerExpr*(sx: Syntax): Syntax =
   ## Lowers a single expanded expression in a fresh, empty scope. Mutates
-  ## `sx` in place and returns it, for embedding a lone NFL expression
-  ## directly in Nim code (`nflExpr`).
+  ## `sx` in place and returns it, for embedding a lone LFN expression
+  ## directly in Nim code (`lfnExpr`).
   var ctx = LowerContext(scopes: @[initTable[string, BindingKind]()])
   lowerExpr(ctx, sx)
   sx

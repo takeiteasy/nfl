@@ -23,7 +23,7 @@
 ; both compile down to nothing but `(var name args...)`. Their distinct CL
 ; semantics (defvar sets only if unbound; defparameter always resets) are
 ; not a macro-expansion-time property; they only become observable when the
-; same name is re-entered, which only happens in `nfl repl` (#14), so the
+; same name is re-entered, which only happens in `lfn repl` (#14), so the
 ; REPL — not this macro — is what tells the two apart, by checking a
 ; re-entered name's *raw* head symbol before deciding whether to keep the
 ; old value or replace it.
@@ -100,62 +100,62 @@
   `(& ,left ,right))
 
 (defmacro map (items op)
-  `(nflSeqMap ,items ,op))
+  `(lfnSeqMap ,items ,op))
 
 (defmacro filter (items pred)
-  `(nflSeqFilter ,items ,pred))
+  `(lfnSeqFilter ,items ,pred))
 
 (defmacro foldl (items initial op)
-  `(nflSeqFoldl ,items ,initial ,op))
+  `(lfnSeqFoldl ,items ,initial ,op))
 
 (defmacro foldr (items initial op)
-  `(nflSeqFoldr ,items ,initial ,op))
+  `(lfnSeqFoldr ,items ,initial ,op))
 
 ; CL-style sequence functions. Argument order follows the rest of this
 ; preamble (items first, like map/filter/foldl above) rather than CL's own
 ; order (e.g. CL's `some`/`every` take the predicate first) — kept
-; consistent with NFL's own convention instead of literal CL. `position`
-; and `nflSeqPosition` return -1 when not found (Nim's own sentinel
+; consistent with LFN's own convention instead of literal CL. `position`
+; and `lfnSeqPosition` return -1 when not found (Nim's own sentinel
 ; convention), not CL's nil, since a generic element type has no nil-like
 ; value to return instead.
 ; unlike CL, `n` and `fill` are both required — Nim can only infer the
-; array's element type from an actual argument value, and NFL has no call-
+; array's element type from an actual argument value, and LFN has no call-
 ; site syntax for supplying a bare type argument instead.
 (defmacro make-array (n fill)
-  `(nflMakeArray ,n ,fill))
+  `(lfnMakeArray ,n ,fill))
 
 (defmacro length (items)
   `(. ,items len))
 
 (defmacro reverse (items)
-  `(nflReversed ,items))
+  `(lfnReversed ,items))
 
 (defmacro sort (items)
-  `(nflSorted ,items))
+  `(lfnSorted ,items))
 
 (defmacro mapcar (items op)
-  `(nflSeqMap ,items ,op))
+  `(lfnSeqMap ,items ,op))
 
 (defmacro reduce (items initial op)
-  `(nflSeqFoldl ,items ,initial ,op))
+  `(lfnSeqFoldl ,items ,initial ,op))
 
 (defmacro remove-if (items pred)
-  `(nflSeqRemoveIf ,items ,pred))
+  `(lfnSeqRemoveIf ,items ,pred))
 
 (defmacro remove-if-not (items pred)
-  `(nflSeqFilter ,items ,pred))
+  `(lfnSeqFilter ,items ,pred))
 
 (defmacro count-if (items pred)
-  `(nflSeqCount ,items ,pred))
+  `(lfnSeqCount ,items ,pred))
 
 (defmacro some (items pred)
-  `(nflSeqAny ,items ,pred))
+  `(lfnSeqAny ,items ,pred))
 
 (defmacro every (items pred)
-  `(nflSeqEvery ,items ,pred))
+  `(lfnSeqEvery ,items ,pred))
 
 (defmacro position (items value)
-  `(nflSeqPosition ,items ,value))
+  `(lfnSeqPosition ,items ,value))
 
 (defmacro elt (items i)
   `(at ,items ,i))
@@ -164,7 +164,7 @@
   `(at ,items ,i))
 
 ; CL's subseq takes an exclusive end (and an optional, sequence-length-
-; defaulted one) — unlike NFL's own `slice`, whose end is inclusive — so
+; defaulted one) — unlike LFN's own `slice`, whose end is inclusive — so
 ; this isn't a bare alias, it adjusts for that difference.
 (defmacro subseq (items start &rest rest)
   (if (nil? rest)
@@ -195,15 +195,15 @@
 ; CLOS-lite: a defclass/make-instance layer over the existing type/ref/
 ; object/new/method forms, in the spirit of the def* aliases and CL sequence
 ; functions above. Deliberate departures from real CLOS, tightened by what
-; NFL doesn't have yet (see the tracker for the follow-up tickets):
+; LFN doesn't have yet (see the tracker for the follow-up tickets):
 ;   - :initform is supported (a slot default used when make-instance omits
 ;     it). :initarg (a distinct external initializer name for a slot,
 ;     `(name Type :initarg :nom)`) is also supported, but not by a
 ;     macro-expand-time class registry — defclass still has no visibility
 ;     into an inherited superclass's slots at its own expansion time.
 ;     Instead each :initarg is recorded as a Nim custom field pragma
-;     (`nflInitarg`, runtime.nim), and `make-instance` expands to the Nim
-;     macro `nflMakeInstance`, which walks the class's type definition —
+;     (`lfnInitarg`, runtime.nim), and `make-instance` expands to the Nim
+;     macro `lfnMakeInstance`, which walks the class's type definition —
 ;     including its `of` inheritance chain — at Nim semcheck time, when
 ;     every ancestor's fields and pragmas are visible. A slot's own field
 ;     name and its :initarg are both accepted at the call site — an
@@ -217,7 +217,7 @@
 ;   - defmethod stays the plain `method` alias defined above; CLOS-lite adds
 ;     no dispatch mechanism of its own.
 ;   - every slot carries an explicit Nim type, because Nim object fields
-;     must be typed and NFL has no type-inference story for them.
+;     must be typed and LFN has no type-inference story for them.
 ;   - :accessor/:reader names become real `proc` names, so — unlike a
 ;     defclass/defmacro/defmacro-proc name itself, which only ever exists at
 ;     expansion time — they must be plain Nim identifiers (no hyphens);
@@ -230,34 +230,34 @@
 ;     never becomes a proc name, only a Nim pragma string, so it carries
 ;     none of :accessor/:reader's plain-Nim-identifier restriction.
 
-(defmacro-proc nfl-class-parent (supers)
+(defmacro-proc lfn-class-parent (supers)
   (if (nil? supers)
       'RootObj
       (if (nil? (rest supers))
           (first supers)
           (macro-error "defclass supports a single superclass; see the multiple-dispatch ticket"))))
 
-(defmacro-proc nfl-slot-option-key-ok? (key)
+(defmacro-proc lfn-slot-option-key-ok? (key)
   (if (= key ':accessor) true (if (= key ':reader) true (if (= key ':initform) true (= key ':initarg)))))
 
-(defmacro-proc nfl-validate-slot-options (opts)
+(defmacro-proc lfn-validate-slot-options (opts)
   (if (nil? opts)
       nil
       (if (nil? (rest opts))
           (macro-error "defclass slot option missing its value")
-          (if (nfl-slot-option-key-ok? (first opts))
+          (if (lfn-slot-option-key-ok? (first opts))
               ; :initform's value is an arbitrary expression; :accessor/
               ; :reader/:initarg still require a plain symbol (:accessor/
               ; :reader turn it into a proc name; :initarg turns it into a
-              ; pragma string — see nfl-slot-initarg/nfl-slot-field).
+              ; pragma string — see lfn-slot-initarg/lfn-slot-field).
               (if (= (first opts) ':initform)
-                  (nfl-validate-slot-options (rest (rest opts)))
+                  (lfn-validate-slot-options (rest (rest opts)))
                   (if (symbol? (nth opts 1))
-                      (nfl-validate-slot-options (rest (rest opts)))
+                      (lfn-validate-slot-options (rest (rest opts)))
                       (macro-error "defclass slot accessor/reader/initarg value must be a symbol")))
               (macro-error (string-append "defclass: unknown slot option " (symbol->string (first opts))))))))
 
-(defmacro-proc nfl-slot-names-for-key (opts key)
+(defmacro-proc lfn-slot-names-for-key (opts key)
   ; Collects the values paired with a given option key (`:accessor`,
   ; `:reader`, or `:initform`), skipping every other key/value pair. Called
   ; once per key so `:accessor` and `:reader` each generate their own set of
@@ -265,68 +265,68 @@
   (if (nil? opts)
       '()
       (if (= (first opts) key)
-          (cons (nth opts 1) (nfl-slot-names-for-key (rest (rest opts)) key))
-          (nfl-slot-names-for-key (rest (rest opts)) key))))
+          (cons (nth opts 1) (lfn-slot-names-for-key (rest (rest opts)) key))
+          (lfn-slot-names-for-key (rest (rest opts)) key))))
 
-(defmacro-proc nfl-slot-initform (slot)
+(defmacro-proc lfn-slot-initform (slot)
   ; Extracts a slot's :initform value, if any — the single value paired with
   ; the :initform key, or nil if the option is absent. More than one
-  ; :initform on a slot is rejected here, since `nfl-validate-slot-options`
+  ; :initform on a slot is rejected here, since `lfn-validate-slot-options`
   ; validates each key/value pair independently and never counts repeats.
-  (let ((initforms (nfl-slot-names-for-key (rest (rest slot)) ':initform)))
+  (let ((initforms (lfn-slot-names-for-key (rest (rest slot)) ':initform)))
     (if (nil? initforms)
         nil
         (if (nil? (rest initforms))
             (first initforms)
             (macro-error "defclass slot has more than one :initform")))))
 
-(defmacro-proc nfl-slot-initarg (slot)
+(defmacro-proc lfn-slot-initarg (slot)
   ; Extracts a slot's :initarg value, if any — the single value paired with
   ; the :initarg key, or nil if the option is absent. More than one
-  ; :initarg on a slot is rejected here, mirroring nfl-slot-initform.
-  (let ((initargs (nfl-slot-names-for-key (rest (rest slot)) ':initarg)))
+  ; :initarg on a slot is rejected here, mirroring lfn-slot-initform.
+  (let ((initargs (lfn-slot-names-for-key (rest (rest slot)) ':initarg)))
     (if (nil? initargs)
         nil
         (if (nil? (rest initargs))
             (first initargs)
             (macro-error "defclass slot has more than one :initarg")))))
 
-(defmacro-proc nfl-slot-field (slot)
-  ; Validated here, not only in nfl-slot-accessors: defclass computes
+(defmacro-proc lfn-slot-field (slot)
+  ; Validated here, not only in lfn-slot-accessors: defclass computes
   ; `fields` before `accessors` (see below), and an :initarg's value gets
   ; converted with symbol->string right below — which needs it to already
   ; be a symbol, not just eventually rejected as a non-symbol once
-  ; nfl-slot-accessors gets around to validating it.
+  ; lfn-slot-accessors gets around to validating it.
   (if (not (list? slot))
       (macro-error "defclass slot must be a list")
       (if (< (length slot) 2)
           (macro-error "defclass slot must be (name Type [options...])")
-          (let ((validated (nfl-validate-slot-options (rest (rest slot))))
-                (initform (nfl-slot-initform slot))
-                (initarg (nfl-slot-initarg slot)))
+          (let ((validated (lfn-validate-slot-options (rest (rest slot))))
+                (initform (lfn-slot-initform slot))
+                (initarg (lfn-slot-initarg slot)))
             (if (nil? initarg)
                 (if (nil? initform)
                     (list (first slot) (nth slot 1))
                     (list (first slot) (nth slot 1) initform))
-                ; An :initarg becomes a field pragma (`nflInitarg`,
-                ; runtime.nim) that `nflMakeInstance` reads back off the
+                ; An :initarg becomes a field pragma (`lfnInitarg`,
+                ; runtime.nim) that `lfnMakeInstance` reads back off the
                 ; class's Nim type definition at semcheck time — the
                 ; visibility a macro-expand-time defclass/make-instance
                 ; pair can't have across an inherited slot. The pragma's
                 ; string carries the keyword's own text (colon included);
-                ; nflMakeInstance strips it there, not here, since NFL's
+                ; lfnMakeInstance strips it there, not here, since LFN's
                 ; macro-time builtins have no substring primitive.
-                (let ((pragmaClause `(pragma (: nflInitarg ,(symbol->string initarg)))))
+                (let ((pragmaClause `(pragma (: lfnInitarg ,(symbol->string initarg)))))
                   (if (nil? initform)
                       (list (first slot) pragmaClause (nth slot 1))
                       (list (first slot) pragmaClause (nth slot 1) initform))))))))
 
-(defmacro-proc nfl-slot-fields (slots)
+(defmacro-proc lfn-slot-fields (slots)
   (if (nil? slots)
       '()
-      (cons (nfl-slot-field (first slots)) (nfl-slot-fields (rest slots)))))
+      (cons (lfn-slot-field (first slots)) (lfn-slot-fields (rest slots)))))
 
-(defmacro-proc nfl-make-getter (className fieldName fieldType getterName)
+(defmacro-proc lfn-make-getter (className fieldName fieldType getterName)
   ; A literal `self`, not `(gensym "self")` — the automatic hygiene pass
   ; auto-renames a proc's own literal param names, so this can't capture or
   ; be captured by a caller symbol even without an explicit gensym. (A
@@ -336,52 +336,52 @@
   ; fixture's exact text depend on unrelated preamble changes.)
   `(proc ,getterName ((self ,className)) (: ,fieldType) (. self ,fieldName)))
 
-(defmacro-proc nfl-make-setter (className fieldName fieldType setterName)
+(defmacro-proc lfn-make-setter (className fieldName fieldType setterName)
   `(proc ,setterName ((self ,className) (v ,fieldType)) (set! (. self ,fieldName) v)))
 
-(defmacro-proc nfl-make-getters-for-names (className fieldName fieldType names)
+(defmacro-proc lfn-make-getters-for-names (className fieldName fieldType names)
   (if (nil? names)
       '()
-      (cons (nfl-make-getter className fieldName fieldType (first names))
-            (nfl-make-getters-for-names className fieldName fieldType (rest names)))))
+      (cons (lfn-make-getter className fieldName fieldType (first names))
+            (lfn-make-getters-for-names className fieldName fieldType (rest names)))))
 
-(defmacro-proc nfl-setter-name (accessorName)
+(defmacro-proc lfn-setter-name (accessorName)
   (string->symbol (string-append (symbol->string accessorName) "=")))
 
-(defmacro-proc nfl-make-setters-for-names (className fieldName fieldType names)
+(defmacro-proc lfn-make-setters-for-names (className fieldName fieldType names)
   (if (nil? names)
       '()
-      (cons (nfl-make-setter className fieldName fieldType (nfl-setter-name (first names)))
-            (nfl-make-setters-for-names className fieldName fieldType (rest names)))))
+      (cons (lfn-make-setter className fieldName fieldType (lfn-setter-name (first names)))
+            (lfn-make-setters-for-names className fieldName fieldType (rest names)))))
 
-(defmacro-proc nfl-slot-accessors (className slot)
+(defmacro-proc lfn-slot-accessors (className slot)
   (let ((fieldName (first slot))
         (fieldType (nth slot 1))
         (opts (rest (rest slot))))
-    (nfl-validate-slot-options opts)
-    (let ((accessorNames (nfl-slot-names-for-key opts ':accessor))
-          (readerNames (nfl-slot-names-for-key opts ':reader)))
-      (append (nfl-make-getters-for-names className fieldName fieldType accessorNames)
-              (append (nfl-make-setters-for-names className fieldName fieldType accessorNames)
-                      (nfl-make-getters-for-names className fieldName fieldType readerNames))))))
+    (lfn-validate-slot-options opts)
+    (let ((accessorNames (lfn-slot-names-for-key opts ':accessor))
+          (readerNames (lfn-slot-names-for-key opts ':reader)))
+      (append (lfn-make-getters-for-names className fieldName fieldType accessorNames)
+              (append (lfn-make-setters-for-names className fieldName fieldType accessorNames)
+                      (lfn-make-getters-for-names className fieldName fieldType readerNames))))))
 
-(defmacro-proc nfl-class-accessors (className slots)
+(defmacro-proc lfn-class-accessors (className slots)
   (if (nil? slots)
       '()
-      (append (nfl-slot-accessors className (first slots)) (nfl-class-accessors className (rest slots)))))
+      (append (lfn-slot-accessors className (first slots)) (lfn-class-accessors className (rest slots)))))
 
 (defmacro defclass (name supers slots)
-  (let ((fields (nfl-slot-fields slots))
-        (accessors (nfl-class-accessors name slots))
-        (parent (nfl-class-parent supers)))
+  (let ((fields (lfn-slot-fields slots))
+        (accessors (lfn-class-accessors name slots))
+        (parent (lfn-class-parent supers)))
     `(block
        (type ,name (ref (object (of ,parent) ,@fields)))
        ,@accessors)))
 
 (defmacro make-instance (className &rest inits)
-  ; nflMakeInstance (runtime.nim) is a Nim macro, not plain sugar over `new`:
+  ; lfnMakeInstance (runtime.nim) is a Nim macro, not plain sugar over `new`:
   ; unlike this preamble macro, it runs at Nim semcheck time, when the
   ; class's whole `of` inheritance chain — and every ancestor's :initarg
   ; pragmas — is visible, so an initializer can name either a slot's own
   ; field or its :initarg, inherited or not.
-  `(nflMakeInstance ,className ,@inits))
+  `(lfnMakeInstance ,className ,@inits))
